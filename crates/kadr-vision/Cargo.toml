@@ -1,0 +1,16 @@
+[package]
+name = "kadr-vision"
+description = "Kadr classic computer vision: region tracking for face blur, optical flow, silence detection. No AI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# kadr-vision works on plain image buffers and audio samples. It depends on no
+# other Kadr crate so that each algorithm can be tested on its own.
+[dependencies]
+
+[lints]
+workspace = true

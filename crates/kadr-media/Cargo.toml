@@ -1,0 +1,15 @@
+[package]
+name = "kadr-media"
+description = "Kadr media input and output: probing, decoding and encoding video and audio."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# Dependencies are added when the crate starts using them (see docs/architecture.md).
+[dependencies]
+
+[lints]
+workspace = true

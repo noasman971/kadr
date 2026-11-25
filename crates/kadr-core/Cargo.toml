@@ -1,0 +1,16 @@
+[package]
+name = "kadr-core"
+description = "Kadr data model: project, timeline, tracks, clips, effects, keyframes and undoable commands."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# kadr-core must stay free of any video, GPU, UI or platform dependency:
+# it is shared by the desktop app, the MCP server and the Android app.
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "kadr-mcp"
+description = "Kadr local MCP server: lets Claude Desktop and Claude Code edit videos with a regular Claude subscription."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# Dependencies are added when the crate starts using them (see docs/architecture.md).
+[dependencies]
+
+[lints]
+workspace = true
