@@ -1,0 +1,4 @@
+# Everyone (developers and CI) builds with the latest stable Rust and the same tools.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

@@ -1,0 +1,3 @@
+# Tests may use `unwrap` and `expect`: a panic is the expected way for a test to fail.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

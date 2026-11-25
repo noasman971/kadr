@@ -1,0 +1,12 @@
+# Store text files with LF line endings in the repository, whatever the OS.
+* text=auto eol=lf
+
+# Binary media must never be converted.
+*.mp4 binary
+*.mov binary
+*.mkv binary
+*.webm binary
+*.wav binary
+*.png binary
+*.jpg binary
+*.ico binary

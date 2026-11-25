@@ -1,0 +1,46 @@
+# Kadr — free and open source video editor, driven by Claude through MCP.
+#
+# This is the Cargo workspace root. Every crate lives in `crates/` and shares the
+# package metadata, the dependency versions and the lint rules declared below.
+# See `docs/architecture.md` for the role of each crate.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/noasman971/kadr"
+authors = ["Kadr contributors"]
+publish = false
+
+# Shared dependency versions. A dependency is added here (internal crates by path,
+# external crates with an exact version) only when a crate starts using it:
+# Cargo warns about declared but unused dependencies, and warnings fail the CI.
+# The planned dependencies between Kadr crates are described in docs/architecture.md.
+[workspace.dependencies]
+
+[workspace.lints.rust]
+# Every public item must be documented: someone new to the project should
+# understand the API from `cargo doc` alone.
+missing_docs = "warn"
+# `unsafe` is forbidden by default. A crate that truly needs FFI must opt out
+# explicitly in its own Cargo.toml and justify every `unsafe` block in a comment.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Library code must report errors instead of panicking.
+# `clippy.toml` still allows `unwrap`/`expect` inside tests.
+unwrap_used = "warn"
+expect_used = "warn"
+# Leftovers that must never reach `main`.
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+[profile.release]
+# Video processing is CPU heavy: optimise across crates in release builds.
+lto = "thin"
+codegen-units = 1

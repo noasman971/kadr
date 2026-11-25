@@ -1,0 +1,30 @@
+# Rust build output
+/target/
+
+# Generated test videos (recreate them with scripts/generate-test-fixtures.ps1)
+/tests/fixtures/generated/
+
+# Exports and caches produced while trying the app locally
+*.kadr-cache/
+/exports/
+
+# Front-end dependencies and builds (desktop app, phase 6)
+node_modules/
+/apps/*/dist/
+/apps/*/src-tauri/target/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local secrets and machine-specific settings: never commit them
+.env
+.env.*
+.claude/settings.local.json
+
+# Logs
+*.log
