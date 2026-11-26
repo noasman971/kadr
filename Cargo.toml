@@ -25,6 +25,7 @@ kadr-core = { path = "crates/kadr-core" }
 # FFmpeg is opt-in, so crates that only need the picture types stay portable.
 kadr-media = { path = "crates/kadr-media", default-features = false }
 kadr-render = { path = "crates/kadr-render" }
+kadr-vision = { path = "crates/kadr-vision" }
 kadr-engine = { path = "crates/kadr-engine" }
 
 clap = { version = "4.6.10", features = ["derive"] }
