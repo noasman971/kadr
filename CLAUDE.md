@@ -22,15 +22,13 @@ It is the source of truth for scope, phases and rules.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
 - **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
-- **Phase 4 (tracking): in progress.** 4a, the region tracker in `kadr-vision`
-  (MOSSE, PSR, Lucas-Kanade with Median Flow size, NCC recovery, One Euro smoothing),
-  merged (PR #7). 4b, the analysis in `kadr-engine` (`region_tracking`) and
-  `kadr-cli blur … --debug`, on branch `feature/phase-4b-blur-analysis`.
-- **Other phases run in parallel** (owner's requests, 2026-11-26), each in its own
-  session and worktree: phase 5 the MCP server, phase 6 the desktop app, phase 8 the
-  engine side of the features, phase 9 the Android groundwork of the engine. Phase 7
-  waits for phases 4 and 6; phase 10 (iOS) needs a Mac. Versions are still tagged in
-  phase order, after the owner validates each phase.
+- **Phases 4, 5, 6, 8 and 9 are in progress in parallel**, each on its own branch
+  with a draft pull request whose description starts with "Status for resuming".
+  **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
+  another computer, and the prompt to start each session with: read it first.**
+  Phases 8 and 9 are paused by the owner until 4, 5 and 6 are merged. Phase 7 waits
+  for 4 and 6; phase 10 (iOS) needs a Mac. Versions are tagged in phase order
+  (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
 
 ## Decisions taken with the owner
 
@@ -55,8 +53,7 @@ It is the source of truth for scope, phases and rules.
   a check that never runs. Tags can still be pushed.
 - Architecture decisions are recorded in [docs/decisions/](docs/decisions/). While
   phases run in parallel, record numbers are reserved to avoid clashes: phase 4 uses
-  0007–0009, phase 5 0010–0019, phase 6 0020–0029, phase 8 0030–0039, phase 9
-  0040–0049.
+  0007–0009, phase 5 0010–0019, phase 6 0020–0029.
 
 ## Commands
 
@@ -153,6 +150,14 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
   files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
   with a comment explaining why.
+- **Parallel sessions:** each worktree has its own `target/`, so every session
+  compiles the whole workspace. Five at once filled 32 GB of memory and made
+  everything 10 to 20 times slower. Run two or three sessions at most, with
+  `CARGO_BUILD_JOBS=4`.
+- **Tracking:** synthetic scenes are not enough. A real 1080p video
+  (`scripts/generate-tracking-benchmark.ps1`, measured with the `track_video`
+  example and `scripts/compare-tracking-with-truth.py`) showed drifts that every
+  synthetic scenario missed, while the PSR stayed "confident". Measure changes there.
 - Tracking, size: MOSSE tried at several scales drifts (it learns the slightly wrong
   size every frame), and DSST on grey levels cannot see a zoom at all. The size comes
   from the optical flow points (Median Flow): see decision 0007 before changing it.
@@ -166,7 +171,3 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
   the script to the scratchpad and run it from there.
-- With several sessions building in parallel, a build can take over ten minutes
-  (dozens of `rustc` processes share the CPU): run long builds in the background.
-- Decoders are slow backwards: never call `frame_at` frame by frame in decreasing
-  order; read chunks forwards and process them in reverse (`region_tracking`).

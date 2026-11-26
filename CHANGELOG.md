@@ -42,6 +42,17 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   recovery search starts at exactly one region size.
 - `kadr-cli blur video.mp4 --at 2.5 --rect 420,180,160,200 -o out.mp4 [--debug]`.
 
+### Added (phase 6a: desktop app design)
+
+- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
+  notifications, keyboard shortcuts, languages and accessibility.
+- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
+  light themes, with measured WCAG contrast, and the component list.
+- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
+  both languages.
+- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
+  repository) and 0022 (how the front end and the engine talk).
+
 ## [0.4.0] — Phase 3: GPU rendering
 
 ### Added (phase 3a: GPU rendering)
