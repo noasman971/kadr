@@ -9,6 +9,7 @@
 | [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works |
 | [rendering.md](rendering.md) | YUV from end to end, colour spaces, the GPU and CPU renderers, how they are compared, benchmarks |
 | [tracking-and-blur.md](tracking-and-blur.md) | The region tracker behind the face blur, step by step: settings, accuracy, speed, limits |
+| [android.md](android.md) | Building the engine for Android phones: toolchain, commands, testing on a phone or emulator, what works and what is left |
 
 Documents added in later phases:
 

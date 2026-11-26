@@ -52,6 +52,10 @@ audio buffers, so each one can be tested alone on synthetic data.
   depend on Tauri, on a UI library or on a Windows-only API.
 - Platform-specific media code (FFmpeg, MediaCodec) lives behind traits in `kadr-media`.
 - GPU code uses `wgpu`, which runs on Vulkan, DirectX 12, Metal and OpenGL ES.
+- The media backend is a Cargo feature: `kadr-engine`'s `ffmpeg` feature is on by
+  default for desktop, and Android builds turn it off
+  ([decision 0040](decisions/0040-media-backend-features.md)). A CI job builds the
+  engine crates for Android; see [android.md](android.md).
 
 ## How a frame travels (phase 2: CPU; phase 3: GPU)
 

@@ -8,6 +8,19 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+### Added (phase 9a: Android build)
+
+- `kadr-engine`: the media backend is chosen with Cargo features. `ffmpeg` (desktop)
+  stays on by default; Android builds use `--no-default-features`, without FFmpeg.
+  Desktop builds are unchanged.
+- `kadr_engine::create_platform_media_backend()`: the media backend the build was made
+  with, so interfaces never name one.
+- `kadr-core`, `kadr-vision`, `kadr-render` and `kadr-engine` build for Android
+  phones (`aarch64-linux-android`, Android 9 / API 28 and later) with `cargo ndk`; a
+  CI job checks it (not a required check).
+- `docs/android.md`: toolchain set-up, build commands, what works and what is left.
+- Decision records 0040 (media backend features) and 0041 (minimum Android version).
+
 ### Added (phase 4a: region tracker)
 
 - `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
