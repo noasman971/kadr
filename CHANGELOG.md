@@ -8,6 +8,28 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+### Added (phase 4a: region tracker)
+
+- `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
+  AI:
+  - a MOSSE correlation filter finds its position;
+  - the peak-to-sidelobe ratio rates each frame as confident, uncertain or lost;
+  - pyramidal Lucas-Kanade optical flow predicts fast motion and measures changes of
+    size (Median Flow);
+  - normalised cross-correlation with the memorised appearance finds a lost region
+    again.
+- `smooth_track`: One Euro smoothing, forwards and backwards, so the blur neither
+  shakes nor lags.
+- `GreyImage`: brightness images built straight from a video's Y plane, optionally
+  shrunk to about 640 pixels wide (`shrink_factor_for_tracking`).
+- `synthetic_scenes`: textured scenes with a known truth, for tests and benchmarks.
+- Tracking scenarios (motion, acceleration, coming closer, moving away, camera pan,
+  occlusion, leaving the frame, backwards) and `criterion` benchmarks
+  (`cargo bench -p kadr-vision`).
+- `docs/tracking-and-blur.md`, decision record 0007.
+
+## [0.4.0] — Phase 3: GPU rendering
+
 ### Added (phase 3a: GPU rendering)
 
 - `VideoFrame` is now `Rgba` or `Yuv420`: decoders hand over their YUV planes and the
