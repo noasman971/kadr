@@ -840,6 +840,7 @@ dependencies = [
 name = "kadr-engine"
 version = "0.1.0"
 dependencies = [
+ "image",
  "kadr-core",
  "kadr-media",
  "kadr-render",
