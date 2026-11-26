@@ -128,11 +128,21 @@ renderers draw the same result.
 - A tracked blur without any region yet is reported by the export (tracking itself
   arrives in phase 4).
 
+## Transitions and text animations
+
+Transitions (fade, slide, zoom) and text animations (fade, slide, pop, type-on, word
+by word) need no shader of their own: they only change a layer's opacity, position
+and scale (`LayerMotion`, from `transitions.rs`), and type-on texts are rasterised
+with part of their letters. During a transition the clip touching the edge is drawn
+underneath, its picture continuing past its cut. Details:
+[transitions-and-text-animations.md](transitions-and-text-animations.md).
+
 ## GPU matches CPU
 
 `crates/kadr-render/tests/gpu_matches_cpu.rs` renders the same scenes on both and
 compares the Y, U and V planes: mean difference under 1.5 and fewer than 2 % of values
-off by more than 10. Remaining differences are expected: the GPU interpolates colour
+off by more than 10. Scenes include colour adjustments, dissolves, pushes, zooms and
+animated texts. Remaining differences are expected: the GPU interpolates colour
 planes smoothly where the CPU reuses each 2×2 block's colour, and the edges of rotated
 layers round differently.
 

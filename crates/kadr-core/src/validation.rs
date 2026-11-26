@@ -12,8 +12,10 @@ use crate::effect::{BlurStyle, ColorAdjustment, Effect, EffectKind, TrackedBlur}
 use crate::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use crate::media_asset::{MediaAsset, MediaKind};
 use crate::project::{Project, ProjectSettings};
-use crate::time::Timestamp;
+use crate::text_animation::TextAnimation;
+use crate::time::{TimeSpan, Timestamp};
 use crate::timeline::{Track, TrackKind};
+use crate::transition::{MAXIMUM_EDGE_ANIMATION_DURATION, Transition};
 
 /// Smallest canvas side, in pixels.
 const MINIMUM_CANVAS_SIDE_IN_PIXELS: u32 = 16;
@@ -179,6 +181,28 @@ pub enum ValidationError {
         clip_id: ClipId,
         /// The effect.
         effect_id: EffectId,
+        /// What is wrong.
+        reason: String,
+    },
+
+    /// A transition is invalid or on a clip that cannot have one.
+    #[error("the transition at the {edge_name} of clip {clip_id} is invalid: {reason}")]
+    InvalidTransition {
+        /// The clip.
+        clip_id: ClipId,
+        /// `"start"` or `"end"`.
+        edge_name: &'static str,
+        /// What is wrong.
+        reason: String,
+    },
+
+    /// A text animation is invalid.
+    #[error("the animation at the {edge_name} of text clip {clip_id} is invalid: {reason}")]
+    InvalidTextAnimation {
+        /// The clip.
+        clip_id: ClipId,
+        /// `"start"` or `"end"`.
+        edge_name: &'static str,
         /// What is wrong.
         reason: String,
     },
@@ -364,7 +388,7 @@ fn validate_clip(project: &Project, track: &Track, clip: &Clip) -> Result<(), Va
     for effect in &clip.effects {
         validate_effect(clip, clip_has_picture, effect)?;
     }
-    Ok(())
+    validate_transitions(clip, clip_has_picture)
 }
 
 /// Whether the clip shows pictures (a text, a video or an image).
@@ -455,7 +479,71 @@ fn validate_text(
             "the font size must be between 1 and {MAXIMUM_FONT_SIZE_IN_PIXELS} pixels, but is {font_size}"
         ));
     }
+    validate_text_animations(clip_id, text)
+}
+
+fn validate_text_animations(clip_id: ClipId, text: &TextContent) -> Result<(), ValidationError> {
+    let edges = [
+        ("start", text.entry_animation),
+        ("end", text.exit_animation),
+    ];
+    for (edge_name, animation) in edges {
+        let Some(TextAnimation { duration, .. }) = animation else {
+            continue;
+        };
+        if let Some(reason) = find_edge_duration_problem(duration) {
+            return Err(ValidationError::InvalidTextAnimation {
+                clip_id,
+                edge_name,
+                reason,
+            });
+        }
+    }
     Ok(())
+}
+
+// ----- Transitions -----
+
+fn validate_transitions(clip: &Clip, clip_has_picture: bool) -> Result<(), ValidationError> {
+    let edges = [
+        ("start", clip.entry_transition),
+        ("end", clip.exit_transition),
+    ];
+    for (edge_name, transition) in edges {
+        let Some(Transition { duration, .. }) = transition else {
+            continue;
+        };
+        let problem = match &clip.content {
+            ClipContent::Text(_) => Some(
+                "texts take text animations (fade, slide, pop, type-on…) instead of transitions"
+                    .to_string(),
+            ),
+            ClipContent::Media(_) if !clip_has_picture => {
+                Some("a transition needs a picture, and this clip only has sound".to_string())
+            }
+            ClipContent::Media(_) => find_edge_duration_problem(duration),
+        };
+        if let Some(reason) = problem {
+            return Err(ValidationError::InvalidTransition {
+                clip_id: clip.id,
+                edge_name,
+                reason,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Describes what is wrong with the duration of a transition or text animation.
+/// Durations longer than the clip are allowed: they are shortened to fit when
+/// drawn, so trimming or splitting a clip is never refused because of them.
+fn find_edge_duration_problem(duration: TimeSpan) -> Option<String> {
+    if duration.is_zero() {
+        return Some("it lasts no time at all".to_string());
+    }
+    (duration > MAXIMUM_EDGE_ANIMATION_DURATION).then(|| {
+        format!("it lasts {duration}, longer than the maximum of {MAXIMUM_EDGE_ANIMATION_DURATION}")
+    })
 }
 
 fn validate_animated_properties(clip: &Clip) -> Result<(), ValidationError> {
@@ -612,14 +700,17 @@ mod tests {
     use crate::clip::CropInsets;
     use crate::commands::{
         AddClip, AddEffect, AddTrack, ChangeProjectSettings, ClipEdge, CreatedObjectsExt,
-        ImportMedia, SetClipCrop, SetClipText, TrackPosition, TrimClip,
+        ImportMedia, SetClipCrop, SetClipText, SetClipTransition, SetTextAnimation, SplitClip,
+        TrackPosition, TrimClip,
     };
     use crate::effect::{PixelRegion, RegionSample, RegionSampleOrigin, TrackingConfidence};
     use crate::error::EditError;
     use crate::history::EditSession;
     use crate::media_asset::test_samples::{logo_image, one_minute_music, ten_second_video};
     use crate::project_file::{ProjectFileError, load_project_from_json, save_project_to_json};
+    use crate::text_animation::TextAnimationStyle;
     use crate::time::TimeSpan;
+    use crate::transition::TransitionStyle;
 
     fn seconds(value: u64) -> Timestamp {
         Timestamp::from_whole_seconds(value)
@@ -887,6 +978,118 @@ mod tests {
             error
                 .to_string()
                 .contains("not in strictly increasing time order")
+        );
+    }
+
+    #[test]
+    fn transitions_go_on_pictures_and_last_a_sensible_time() {
+        let mut fixture = fixture();
+        let add_clip = |session: &mut EditSession, track_id, media_id| {
+            session
+                .execute(AddClip::media(
+                    track_id,
+                    media_id,
+                    seconds(0),
+                    seconds(4),
+                    seconds(0),
+                ))
+                .unwrap()
+                .first_clip_id()
+                .unwrap()
+        };
+        let video_clip_id = add_clip(
+            &mut fixture.session,
+            fixture.video_track_id,
+            fixture.video_id,
+        );
+        let music_clip_id = add_clip(
+            &mut fixture.session,
+            fixture.audio_track_id,
+            fixture.music_id,
+        );
+        let fade_lasting = |duration| {
+            Some(Transition {
+                style: TransitionStyle::Fade,
+                duration,
+            })
+        };
+
+        let on_music = fixture.session.execute(SetClipTransition::new(
+            music_clip_id,
+            ClipEdge::Start,
+            fade_lasting(TimeSpan::from_whole_seconds(1)),
+        ));
+        assert!(
+            refused_rule(on_music)
+                .to_string()
+                .contains("needs a picture")
+        );
+        for refused_duration in [TimeSpan::ZERO, TimeSpan::from_whole_seconds(61)] {
+            let error = refused_rule(fixture.session.execute(SetClipTransition::new(
+                video_clip_id,
+                ClipEdge::End,
+                fade_lasting(refused_duration),
+            )));
+            assert!(
+                matches!(error, ValidationError::InvalidTransition { .. }),
+                "{error}"
+            );
+        }
+
+        // Longer than the clip is fine (it is shortened when drawn), and the clip
+        // can still be split in the middle of it.
+        fixture
+            .session
+            .execute(SetClipTransition::new(
+                video_clip_id,
+                ClipEdge::Start,
+                fade_lasting(TimeSpan::from_whole_seconds(10)),
+            ))
+            .unwrap();
+        fixture
+            .session
+            .execute(SplitClip::new(video_clip_id, seconds(1)))
+            .unwrap();
+    }
+
+    #[test]
+    fn texts_take_animations_not_transitions() {
+        let mut fixture = fixture();
+        let text_clip_id = fixture
+            .session
+            .execute(AddClip::text(
+                fixture.video_track_id,
+                "Title",
+                TimeSpan::from_whole_seconds(2),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let error = refused_rule(fixture.session.execute(SetClipTransition::new(
+            text_clip_id,
+            ClipEdge::Start,
+            Some(Transition {
+                style: TransitionStyle::Fade,
+                duration: TimeSpan::from_whole_seconds(1),
+            }),
+        )));
+        assert!(error.to_string().contains("text animations"), "{error}");
+
+        let instant_type_on = TextAnimation {
+            style: TextAnimationStyle::TypeOn,
+            duration: TimeSpan::ZERO,
+        };
+        let error = refused_rule(fixture.session.execute(SetTextAnimation::new(
+            text_clip_id,
+            ClipEdge::End,
+            Some(instant_type_on),
+        )));
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "the animation at the end of text clip {text_clip_id} is invalid: it lasts no time at all"
+            )
         );
     }
 

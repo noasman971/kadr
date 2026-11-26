@@ -10,6 +10,8 @@
 //! - [`TextRasterizer`] draws text clips with the bundled Inter font.
 //! - [`LayerPlacement::of_clip_at`] reads a clip's (possibly animated)
 //!   placement at a given moment.
+//! - [`transition_motion`] and [`text_animation_frame`] move layers during
+//!   transitions and text animations.
 //! - A single video that already fills the canvas is passed through untouched.
 //!
 //! ## Rules for this crate
@@ -30,6 +32,7 @@ pub mod layers;
 pub mod region_effects;
 pub mod renderer;
 pub mod text;
+pub mod transitions;
 
 pub use color_adjustment::{MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, adjust_color};
 pub use cpu_compositor::{CpuRenderer, composite_layers_to_rgba};
@@ -38,3 +41,6 @@ pub use layers::{CanvasDescription, LayerPlacement, LayerSizing, VisualLayer};
 pub use region_effects::{HiddenRegion, hide_regions};
 pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};
 pub use text::{BUNDLED_FONT_FAMILY, TextRasterizer};
+pub use transitions::{
+    LayerMotion, TextReveal, TransitionRole, text_animation_frame, transition_motion,
+};

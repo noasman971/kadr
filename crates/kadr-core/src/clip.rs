@@ -16,7 +16,9 @@ use crate::color::Color;
 use crate::effect::Effect;
 use crate::error::EditError;
 use crate::ids::{ClipId, EffectId, IdAllocator, MediaAssetId};
+use crate::text_animation::{TextAnimation, TextAnimationStyle};
 use crate::time::{TimeSpan, Timestamp};
+use crate::transition::{EdgePhase, Transition, TransitionStyle, active_edge_style};
 
 /// Error raised when a playback speed is out of range.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -217,6 +219,38 @@ pub struct TextContent {
     pub duration: TimeSpan,
     /// How it looks.
     pub style: TextStyle,
+    /// How the text appears, over its first moments.
+    pub entry_animation: Option<TextAnimation>,
+    /// How the text disappears, over its last moments.
+    pub exit_animation: Option<TextAnimation>,
+}
+
+impl TextContent {
+    /// A text without animations.
+    pub fn new(text: impl Into<String>, duration: TimeSpan, style: TextStyle) -> Self {
+        Self {
+            text: text.into(),
+            duration,
+            style,
+            entry_animation: None,
+            exit_animation: None,
+        }
+    }
+
+    /// The animation playing `time_in_clip` after the text appears, with where it
+    /// is, or `None` while the text is still. Animations longer than the text
+    /// are shortened to fit (see
+    /// [`fitted_edge_durations`](crate::transition::fitted_edge_durations)).
+    pub fn animation_at(&self, time_in_clip: TimeSpan) -> Option<(TextAnimationStyle, EdgePhase)> {
+        let style_and_duration =
+            |animation: Option<TextAnimation>| animation.map(|it| (it.style, it.duration));
+        active_edge_style(
+            style_and_duration(self.entry_animation),
+            style_and_duration(self.exit_animation),
+            time_in_clip,
+            self.duration,
+        )
+    }
 }
 
 /// What a clip shows.
@@ -354,10 +388,15 @@ pub struct Clip {
     pub transform: ClipTransform,
     /// Effects, applied in order.
     pub effects: Vec<Effect>,
+    /// How the picture enters, over the clip's first moments (videos and images).
+    pub entry_transition: Option<Transition>,
+    /// How the picture leaves, over the clip's last moments (videos and images).
+    pub exit_transition: Option<Transition>,
 }
 
 impl Clip {
-    /// A clip with default properties: full volume, opaque, centred, no effect.
+    /// A clip with default properties: full volume, opaque, centred, no effect,
+    /// no transition.
     pub fn new(id: ClipId, content: ClipContent, timeline_start: Timestamp) -> Self {
         Self {
             id,
@@ -367,7 +406,24 @@ impl Clip {
             opacity: AnimatedValue::constant(1.0),
             transform: ClipTransform::default(),
             effects: Vec::new(),
+            entry_transition: None,
+            exit_transition: None,
         }
+    }
+
+    /// The transition playing `time_in_clip` after the clip's start, with where
+    /// it is, or `None` while the picture is settled. Times past the clip's edges
+    /// are clamped to them. Transitions longer than the clip are shortened to fit
+    /// (see [`fitted_edge_durations`](crate::transition::fitted_edge_durations)).
+    pub fn transition_at(&self, time_in_clip: TimeSpan) -> Option<(TransitionStyle, EdgePhase)> {
+        let style_and_duration =
+            |transition: Option<Transition>| transition.map(|it| (it.style, it.duration));
+        active_edge_style(
+            style_and_duration(self.entry_transition),
+            style_and_duration(self.exit_transition),
+            time_in_clip,
+            self.timeline_duration(),
+        )
     }
 
     /// How long the clip lasts on the timeline.
@@ -433,6 +489,34 @@ impl Clip {
                     .speed
                     .timeline_span_for_source_span(elapsed_in_source),
         )
+    }
+
+    /// The moment of the source file that would play at `timeline_time` if the
+    /// clip went on past its edges at the same speed: inside the clip, the same
+    /// as [`Clip::source_time_at`]; before its start, earlier in the file (never
+    /// before the file's beginning); after its end, later in the file. Used to
+    /// show a clip under a transition of the clip touching it. Keeping the time
+    /// inside the file's length is left to the caller, which knows it. `None` for
+    /// text clips.
+    pub fn source_time_continued_at(&self, timeline_time: Timestamp) -> Option<Timestamp> {
+        let ClipContent::Media(segment) = &self.content else {
+            return None;
+        };
+        let speed = segment.speed;
+        match timeline_time.span_since(self.timeline_start) {
+            Some(elapsed) => {
+                Some(segment.source_start + speed.source_span_for_timeline_span(elapsed))
+            }
+            None => {
+                let ahead = self.timeline_start.span_since(timeline_time)?;
+                Some(
+                    segment
+                        .source_start
+                        .checked_sub(speed.source_span_for_timeline_span(ahead))
+                        .unwrap_or(Timestamp::ZERO),
+                )
+            }
+        }
     }
 
     /// The animated value of `property`.
@@ -505,11 +589,15 @@ impl Clip {
 
         let (first_content, second_content) = self.split_content_at(offset_from_start);
 
+        // The entry stays at the start of the first part, the exit at the end of
+        // the second part.
         let mut first_part = self.clone();
         first_part.content = first_content;
+        first_part.exit_transition = None;
 
         let mut second_part = self.clone();
         second_part.content = second_content;
+        second_part.entry_transition = None;
         second_part.id = ClipId::from_raw(id_allocator.allocate_raw_id());
         second_part.timeline_start = split_time;
         for effect in &mut second_part.effects {
@@ -549,6 +637,7 @@ impl Clip {
             ClipContent::Text(text) => {
                 let first_text = TextContent {
                     duration: offset_from_start,
+                    exit_animation: None,
                     ..text.clone()
                 };
                 let second_text = TextContent {
@@ -556,6 +645,7 @@ impl Clip {
                         .duration
                         .checked_sub(offset_from_start)
                         .unwrap_or(TimeSpan::ZERO),
+                    entry_animation: None,
                     ..text.clone()
                 };
                 (
@@ -699,11 +789,11 @@ pub(crate) mod test_samples {
     ) -> Clip {
         Clip::new(
             ClipId::from_raw(clip_id),
-            ClipContent::Text(TextContent {
-                text: "Hello".to_string(),
-                duration: TimeSpan::from_whole_seconds(duration_seconds),
-                style: TextStyle::default(),
-            }),
+            ClipContent::Text(TextContent::new(
+                "Hello",
+                TimeSpan::from_whole_seconds(duration_seconds),
+                TextStyle::default(),
+            )),
             Timestamp::from_whole_seconds(timeline_start_seconds),
         )
     }
@@ -761,6 +851,58 @@ mod tests {
         assert_eq!(clip.source_time_at(seconds(2)), Some(seconds(4)));
         assert_eq!(clip.timeline_time_showing(seconds(4)), Some(seconds(2)));
         assert_eq!(clip.timeline_time_showing(seconds(10)), None);
+    }
+
+    #[test]
+    fn the_source_continues_past_the_clip_edges() {
+        let mut clip = media_clip(1, MediaAssetId::from_raw(9), 2, 8, 10);
+        if let ClipContent::Media(segment) = &mut clip.content {
+            segment.speed = PlaybackSpeed::from_fraction(2, 1).unwrap();
+        }
+        // Source 2–8 s at 2× lasts 3 s on the timeline, from 10 s to 13 s.
+        assert_eq!(clip.source_time_continued_at(seconds(11)), Some(seconds(4)));
+        assert_eq!(
+            clip.source_time_continued_at(seconds(14)),
+            Some(seconds(10))
+        );
+        assert_eq!(clip.source_time_continued_at(seconds(9)), Some(seconds(0)));
+        assert_eq!(
+            clip.source_time_continued_at(seconds(5)),
+            Some(Timestamp::ZERO)
+        );
+        assert_eq!(
+            text_clip(2, 4, 0).source_time_continued_at(seconds(1)),
+            None
+        );
+    }
+
+    #[test]
+    fn splitting_keeps_the_entry_on_the_first_part_and_the_exit_on_the_second() {
+        use crate::transition::{Transition, TransitionStyle};
+        let mut id_allocator = IdAllocator::default();
+        let mut clip = media_clip(
+            id_allocator.allocate_raw_id(),
+            MediaAssetId::from_raw(9),
+            0,
+            8,
+            0,
+        );
+        let fade = Transition {
+            style: TransitionStyle::Fade,
+            duration: TimeSpan::from_whole_seconds(1),
+        };
+        clip.entry_transition = Some(fade);
+        clip.exit_transition = Some(fade);
+
+        let (first_part, second_part) = clip.split_at(seconds(4), &mut id_allocator).unwrap();
+        assert_eq!(
+            (first_part.entry_transition, first_part.exit_transition),
+            (Some(fade), None)
+        );
+        assert_eq!(
+            (second_part.entry_transition, second_part.exit_transition),
+            (None, Some(fade))
+        );
     }
 
     #[test]

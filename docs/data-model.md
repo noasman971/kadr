@@ -19,6 +19,8 @@ flowchart TD
     clips --> properties[Volume, opacity, position, scale, rotation<br/>AnimatedValue with keyframes]
     clips --> crop[Crop]
     clips --> effects[Effects<br/>colour adjustment, tracked blur]
+    clips --> transitions[Entry and exit transitions<br/>videos and images]
+    content --> animations[Entry and exit animations<br/>texts]
 ```
 
 ## Time
@@ -70,6 +72,11 @@ A `Clip` has:
 | `volume_multiplier`, `opacity` | Animatable values |
 | `transform` | Position (from the canvas centre), scale (1 = fits the canvas), rotation, crop |
 | `effects` | Applied in order |
+| `entry_transition`, `exit_transition` | How a video or image enters and leaves the picture (fade, slide, zoom) |
+
+A text's content also holds its `entry_animation` and `exit_animation` (fade, slide,
+pop, type-on, word by word). Both are explained in
+[transitions-and-text-animations.md](transitions-and-text-animations.md).
 
 The duration of a media clip is computed, not stored: source range ÷ speed. Speeds are
 exact fractions too (1.5× is stored as 3/2).
@@ -112,6 +119,7 @@ a small struct implementing `EditCommand`:
 | Clips | `AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `SetClipSpeed`, `SetClipPropertyValue`, `SetClipCrop`, `SetClipText` |
 | Keyframes | `SetKeyframe`, `RemoveKeyframe` |
 | Effects | `AddEffect`, `RemoveEffect`, `ReplaceEffect`, `SetEffectEnabled` |
+| Transitions | `SetClipTransition`, `SetTextAnimation` |
 
 ### The edit session
 
@@ -148,6 +156,9 @@ command and on every loaded file.
 - Crop: each edge from 0 to below 1, opposite edges not removing the whole picture.
 - Effects: picture effects only on clips with a picture, tracked blur only on media
   clips, settings in range, region samples sorted and well formed.
+- Transitions only on videos and images, text animations only on texts; both last
+  more than zero and at most 60 s (longer than the clip is fine: they are shortened
+  to fit when drawn).
 
 ## The project file
 
@@ -155,7 +166,7 @@ A `.kadr` file is indented JSON:
 
 ```json
 {
-  "format_version": 1,
+  "format_version": 2,
   "project": {
     "settings": { "canvas_size": { "width_in_pixels": 1080, "height_in_pixels": 1920 }, … },
     "media_assets": [ … ],
@@ -172,6 +183,15 @@ is kept as a snapshot test in
 - `save_project_to_json` writes the file text; `load_project_from_json` reads it.
 - When the format changes, `CURRENT_FORMAT_VERSION` goes up and a `Migration` is added;
   older files are upgraded step by step when loaded.
+
+  | Version | Change |
+  |---|---|
+  | 1 | First format (phase 1) |
+  | 2 | `entry_transition` and `exit_transition` on clips, `entry_animation` and `exit_animation` on texts (phase 8) |
+
+  The version 1 snapshot is kept as
+  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr`; a test checks it
+  still opens as the same project.
 - A file from a **newer** Kadr is refused with a message asking to update, rather than
   losing data.
 - Every loaded project is validated: a damaged file never reaches the editor.

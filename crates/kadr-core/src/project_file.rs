@@ -25,7 +25,12 @@ use crate::project::Project;
 use crate::validation::{ValidationError, validate_project};
 
 /// The format version written by this version of Kadr.
-pub const CURRENT_FORMAT_VERSION: u32 = 1;
+///
+/// | Version | Change |
+/// |---|---|
+/// | 1 | First format (phase 1) |
+/// | 2 | Transitions on clips, animations on texts (phase 8) |
+pub const CURRENT_FORMAT_VERSION: u32 = 2;
 
 /// The recommended file extension, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
@@ -87,9 +92,40 @@ pub struct Migration {
     pub upgrade_document: fn(&mut Value) -> Result<(), String>,
 }
 
-/// Every migration, in increasing `from_version` order. Empty while the format
-/// is still at version 1.
-pub const MIGRATIONS: &[Migration] = &[];
+/// Every migration, in increasing `from_version` order.
+pub const MIGRATIONS: &[Migration] = &[Migration {
+    from_version: 1,
+    upgrade_document: add_transitions_and_text_animations,
+}];
+
+/// Version 1 → 2: every clip gets `entry_transition` and `exit_transition`, and
+/// every text gets `entry_animation` and `exit_animation`, all empty (`null`).
+fn add_transitions_and_text_animations(document: &mut Value) -> Result<(), String> {
+    let tracks = document
+        .pointer_mut("/project/timeline/tracks")
+        .and_then(Value::as_array_mut)
+        .ok_or("the project has no list of tracks")?;
+    for track in tracks {
+        let clips = track
+            .get_mut("clips")
+            .and_then(Value::as_array_mut)
+            .ok_or("a track has no list of clips")?;
+        for clip in clips {
+            let clip_fields = clip.as_object_mut().ok_or("a clip is not an object")?;
+            clip_fields.insert("entry_transition".to_string(), Value::Null);
+            clip_fields.insert("exit_transition".to_string(), Value::Null);
+            let content = clip_fields
+                .get_mut("content")
+                .and_then(Value::as_object_mut)
+                .ok_or("a clip has no content")?;
+            if content.get("type").and_then(Value::as_str) == Some("text") {
+                content.insert("entry_animation".to_string(), Value::Null);
+                content.insert("exit_animation".to_string(), Value::Null);
+            }
+        }
+    }
+    Ok(())
+}
 
 /// The top of the file, as written.
 #[derive(Serialize)]
@@ -181,8 +217,43 @@ mod tests {
     fn an_empty_project_round_trips() {
         let project = Project::new(ProjectSettings::vertical_1080x1920());
         let json_text = save_project_to_json(&project).unwrap();
-        assert!(json_text.contains("\"format_version\": 1"));
+        assert!(json_text.contains("\"format_version\": 2"));
         assert_eq!(load_project_from_json(&json_text).unwrap(), project);
+    }
+
+    /// A version 1 file (phases 1 to 7), kept from the editing scenario's
+    /// snapshot before the format changed.
+    const VERSION_1_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_1.kadr");
+
+    #[test]
+    fn version_1_files_are_upgraded_without_transitions_or_animations() {
+        use crate::clip::ClipContent;
+
+        let project = load_project_from_json(VERSION_1_FILE).unwrap();
+        let clips: Vec<_> = project
+            .timeline()
+            .all_clips()
+            .map(|(_, clip)| clip)
+            .collect();
+        assert_eq!(clips.len(), 4);
+        assert!(
+            clips
+                .iter()
+                .all(|clip| clip.entry_transition.is_none() && clip.exit_transition.is_none())
+        );
+        let texts: Vec<_> = clips
+            .iter()
+            .filter_map(|clip| match &clip.content {
+                ClipContent::Text(text_content) => Some(text_content),
+                ClipContent::Media(_) => None,
+            })
+            .collect();
+        assert_eq!(texts.len(), 1);
+        assert_eq!(texts[0].entry_animation, None);
+        assert_eq!(texts[0].exit_animation, None);
+        // Saved again, it is a version 2 file that reads back identically.
+        let saved_again = save_project_to_json(&project).unwrap();
+        assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
     }
 
     #[test]
@@ -196,8 +267,15 @@ mod tests {
             Err(ProjectFileError::MissingFormatVersion)
         ));
         assert!(matches!(
-            load_project_from_json(r#"{ "format_version": 1 }"#),
+            load_project_from_json(r#"{ "format_version": 2 }"#),
             Err(ProjectFileError::MalformedFile(_))
+        ));
+        assert!(matches!(
+            load_project_from_json(r#"{ "format_version": 1 }"#),
+            Err(ProjectFileError::MigrationFailed {
+                from_version: 1,
+                ..
+            })
         ));
         assert!(matches!(
             load_project_from_json(r#"{ "format_version": 0, "project": {} }"#),
