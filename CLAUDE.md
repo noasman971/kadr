@@ -21,18 +21,21 @@ It is the source of truth for scope, phases and rules.
 - **Phase 0 (foundations): done and validated**, tagged `v0.1.0`.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
-- **Phase 3 (GPU rendering): done**, in three pull requests: 3a GPU compositing and
-  YUV colour pipeline (PR #3), 3b text with the bundled Inter font (PR #4; the owner
-  chose to bundle it), 3c colour adjustment and tracked blur rendering (branch
-  `feature/phase-3c-effects`). Tag `v0.4.0` once the owner validates the phase.
-- **Next: phase 4** — face tracking (MOSSE/KCF) filling the tracked blurs.
+- **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
+- **Phase 4 (tracking): in progress.** 4a, the region tracker in `kadr-vision`
+  (MOSSE, PSR, Lucas-Kanade with Median Flow size, NCC recovery, One Euro smoothing),
+  on branch `feature/phase-4a-region-tracker`. Next, 4b: the analysis in
+  `kadr-engine` (forwards and backwards from the selected frame, samples stored in the
+  `TrackedBlur`), `kadr-cli blur … --debug`, speed on a real 1080p video.
+- **Phases 5 and 6 run in parallel** (owner's request, 2026-11-26), each in its own
+  session and worktree: phase 5 the MCP server, phase 6 the desktop app. Versions are
+  still tagged in phase order, after the owner validates each phase.
 - **Phase 5 (MCP server, file mode)**: branch `feature/phase-5-mcp-server`, run in
-  parallel with phase 4. 34 tools in `kadr-tools`, served by `kadr-mcp`.
-  **Pending:** `detect_silences` (the analysis is written in
-  `crates/kadr-vision/src/silence_detection.rs`; add `pub mod silence_detection;` to
-  `kadr-vision/src/lib.rs`, the engine call and the tool once phase 4a is merged),
-  `blur_region` and `get_blur_status` (need phase 4b's tracking in `kadr-engine`).
-  Version tags go in phase order: v0.5.0 = phase 4, v0.6.0 = phase 5.
+  parallel with phase 4. 35 tools in `kadr-tools`, served by `kadr-mcp`.
+  **Pending:** `blur_region` and `get_blur_status`, which need phase 4b's tracking
+  analysis in `kadr-engine` (add them in `kadr-tools/src/tools/`, a new
+  `blur_tools.rs`, once 4b is merged). Version tags go in phase order: v0.5.0 =
+  phase 4, v0.6.0 = phase 5.
 
 ## Decisions taken with the owner
 
@@ -55,7 +58,9 @@ It is the source of truth for scope, phases and rules.
   to `main` are refused. If a CI job is renamed, update the required checks too
   (`gh api repos/noasman971/kadr/branches/main/protection`), or every PR will wait for
   a check that never runs. Tags can still be pushed.
-- Architecture decisions are recorded in [docs/decisions/](docs/decisions/).
+- Architecture decisions are recorded in [docs/decisions/](docs/decisions/). While
+  phases run in parallel, record numbers are reserved to avoid clashes: phase 4 uses
+  0007–0009, phase 5 0010–0019, phase 6 0020–0029.
 
 ## Commands
 
@@ -169,3 +174,16 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
   files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
   with a comment explaining why.
+- Tracking, size: MOSSE tried at several scales drifts (it learns the slightly wrong
+  size every frame), and DSST on grey levels cannot see a zoom at all. The size comes
+  from the optical flow points (Median Flow): see decision 0007 before changing it.
+- Tracking, optical flow: on coarse pyramid levels a 15 × 15 window is larger than the
+  region and follows the background. The coarsest level is limited by the region's
+  size, and the search starts from the previous frame's motion.
+- Halving an image by averaging 2 × 2 blocks aliases badly; the pyramid blurs with
+  weights 1, 3, 3, 1 first.
+- `rustfft`'s inverse transform is not normalised (results are N times larger).
+- `cargo doc` runs with `-D warnings` in CI: public docs must not link to private
+  modules (`[crate::optical_flow]`); name the file in backticks instead.
+- Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
+  the script to the scratchpad and run it from there.

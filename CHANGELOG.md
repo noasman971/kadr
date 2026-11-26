@@ -8,12 +8,32 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+### Added (phase 4a: region tracker)
+
+- `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
+  AI:
+  - a MOSSE correlation filter finds its position;
+  - the peak-to-sidelobe ratio rates each frame as confident, uncertain or lost;
+  - pyramidal Lucas-Kanade optical flow predicts fast motion and measures changes of
+    size (Median Flow);
+  - normalised cross-correlation with the memorised appearance finds a lost region
+    again.
+- `smooth_track`: One Euro smoothing, forwards and backwards, so the blur neither
+  shakes nor lags.
+- `GreyImage`: brightness images built straight from a video's Y plane, optionally
+  shrunk to about 640 pixels wide (`shrink_factor_for_tracking`).
+- `synthetic_scenes`: textured scenes with a known truth, for tests and benchmarks.
+- Tracking scenarios (motion, acceleration, coming closer, moving away, camera pan,
+  occlusion, leaving the frame, backwards) and `criterion` benchmarks
+  (`cargo bench -p kadr-vision`).
+- `docs/tracking-and-blur.md`, decision record 0007.
+
 ### Added (phase 5: MCP server, file mode)
 
 - `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
   3.11, that Claude Desktop and Claude Code start with `--allowed-folder <folder>`
   arguments. Nothing but the protocol is written to stdout; logs go to stderr.
-- `kadr-tools`: 34 tools defined once (name, description for a language model, JSON
+- `kadr-tools`: 35 tools defined once (name, description for a language model, JSON
   schema generated with `schemars`, code), independent of MCP: project
   (`create_project`, `open_project`, `save_project`, `get_project_info`,
   `set_project_settings`, `undo`, `redo`), media (`find_media_files`, `probe_media`,
@@ -22,7 +42,8 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   clip properties (`set_clip_speed`, `set_clip_volume`, `set_transform`), content
   (`add_text`, `edit_text`, `add_transition`, `remove_transitions`,
   `add_color_adjustment`, `remove_effect`), pictures (`get_frame`,
-  `get_contact_sheet`) and export (`export`, `get_export_status`, `cancel_export`).
+  `get_contact_sheet`), sound (`detect_silences`) and export (`export`,
+  `get_export_status`, `cancel_export`).
 - One tool call is one undo step labelled "Claude: …"; the project file is saved
   after every change and never overwritten if another program changed it.
 - File access limited to the allowed folders (links and `..` resolved), no file
@@ -33,11 +54,14 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   YouTube 1080p and 4K, with automatic scaling when the shape matches.
 - `kadr-engine::still_frames`: single pictures of a file, a clip or the finished
   timeline, and labelled contact sheets.
-- `kadr-vision::silence_detection` (RMS level per 10 ms window), wired to a
-  `detect_silences` tool once phase 4a's `kadr-vision` changes are merged.
+- Silence detection: `kadr-vision::silence_detection` (RMS level per 10 ms window,
+  incremental), `kadr-engine::silence_analysis` (sound decoded piece by piece at
+  16 kHz), the `detect_silences` tool.
 - Integration tests driving the server through an MCP client, including the real
   binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
   README section "Editing with Claude".
+
+## [0.4.0] — Phase 3: GPU rendering
 
 ### Added (phase 3a: GPU rendering)
 
@@ -74,6 +98,17 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - The export reports tracked blurs without regions and ignored colour adjustments.
 - Tests: region effects, colour formula, GPU/CPU parity with adjustments, exports of a
   moving hidden area and of a black-and-white adjustment.
+
+### Added (phase 6a: desktop app design)
+
+- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
+  notifications, keyboard shortcuts, languages and accessibility.
+- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
+  light themes, with measured WCAG contrast, and the component list.
+- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
+  both languages.
+- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
+  repository) and 0022 (how the front end and the engine talk).
 
 ### Changed
 

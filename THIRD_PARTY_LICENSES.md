@@ -35,6 +35,7 @@ run while compiling (procedural macros) and are not part of the program.
 | `ctrlc` | Clean cancellation with Ctrl+C in `kadr-cli` | MIT OR Apache-2.0 |
 | `wgpu`, `naga` and their dependencies (`ash`, `glow`, `gpu-allocator`, `half`…) | GPU rendering | MIT OR Apache-2.0 (some also Zlib, BSD, ISC, Apache-2.0 only) |
 | `pollster` | Waiting for GPU operations | MIT OR Apache-2.0 |
+| `rustfft` (+ `num-complex`, `num-traits`, `num-integer`, `primal-check`, `strength_reduce`, `transpose`) | Fourier transforms of the region tracker | MIT OR Apache-2.0 |
 | `cosmic-text` and its dependencies (`swash`, `harfrust`, `skrifa`, `fontdb`, `ttf-parser`, `unicode-*`…) | Text layout and rasterisation | MIT OR Apache-2.0 / MIT / Apache-2.0 / Zlib; `self_cell` is used under Apache-2.0 |
 | `rmcp` and its dependencies (`tokio`, `tokio-util`, `futures`, `pin-project-lite`, `uuid`, `chrono`, `pastey`…) | The MCP server (`kadr-mcp`) | Apache-2.0 (`rmcp`) / MIT / MIT OR Apache-2.0 |
 | `schemars` (+ `schemars_derive` *(build)*, `dyn-clone`, `ref-cast`) | JSON schemas of the tool parameters | MIT / MIT OR Apache-2.0 |

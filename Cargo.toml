@@ -27,6 +27,7 @@ kadr-media = { path = "crates/kadr-media", default-features = false }
 kadr-render = { path = "crates/kadr-render" }
 kadr-engine = { path = "crates/kadr-engine" }
 kadr-tools = { path = "crates/kadr-tools" }
+kadr-vision = { path = "crates/kadr-vision" }
 
 # Image content returned to Claude is base64 text inside MCP messages.
 base64 = "0.23.1"
@@ -44,6 +45,7 @@ pollster = "1.0.3"
 rayon = "1.12.0"
 # The official Rust SDK of the Model Context Protocol (see decision record 0010).
 rmcp = { version = "3.11.0", default-features = false, features = ["server", "transport-io"] }
+rustfft = "6.4.1"
 # JSON schemas of the tool parameters, generated from the Rust types.
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -76,6 +78,14 @@ expect_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+
+[profile.dev.package.kadr-vision]
+# Tracking tests follow synthetic objects over hundreds of frames: optimise the
+# vision code even in debug builds so that `cargo test` stays quick.
+opt-level = 2
+
+[profile.dev.package.rustfft]
+opt-level = 3
 
 [profile.release]
 # Video processing is CPU heavy: optimise across crates in release builds.
