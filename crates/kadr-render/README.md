@@ -1,10 +1,12 @@
 # kadr-render
 
-The compositor: renders the image of a timeline at a given time (transforms, opacity,
-text, transitions, blurs). The same code drives the preview and the export.
+The compositor: draws the pictures visible at one moment onto the canvas, with their
+position, scale, rotation, crop and opacity. The same code drives the preview and the
+export.
 
-- **Will depend on:** `kadr-core`.
+- **Depends on:** `kadr-core`, `image`, `rayon`.
 - **Used by:** `kadr-engine`.
-- **Status:** empty skeleton (phase 0). CPU version in phase 2, GPU (`wgpu`) in phase 3.
+- **Status:** CPU compositor with parallel rows (phase 2). GPU (`wgpu`), text,
+  transitions and blurs in phase 3.
 
-See [docs/architecture.md](../../docs/architecture.md).
+See [docs/media-and-export.md](../../docs/media-and-export.md).
