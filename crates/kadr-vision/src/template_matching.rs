@@ -1,17 +1,26 @@
-//! Finding a lost region again, by its appearance.
+//! Recognising the region by its appearance: to find it again when it is lost,
+//! and to keep the tracker from drifting away from the selection.
 //!
-//! When the correlation filter loses the region (a hand in front of the face, a
-//! person walking past), the tracker keeps a small picture of the region taken
-//! while tracking was sure: an [`AppearanceTemplate`]. Each frame, it slides that
-//! picture over a wide area around the last known position and measures the
+//! The tracker keeps small pictures of the region: an [`AppearanceTemplate`] of
+//! the user's selection, and one taken recently while tracking was sure. To
+//! compare one with a frame, it slides the picture over an area and measures the
 //! normalised cross-correlation (NCC) at every offset:
 //!
 //! `NCC = Σ (T − T̄)(P − P̄) / (‖T − T̄‖ · ‖P − P̄‖)`
 //!
 //! where `T` is the template and `P` the patch of the frame under it. NCC goes from
 //! −1 to 1 and ignores brightness and contrast changes: 1 means the same picture.
-//! The best offset is only a candidate: the tracker confirms it with the
-//! correlation filter before saying the region is found.
+//!
+//! - **Lost region** ([`AppearanceTemplate::search`]): when the correlation filter
+//!   loses the region (a hand in front of the face, a person walking past), both
+//!   pictures are searched over a wide area around the last known position. The
+//!   best offset is only a candidate: the tracker confirms it with the
+//!   correlation filter before saying the region is found.
+//! - **Anchor** ([`AppearanceTemplate::best_match_near`]): on every frame the
+//!   filter is sure of, the selection's picture is searched a few cells around
+//!   the answer, at three sizes, and refined between cells. The filter keeps
+//!   learning the region's appearance, so its small errors add up; the
+//!   selection's picture never changes, so it cannot drift.
 //!
 //! Reference: J. P. Lewis, "Fast Normalized Cross-Correlation", Vision Interface 1995.
 //!
@@ -19,6 +28,7 @@
 //! along the longer side): it tolerates small changes of pose, and searching a
 //! wide area stays cheap.
 
+use crate::correlation_filter::parabolic_peak_offset;
 use crate::geometry::{Point, Region};
 use crate::grey_image::{GreyImage, ImagePyramid};
 
@@ -49,6 +59,87 @@ pub(crate) struct AppearanceMatch {
     pub(crate) center: Point,
     /// Normalised cross-correlation, from −1 to 1.
     pub(crate) similarity: f32,
+}
+
+/// The best place found for a template close to a region.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct NearbyMatch {
+    /// The region, moved and resized to where the template matches best.
+    pub(crate) region: Region,
+    /// Normalised cross-correlation there, from −1 to 1.
+    pub(crate) similarity: f32,
+}
+
+/// The similarities of a template at every offset of a square around a region.
+#[derive(Debug, Clone)]
+struct SimilarityGrid {
+    /// Offsets along each side (an odd number: the region's centre is the middle).
+    side: usize,
+    /// Row after row; −1 where the patch is uniform.
+    similarities: Vec<f32>,
+    best_index: usize,
+    best_similarity: f32,
+}
+
+impl SimilarityGrid {
+    /// The best offset from the middle, in cells, refined between cells.
+    fn refined_best_offset_in_cells(&self) -> (f32, f32) {
+        let (row, column) = (self.best_index / self.side, self.best_index % self.side);
+        let at = |row: usize, column: usize| self.similarities[row * self.side + column];
+        let refined = |position: usize, before: Option<f32>, after: Option<f32>| {
+            let offset = match (before, after) {
+                (Some(before), Some(after)) => {
+                    parabolic_peak_offset(before, self.best_similarity, after)
+                }
+                _ => 0.0,
+            };
+            position as f32 + offset - (self.side / 2) as f32
+        };
+        let last = self.side - 1;
+        (
+            refined(
+                column,
+                (column > 0).then(|| at(row, column - 1)),
+                (column < last).then(|| at(row, column + 1)),
+            ),
+            refined(
+                row,
+                (row > 0).then(|| at(row - 1, column)),
+                (row < last).then(|| at(row + 1, column)),
+            ),
+        )
+    }
+}
+
+/// The scale factor between the best one and its neighbours, from a parabola
+/// through their best similarities (on a logarithmic scale, since scale steps
+/// multiply).
+fn refined_scale_factor(
+    per_scale: &[Option<SimilarityGrid>],
+    scale_factors: &[f32],
+    best_index: usize,
+) -> f32 {
+    let best = scale_factors[best_index];
+    let similarity_of = |index: usize| {
+        per_scale
+            .get(index)
+            .and_then(Option::as_ref)
+            .map(|grid| grid.best_similarity)
+    };
+    let Some(before_index) = best_index.checked_sub(1) else {
+        return best;
+    };
+    let after_index = best_index + 1;
+    let (Some(before), Some(peak), Some(after)) = (
+        similarity_of(before_index),
+        similarity_of(best_index),
+        similarity_of(after_index),
+    ) else {
+        return best;
+    };
+    // Equal steps on a logarithmic scale: interpolate the exponent.
+    let step = (scale_factors[after_index] / best).ln();
+    best * (parabolic_peak_offset(before, peak, after) * step).exp()
 }
 
 /// The cells of a template laid over a region: their number and size.
@@ -159,6 +250,93 @@ impl AppearanceTemplate {
         best
     }
 
+    /// Finds where the template matches best close to `region`: within
+    /// `radius_in_cells` template cells of its centre, at its size multiplied by
+    /// each of `scale_factors`. The position and the size are refined to a
+    /// fraction of a cell and of a scale step (a parabola through the best answer
+    /// and its neighbours), so that small corrections are not rounded away.
+    ///
+    /// Returns `None` if every place searched is uniform.
+    pub(crate) fn best_match_near(
+        &self,
+        pyramid: &ImagePyramid,
+        region: &Region,
+        radius_in_cells: usize,
+        scale_factors: &[f32],
+    ) -> Option<NearbyMatch> {
+        let per_scale: Vec<Option<SimilarityGrid>> = scale_factors
+            .iter()
+            .map(|&scale_factor| {
+                self.similarity_grid(pyramid, &region.scaled_by(scale_factor), radius_in_cells)
+            })
+            .collect();
+        let (best_scale_index, best_grid) = per_scale
+            .iter()
+            .enumerate()
+            .filter_map(|(index, grid)| grid.as_ref().map(|grid| (index, grid)))
+            .max_by(|first, second| first.1.best_similarity.total_cmp(&second.1.best_similarity))?;
+        let (offset_column, offset_row) = best_grid.refined_best_offset_in_cells();
+        let cell_size_in_pixels = region
+            .scaled_by(scale_factors[best_scale_index])
+            .longer_side()
+            / TEMPLATE_LONGER_SIDE_IN_CELLS as f32;
+        let scale_factor = refined_scale_factor(&per_scale, scale_factors, best_scale_index);
+        Some(NearbyMatch {
+            region: region
+                .moved_by(
+                    offset_column * cell_size_in_pixels,
+                    offset_row * cell_size_in_pixels,
+                )
+                .scaled_by(scale_factor),
+            similarity: best_grid.best_similarity,
+        })
+    }
+
+    /// The similarity at every offset of up to `radius_in_cells` cells around
+    /// `region`, at `region`'s size.
+    fn similarity_grid(
+        &self,
+        pyramid: &ImagePyramid,
+        region: &Region,
+        radius_in_cells: usize,
+    ) -> Option<SimilarityGrid> {
+        let cell_size_in_pixels = region.longer_side() / TEMPLATE_LONGER_SIDE_IN_CELLS as f32;
+        let area_width = 2 * radius_in_cells + self.width_in_cells;
+        let area_height = 2 * radius_in_cells + self.height_in_cells;
+        let area = sample_cells(
+            pyramid,
+            cell_size_in_pixels,
+            Point {
+                x: region.center_x
+                    - (radius_in_cells as f32 + self.width_in_cells as f32 / 2.0)
+                        * cell_size_in_pixels,
+                y: region.center_y
+                    - (radius_in_cells as f32 + self.height_in_cells as f32 / 2.0)
+                        * cell_size_in_pixels,
+            },
+            area_width,
+            area_height,
+        );
+        let side = 2 * radius_in_cells + 1;
+        let similarities: Vec<f32> = (0..side * side)
+            .map(|index| {
+                self.similarity_at(&area, area_width, index % side, index / side)
+                    .unwrap_or(-1.0)
+            })
+            .collect();
+        let (best_index, best_similarity) = similarities
+            .iter()
+            .copied()
+            .enumerate()
+            .max_by(|first, second| first.1.total_cmp(&second.1))?;
+        (best_similarity > -1.0).then_some(SimilarityGrid {
+            side,
+            similarities,
+            best_index,
+            best_similarity,
+        })
+    }
+
     /// NCC between the template and the patch of `area` whose top-left cell is
     /// at (`offset_column`, `offset_row`). `None` if the patch is uniform.
     fn similarity_at(
@@ -217,18 +395,70 @@ mod tests {
     use crate::synthetic_scenes::{SceneFrame, SceneObject};
 
     fn scene_pyramid(object_left: f32, object_top: f32) -> ImagePyramid {
+        pyramid_with_object(Region::from_top_left(object_left, object_top, 40.0, 48.0))
+    }
+
+    fn pyramid_with_object(object: Region) -> ImagePyramid {
         let frame = SceneFrame {
             width: 320,
             height: 240,
             background_seed: 11,
             background_offset_in_pixels: 0.0,
             object: Some(SceneObject {
-                region: Region::from_top_left(object_left, object_top, 40.0, 48.0),
+                region: object,
                 texture_seed: 5,
             }),
             obstacle: None,
         };
         ImagePyramid::new(frame.render(), 16)
+    }
+
+    #[test]
+    fn a_small_shift_and_change_of_size_are_measured_between_cells() {
+        let selection = Region::from_top_left(100.0, 80.0, 40.0, 48.0);
+        let template =
+            AppearanceTemplate::capture(&pyramid_with_object(selection), &selection).unwrap();
+        // A cell is 3 pixels here: the object moved by a fraction of a cell and grew by 3 %.
+        let moved = Region {
+            center_x: selection.center_x + 4.4,
+            center_y: selection.center_y - 2.3,
+            ..selection.scaled_by(1.03)
+        };
+        let found = template
+            .best_match_near(
+                &pyramid_with_object(moved),
+                &selection,
+                3,
+                &[1.0 / 1.04, 1.0, 1.04],
+            )
+            .unwrap();
+        // The texture's details are about two cells wide: cells that do not line
+        // up with them lower the similarity, not the accuracy.
+        assert!(found.similarity > 0.75, "{found:?}");
+        assert!(found.region.center_distance_to(&moved) < 0.5, "{found:?}");
+        assert!(
+            (found.region.width / moved.width - 1.0).abs() < 0.015,
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn where_nothing_moved_the_region_is_kept() {
+        let selection = Region::from_top_left(100.0, 80.0, 40.0, 48.0);
+        let pyramid = pyramid_with_object(selection);
+        let template = AppearanceTemplate::capture(&pyramid, &selection).unwrap();
+        let found = template
+            .best_match_near(&pyramid, &selection, 3, &[1.0 / 1.04, 1.0, 1.04])
+            .unwrap();
+        assert!(found.similarity > 0.99, "{found:?}");
+        assert!(
+            found.region.center_distance_to(&selection) < 0.3,
+            "{found:?}"
+        );
+        assert!(
+            (found.region.width / selection.width - 1.0).abs() < 0.01,
+            "{found:?}"
+        );
     }
 
     #[test]

@@ -49,8 +49,16 @@ pub(crate) const CONTEXT_FACTOR: f32 = 2.0;
 const TARGET_PEAK_SIGMA_IN_CELLS: f32 = 2.0;
 
 /// How fast the filter learns a new appearance: the weight of the newest frame
-/// (0 = never learns, 1 = only remembers the last frame). Bolme et al. use 0.125.
-const LEARNING_RATE: f32 = 0.125;
+/// (0 = never learns, 1 = only remembers the last frame).
+///
+/// Bolme et al. use 0.125. On a real 1080p video, that made the filter forget
+/// the selection within a few frames: every small error of position was learnt
+/// as the new centre, and the region slid 2 to 4 pixels per second onto the
+/// background while the PSR stayed high. KCF and DSST use 0.02 to 0.025; on
+/// the same video 0.02 brought the mean error from 197 to 4 pixels, and 0 lost
+/// the region (its appearance does change). The tracker also anchors the
+/// region to the selection's appearance (see `tracker.rs`).
+const LEARNING_RATE: f32 = 0.02;
 
 /// `λ`, relative to the average energy per frequency of the training windows.
 const REGULARIZATION_RELATIVE_TO_MEAN_ENERGY: f32 = 0.01;

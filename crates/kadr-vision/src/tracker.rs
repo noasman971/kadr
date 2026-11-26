@@ -50,6 +50,31 @@ const RECOVERY_SEARCH_GROWTH_IN_REGION_SIDES_PER_FRAME: f32 = 0.1;
 /// …up to this many region sides.
 const RECOVERY_SEARCH_MAXIMUM_IN_REGION_SIDES: f32 = 3.0;
 
+/// Template cells around a confident detection where the selection's appearance
+/// is looked for, to correct a slow drift.
+const ANCHOR_SEARCH_RADIUS_IN_CELLS: usize = 3;
+
+/// Sizes tried around a confident detection's, to correct a drift of the size:
+/// 4 % smaller, the same, 4 % larger (equal steps on a logarithmic scale, as
+/// `AppearanceTemplate::best_match_near` expects).
+const ANCHOR_SCALE_FACTORS: [f32; 3] = [1.0 / 1.04, 1.0, 1.04];
+
+/// The selection's appearance must match at least this well near a confident
+/// detection to correct it.
+const ANCHOR_MINIMUM_SIMILARITY: f32 = 0.7;
+
+/// How far a confident detection moves towards where the selection's appearance
+/// matches best (0 = not at all, 1 = all the way), every frame.
+const ANCHOR_CORRECTION_GAIN: f32 = 0.35;
+
+/// Below this similarity with the selection near a confident detection, the
+/// detection is suspect: the filter may have drifted onto something else.
+const DRIFT_SIMILARITY: f32 = 0.5;
+
+/// A suspect region is moved to where the selection's appearance is found
+/// further away only if it matches at least this well.
+const RE_ANCHOR_MINIMUM_SIMILARITY: f32 = 0.85;
+
 /// The memorised appearance is refreshed after this many confident frames.
 const APPEARANCE_REFRESH_INTERVAL_IN_FRAMES: u32 = 10;
 
@@ -59,7 +84,9 @@ pub enum TrackingState {
     /// The region was found clearly.
     Confident,
     /// The region was probably found, but the match is weak (partial occlusion,
-    /// motion blur, fast change of appearance), or it was just found again.
+    /// motion blur, fast change of appearance), it was just found again, or it
+    /// no longer looks like the selection although the filter is sure of it (it
+    /// may have drifted onto something else).
     Uncertain,
     /// The region is not visible: hidden, out of the frame, or lost. Its position
     /// is where it was last seen.
@@ -160,14 +187,29 @@ struct Detection {
 ///    when it differs noticeably. The clearest answer wins.
 /// 3. **Decide**, from the peak-to-sidelobe ratio (PSR) of that answer:
 ///    - at least [`CONFIDENT_PEAK_TO_SIDELOBE_RATIO`]: **confident**; the region
-///      moves to the filter's answer, takes the size the points measured, and the
-///      filter learns its current appearance;
+///      moves to the filter's answer, takes the size the points measured, is
+///      checked against the selection (step 4), and the filter learns its
+///      current appearance;
 ///    - at least [`LOST_PEAK_TO_SIDELOBE_RATIO`]: **uncertain**; the region moves
 ///      but keeps its size, and the filter does not learn (it could be learning an
 ///      obstacle). After [`MAXIMUM_UNCERTAIN_FRAMES_IN_A_ROW`] uncertain frames in a
 ///      row, the region is considered lost;
 ///    - below: **lost**.
-/// 4. **Recover.** While lost, the region stays where it was last seen. Each
+/// 4. **Check against the selection.** The filter learns the region's
+///    appearance as it goes, so its small errors add up and the region can
+///    slowly slide off the object while the PSR stays high. The selection's
+///    appearance never changes: it is searched a few cells around the answer, at
+///    three sizes (template matching, `template_matching.rs`):
+///    - where it matches clearly (a similarity of at
+///      least 0.7), the region is pulled a third of the way towards it, every
+///      frame. A slow drift of position or size never builds up;
+///    - where it matches a little (a head turning), the filter's answer stands;
+///    - where it does not match at all (below 0.5), the region may have drifted
+///      onto something else. The selection is searched further away, as for a
+///      lost region; if it is found clearly, the region jumps there and the
+///      filter starts afresh. Either way the frame is **uncertain**, so the
+///      range is reported for checking.
+/// 5. **Recover.** While lost, the region stays where it was last seen. Each
 ///    frame, the filter looks there again, and template matching
 ///    (`template_matching.rs`) searches a wider area, growing with time, for
 ///    the appearance memorised while tracking was sure. A candidate is only
@@ -284,8 +326,11 @@ impl RegionTracker {
                     MAXIMUM_SCALE_CHANGE_PER_FRAME,
                 )
             });
-            self.accept_confident_detection(pyramid, detection.region.scaled_by(scale_change));
-            self.answer(TrackingState::Confident, peak_to_sidelobe_ratio)
+            self.check_against_selection(
+                pyramid,
+                detection.region.scaled_by(scale_change),
+                peak_to_sidelobe_ratio,
+            )
         } else if peak_to_sidelobe_ratio >= LOST_PEAK_TO_SIDELOBE_RATIO
             && self.uncertain_frames_in_a_row < MAXIMUM_UNCERTAIN_FRAMES_IN_A_ROW
         {
@@ -338,11 +383,101 @@ impl RegionTracker {
         Some(Detection { region, peak })
     }
 
-    fn accept_confident_detection(&mut self, pyramid: &ImagePyramid, region: Region) {
+    /// Checks a detection the filter is sure of against the selection's
+    /// appearance, the one reference that cannot drift (see [`RegionTracker`]).
+    fn check_against_selection(
+        &mut self,
+        pyramid: &ImagePyramid,
+        measured: Region,
+        peak_to_sidelobe_ratio: f32,
+    ) -> TrackedRegion {
+        let nearby = self.initial_appearance.best_match_near(
+            pyramid,
+            &measured,
+            ANCHOR_SEARCH_RADIUS_IN_CELLS,
+            &ANCHOR_SCALE_FACTORS,
+        );
+        let similarity = nearby.map_or(-1.0, |found| found.similarity);
+        if let Some(found) = nearby.filter(|found| found.similarity >= ANCHOR_MINIMUM_SIMILARITY) {
+            let anchored = pulled_towards(measured, found.region, ANCHOR_CORRECTION_GAIN);
+            self.accept_confident_detection(pyramid, anchored, true);
+            return self.answer(TrackingState::Confident, peak_to_sidelobe_ratio);
+        }
+        if similarity >= DRIFT_SIMILARITY {
+            // Changed, but still like the selection: a turning head, a new expression.
+            self.accept_confident_detection(pyramid, measured, true);
+            return self.answer(TrackingState::Confident, peak_to_sidelobe_ratio);
+        }
+        // The filter is sure, but this no longer looks like the selection: it may
+        // have drifted onto something else.
+        if let Some(found) = self.find_selection_further_away(pyramid, &measured) {
+            return self.re_anchor(pyramid, found, peak_to_sidelobe_ratio);
+        }
+        // Keep following, but say so; the recent appearance is not refreshed with
+        // what may be the wrong thing.
+        self.accept_confident_detection(pyramid, measured, false);
+        self.answer(TrackingState::Uncertain, peak_to_sidelobe_ratio)
+    }
+
+    /// Looks for the selection's appearance up to the recovery search's largest
+    /// radius around `region`, and returns it if it is found clearly.
+    fn find_selection_further_away(
+        &self,
+        pyramid: &ImagePyramid,
+        region: &Region,
+    ) -> Option<Region> {
+        let search_radius = region.longer_side() * RECOVERY_SEARCH_MAXIMUM_IN_REGION_SIDES;
+        let candidate = self
+            .initial_appearance
+            .search(pyramid, region, search_radius)
+            .filter(|candidate| candidate.similarity >= RE_ANCHOR_MINIMUM_SIMILARITY)?;
+        let around_candidate = region.moved_by(
+            candidate.center.x - region.center_x,
+            candidate.center.y - region.center_y,
+        );
+        self.initial_appearance
+            .best_match_near(pyramid, &around_candidate, 1, &ANCHOR_SCALE_FACTORS)
+            .filter(|found| found.similarity >= RE_ANCHOR_MINIMUM_SIMILARITY)
+            .map(|found| found.region)
+    }
+
+    /// Moves the region to where the selection was found again, and starts the
+    /// filter afresh there: what it learnt since it drifted is wrong.
+    fn re_anchor(
+        &mut self,
+        pyramid: &ImagePyramid,
+        found: Region,
+        peak_to_sidelobe_ratio: f32,
+    ) -> TrackedRegion {
+        self.region = self.clamped_to_frame(found);
+        self.last_motion = (0.0, 0.0);
+        if let Some(filter) =
+            CorrelationFilter::train(pyramid, filter_window(self.region.center(), &self.region))
+        {
+            self.filter = filter;
+        }
+        if let Some(appearance) = AppearanceTemplate::capture(pyramid, &self.region) {
+            self.recent_appearance = appearance;
+        }
+        self.confident_frames_since_appearance_refresh = 0;
+        // Like a region found again after a loss: uncertain until the next frame confirms.
+        self.uncertain_frames_in_a_row = 1;
+        self.answer(TrackingState::Uncertain, peak_to_sidelobe_ratio)
+    }
+
+    fn accept_confident_detection(
+        &mut self,
+        pyramid: &ImagePyramid,
+        region: Region,
+        may_refresh_appearance: bool,
+    ) {
         self.move_region_to(region);
         self.uncertain_frames_in_a_row = 0;
         self.filter
             .learn(pyramid, filter_window(self.region.center(), &self.region));
+        if !may_refresh_appearance {
+            return;
+        }
         self.confident_frames_since_appearance_refresh += 1;
         if self.confident_frames_since_appearance_refresh >= APPEARANCE_REFRESH_INTERVAL_IN_FRAMES {
             self.confident_frames_since_appearance_refresh = 0;
@@ -427,6 +562,17 @@ impl RegionTracker {
             center_y: region.center_y.clamp(0.0, frame_height),
             ..region.scaled_by(factor)
         }
+    }
+}
+
+/// `region` moved `gain` of the way towards `target`, and resized as much on a
+/// logarithmic scale (`gain` = 1 gives `target`).
+fn pulled_towards(region: Region, target: Region, gain: f32) -> Region {
+    Region {
+        center_x: region.center_x + gain * (target.center_x - region.center_x),
+        center_y: region.center_y + gain * (target.center_y - region.center_y),
+        width: region.width * (target.width / region.width).powf(gain),
+        height: region.height * (target.height / region.height).powf(gain),
     }
 }
 
@@ -520,6 +666,76 @@ mod tests {
         assert_eq!(
             RegionTracker::start(frame, plate).unwrap_err(),
             TrackingError::RegionWithoutDetail
+        );
+    }
+
+    /// The object of the drift tests, and a textured plate that does not look
+    /// like it, two region sizes to its right.
+    fn object_and_plate(with_plate: bool) -> (GreyImage, Region, Region) {
+        use crate::synthetic_scenes::{SceneFrame, SceneObject};
+        let object = Region::from_top_left(60.0, 90.0, 40.0, 48.0);
+        let plate = object.moved_by(96.0, 0.0);
+        let frame = SceneFrame {
+            width: 320,
+            height: 240,
+            background_seed: 3,
+            background_offset_in_pixels: 0.0,
+            object: Some(SceneObject {
+                region: object,
+                texture_seed: 4,
+            }),
+            obstacle: with_plate.then_some(plate),
+        }
+        .render();
+        (frame, object, plate)
+    }
+
+    /// Makes the tracker believe the user selected `selection` instead: what it
+    /// follows then no longer looks like the selection, as after a drift.
+    fn pretend_selection_was(tracker: &mut RegionTracker, frame: &GreyImage, selection: &Region) {
+        let pyramid = ImagePyramid::new(frame.clone(), PYRAMID_SMALLEST_SIDE_IN_PIXELS);
+        tracker.initial_appearance = AppearanceTemplate::capture(&pyramid, selection).unwrap();
+    }
+
+    #[test]
+    fn a_sure_match_that_no_longer_looks_like_the_selection_is_uncertain() {
+        let (with_plate, object, plate) = object_and_plate(true);
+        let (without_plate, _, _) = object_and_plate(false);
+        let mut tracker = RegionTracker::start(without_plate.clone(), object).unwrap();
+        pretend_selection_was(&mut tracker, &with_plate, &plate);
+        let tracked = tracker.track(without_plate).unwrap();
+        assert!(
+            tracked.peak_to_sidelobe_ratio >= CONFIDENT_PEAK_TO_SIDELOBE_RATIO,
+            "{tracked:?}"
+        );
+        assert_eq!(tracked.state, TrackingState::Uncertain, "{tracked:?}");
+        assert!(
+            tracked.region.center_distance_to(&object) < 1.0,
+            "{tracked:?}"
+        );
+    }
+
+    #[test]
+    fn a_drifted_region_is_moved_back_to_the_selection_nearby() {
+        let (frame, object, plate) = object_and_plate(true);
+        let mut tracker = RegionTracker::start(frame.clone(), object).unwrap();
+        pretend_selection_was(&mut tracker, &frame, &plate);
+        let re_anchored = tracker.track(frame.clone()).unwrap();
+        assert_eq!(
+            re_anchored.state,
+            TrackingState::Uncertain,
+            "{re_anchored:?}"
+        );
+        assert!(
+            re_anchored.region.center_distance_to(&plate) < 1.5,
+            "{re_anchored:?}"
+        );
+        // The filter started afresh there: the next frame is sure again.
+        let confirmed = tracker.track(frame).unwrap();
+        assert_eq!(confirmed.state, TrackingState::Confident, "{confirmed:?}");
+        assert!(
+            confirmed.region.center_distance_to(&plate) < 1.5,
+            "{confirmed:?}"
         );
     }
 
