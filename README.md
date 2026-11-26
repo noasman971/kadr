@@ -202,8 +202,10 @@ exports go. It never replaces a file unless you agree, and never deletes files.
 
 ### 3a. Claude Desktop
 
-1. Open Claude Desktop, then **Settings → Developer → Edit Config**. This opens
-   `claude_desktop_config.json` (on Windows in `%APPDATA%\Claude\`).
+1. Open Claude Desktop, then **Settings → Developer → Edit Config**. This shows
+   `claude_desktop_config.json` wherever your installation keeps it (usually
+   `%APPDATA%\Claude\` on Windows; some installations keep it under
+   `%LOCALAPPDATA%`).
 2. Add Kadr (use your own paths; in JSON, every `\` is written `\\`):
 
    ```json
@@ -220,12 +222,14 @@ exports go. It never replaces a file unless you agree, and never deletes files.
    }
    ```
 
-   If the file already has an `mcpServers` section, add the `"kadr"` entry inside it.
+   Keep what the file already contains: add `"mcpServers"` next to the existing
+   entries, separated by a comma, or, if it already has an `mcpServers` section, add
+   the `"kadr"` entry inside it.
 3. Quit Claude Desktop completely (also from the system tray) and start it again.
    Kadr's tools appear in the tools menu of a new conversation.
 
-If Kadr does not appear, Claude Desktop's log `mcp-server-kadr.log` (in
-`%APPDATA%\Claude\logs\`) says why.
+If Kadr does not appear, Claude Desktop's log `mcp-server-kadr.log`, in the `logs`
+folder next to `claude_desktop_config.json`, says why.
 
 ### 3b. Claude Code
 
