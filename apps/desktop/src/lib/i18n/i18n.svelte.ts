@@ -54,6 +54,9 @@ export function isMessageKey(key: string): key is MessageKey {
 
 /** A track name for display: default names ("Video 2") are translated. */
 export function trackDisplayName(name: string): string {
+  if (name === "Titles") {
+    return t("track.titles");
+  }
   const match = /^(Video|Audio) (\d+)$/.exec(name);
   if (!match) {
     return name;

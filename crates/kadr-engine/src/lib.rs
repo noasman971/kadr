@@ -5,6 +5,7 @@
 //!
 //! - [`project_files`]: save and open `.kadr` files (atomically);
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
+//! - [`export_presets`]: the export sizes, and a project scaled to another size;
 //! - [`quick_assembly`]: build a simple project from a list of files;
 //! - [`preview`]: pictures of the timeline at any time, at an interface's size;
 //! - [`timeline_sound`]: the mixed sound of any range of the timeline, for playback;
@@ -25,6 +26,7 @@
 //! See `docs/architecture.md`.
 
 pub mod export;
+pub mod export_presets;
 pub mod media_overview;
 pub mod picture_scaling;
 pub mod preview;

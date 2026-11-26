@@ -8,6 +8,7 @@ use kadr_engine::timeline_sound::TimelineSoundMixer;
 use kadr_media::{FfmpegBackend, MediaBackend};
 
 use crate::command_error::{CommandError, CommandResult};
+use crate::export_job::ExportJobs;
 use crate::media_workers::{PreviewWorker, ThumbnailWorker};
 use crate::open_project::OpenProject;
 
@@ -29,6 +30,8 @@ pub struct AppState {
     pub configuration_folder: PathBuf,
     /// Where new projects are created (`Documents/Kadr`).
     pub projects_folder: PathBuf,
+    /// The export running in the background, and the files exports wrote.
+    pub exports: ExportJobs,
 }
 
 impl AppState {
@@ -50,6 +53,7 @@ impl AppState {
             waveforms: Arc::new(Mutex::new(HashMap::new())),
             configuration_folder,
             projects_folder,
+            exports: ExportJobs::default(),
         })
     }
 

@@ -18,6 +18,8 @@ interface StoredPreferences {
   interfaceScale: number;
   previewQuality: PreviewQuality;
   isSnappingOn: boolean;
+  /** The folder of the last export, offered for the next one ("" before the first). */
+  lastExportFolder: string;
 }
 
 const DEFAULT_PREFERENCES: StoredPreferences = {
@@ -26,6 +28,7 @@ const DEFAULT_PREFERENCES: StoredPreferences = {
   interfaceScale: 1,
   previewQuality: "auto",
   isSnappingOn: true,
+  lastExportFolder: "",
 };
 
 function readStoredPreferences(): StoredPreferences {
@@ -43,6 +46,7 @@ class Preferences {
   interfaceScale = $state(DEFAULT_PREFERENCES.interfaceScale);
   previewQuality = $state<PreviewQuality>(DEFAULT_PREFERENCES.previewQuality);
   isSnappingOn = $state(DEFAULT_PREFERENCES.isSnappingOn);
+  lastExportFolder = $state(DEFAULT_PREFERENCES.lastExportFolder);
 
   /** Reads the stored preferences and applies them to the page. Call once at start. */
   load(): void {
@@ -52,6 +56,7 @@ class Preferences {
     this.interfaceScale = stored.interfaceScale;
     this.previewQuality = stored.previewQuality;
     this.isSnappingOn = stored.isSnappingOn;
+    this.lastExportFolder = stored.lastExportFolder;
     this.apply();
     window
       .matchMedia("(prefers-color-scheme: dark)")
@@ -83,6 +88,7 @@ class Preferences {
       interfaceScale: this.interfaceScale,
       previewQuality: this.previewQuality,
       isSnappingOn: this.isSnappingOn,
+      lastExportFolder: this.lastExportFolder,
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));

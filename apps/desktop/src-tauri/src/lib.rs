@@ -22,6 +22,7 @@ pub mod binary_messages;
 pub mod command_error;
 pub mod commands;
 pub mod editing;
+pub mod export_job;
 pub mod media_workers;
 pub mod open_project;
 pub mod project_view;
@@ -30,7 +31,9 @@ pub mod recent_projects;
 use tauri::Manager;
 
 use crate::app_state::AppState;
-use crate::commands::{editing_commands, picture_and_sound_commands, project_commands};
+use crate::commands::{
+    editing_commands, export_commands, picture_and_sound_commands, project_commands,
+};
 
 /// Name of the folder, in the user's documents, where new projects are created.
 const PROJECTS_FOLDER_NAME: &str = "Kadr";
@@ -70,6 +73,10 @@ pub fn run() -> Result<(), tauri::Error> {
             picture_and_sound_commands::get_thumbnail,
             picture_and_sound_commands::get_waveform,
             picture_and_sound_commands::get_timeline_sound,
+            export_commands::start_export,
+            export_commands::cancel_export,
+            export_commands::reveal_exported_file,
+            export_commands::open_exported_file,
         ])
         .run(tauri::generate_context!())
 }

@@ -8,6 +8,8 @@
   import type { ProjectView } from "../../api/types";
   import { t } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
+  import { exportJob } from "../../state/exportJob.svelte";
+  import ExportDialog from "../export/ExportDialog.svelte";
   import { mediaDrag } from "../../state/mediaDrag.svelte";
   import { playback } from "../../state/playback.svelte";
   import { preferences } from "../../state/preferences.svelte";
@@ -110,6 +112,13 @@
   const DRAG_BADGE_ROOM_IN_PIXELS = 380;
   const isDragBadgeOnTheLeft = $derived(mediaDrag.clientX > window.innerWidth - DRAG_BADGE_ROOM_IN_PIXELS);
 
+  /** Export (Ctrl+E): the dialog, or the running export's progress. */
+  function openExport(): void {
+    if (view.durationTicks > 0 || exportJob.phase !== "setup") {
+      exportJob.openDialog();
+    }
+  }
+
   async function goHome(): Promise<void> {
     playback.pause();
     await editor.closeProject();
@@ -137,6 +146,8 @@
       void editor.undo();
     } else if (isCommand && (key === "y" || (key === "z" && event.shiftKey))) {
       void editor.redo();
+    } else if (isCommand && key === "e") {
+      openExport();
     } else if (isCommand && key === "i") {
       void importFromDialog();
     } else if (isCommand && key === "s") {
@@ -173,6 +184,8 @@
       void splitAtPlayhead();
     } else if (event.key === "Delete" || event.key === "Backspace") {
       void deleteSelection();
+    } else if (key === "t") {
+      void editor.addTitle("title");
     } else if (key === "n") {
       preferences.update({ isSnappingOn: !preferences.isSnappingOn });
     } else if (event.key === "Escape") {
@@ -197,12 +210,16 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="editor">
-  <TopBar {view} onGoHome={goHome} {onOpenSettings} {onShowShortcuts} onExport={() => undefined} />
+  <TopBar {view} onGoHome={goHome} {onOpenSettings} {onShowShortcuts} onExport={openExport} />
   <LibraryPanel {view} onImport={importFromDialog} onMediaPointerDown={(event, media) => mediaDrag.press(event, media)} />
   <PreviewPanel {view} />
   <InspectorPanel {view} />
   <TimelinePanel {view} bind:this={timeline} onSplit={splitAtPlayhead} onDelete={deleteSelection} />
 </div>
+
+{#if exportJob.isDialogOpen}
+  <ExportDialog {view} />
+{/if}
 
 {#if mediaDrag.media}
   <div

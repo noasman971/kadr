@@ -7,6 +7,7 @@
   import { t } from "../../i18n/i18n.svelte";
   import { formatTimecode } from "../../time/ticks";
   import { editor } from "../../state/editor.svelte";
+  import ClipInspector from "./ClipInspector.svelte";
   import { aspectRatioName, formatFrameRate } from "./projectFormat";
 
   interface Props {
@@ -16,11 +17,24 @@
   let { view }: Props = $props();
 
   const clipCount = $derived(view.tracks.reduce((count, track) => count + track.clips.length, 0));
+  const selectedClip = $derived(
+    editor.selectedClipIds.length === 1
+      ? view.tracks.flatMap((track) => track.clips).find((clip) => clip.id === editor.selectedClipIds[0])
+      : undefined,
+  );
 </script>
 
 <aside class="inspector" aria-label={t("inspector.title")}>
-  <div class="header"><span class="title">{t("inspector.project")}</span></div>
+  <div class="header">
+    <span class="title">{selectedClip ? t("inspector.clip") : t("inspector.project")}</span>
+  </div>
   <div class="body">
+    {#if selectedClip}
+      {#key selectedClip.id}<ClipInspector clip={selectedClip} />{/key}
+    {:else}
+    {#if editor.selectedClipIds.length > 1}
+      <section class="section"><p class="hint">{t("inspector.severalClips", { count: editor.selectedClipIds.length })}</p></section>
+    {/if}
     <section class="section">
       <h3>{t("inspector.format")}</h3>
       {#if view.adoptsFirstVideoFormat}
@@ -42,6 +56,7 @@
         <dd class="tabular">{clipCount}</dd>
       </dl>
     </section>
+    {/if}
   </div>
 </aside>
 
