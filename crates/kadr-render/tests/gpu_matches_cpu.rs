@@ -263,13 +263,22 @@ fn colour_adjusted_layers_match() {
     assert_gpu_matches_cpu("colour adjustments", &canvas(320, 180), &layers);
 }
 
-/// A second, different video picture: a checkerboard of two colours.
+/// A second, different video picture: a checkerboard of a light warm colour and
+/// a dark cool one.
+///
+/// Its edges are sharp in brightness, which both renderers compare at full
+/// resolution, so a misplaced picture shows. They are milder in colour on
+/// purpose: at a sharp edge between two very different colours (red and green
+/// differ by about 130 in V), the renderers' different sampling of the
+/// half-size colour planes (see [`assert_gpu_matches_cpu`]) puts 13 % of the V
+/// values more than 10 apart, with the picture simply drawn scaled, no
+/// transition at all.
 fn checkerboard_video_picture(width: u32, height: u32) -> VideoFrame {
     let image = RgbaImage::from_fn(width, height, |x, y| {
         if (x / 20 + y / 20) % 2 == 0 {
-            Rgba([230, 60, 40, 255])
+            Rgba([230, 210, 180, 255])
         } else {
-            Rgba([30, 160, 90, 255])
+            Rgba([40, 55, 85, 255])
         }
     });
     VideoFrame::Yuv420(YuvPicture::from_rgba(&image, YuvColorSpace::BT709_LIMITED))
