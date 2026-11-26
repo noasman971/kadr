@@ -19,8 +19,8 @@ It is the source of truth for scope, phases and rules.
 ## Current state
 
 - **Phase 0 (foundations): done and validated**, tagged `v0.1.0`.
-- **Phase 1 (data model): done** on branch `feature/phase-1-data-model`, pull request
-  open, waiting for the owner's review. Tag `v0.2.0` after merge.
+- **Phase 1 (data model): done** on branch `feature/phase-1-data-model`, merged through
+  pull request #1. Tag `v0.2.0` once the owner validates the phase.
 - **Next: phase 2** — decoding, encoding and export from the command line.
 
 ## Decisions taken with the owner
@@ -31,7 +31,12 @@ It is the source of truth for scope, phases and rules.
 - Git: own repository in this folder, public GitHub repository `noasman971/kadr`.
 - Phase 0 was committed directly on `main` at the owner's request. Since phase 1, each
   phase goes on its own branch with a pull request (see
-  [docs/contributing.md](docs/contributing.md)). **Never merge a pull request yourself.**
+  [docs/contributing.md](docs/contributing.md)).
+- **Merging (owner's instruction, 2026-11-26):** Claude merges the pull requests it
+  opened while working with the owner, once CI is green and there is no conflict.
+  Never merge pull requests from other contributors. Merging does not replace phase
+  validation: at the end of a phase, still stop and wait for the owner's OK before
+  tagging the version and starting the next phase.
 - Architecture decisions are recorded in [docs/decisions/](docs/decisions/).
 
 ## Commands

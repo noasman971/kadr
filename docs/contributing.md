@@ -49,7 +49,9 @@ your package manager.
 - **Push often**: at least when a feature is done and at the end of every work session.
 - **Pull request** to `main` when the feature is done: what changes, why, how to test,
   screenshots (dark and light theme) for anything visible. CI must be green.
-  **Only the project owner merges.**
+  Pull requests opened by the owner or by Claude working with the owner are merged
+  as soon as CI is green; pull requests from other contributors are merged by the
+  owner after review.
 - Each validated phase gets a version tag (`v0.1.0`, `v0.2.0`…) and a
   [CHANGELOG.md](../CHANGELOG.md) entry.
 
