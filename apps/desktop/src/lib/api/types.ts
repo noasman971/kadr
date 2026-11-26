@@ -139,12 +139,18 @@ export type EditRequest =
   | { type: "setCanvasSize"; width: number; height: number }
   /** Units: volume and scale are multipliers, opacity 0–1, positions pixels from the centre, rotation degrees. */
   | { type: "setClipValue"; clipId: number; value: ClipValueName; amount: number }
-  | { type: "setClipCrop"; clipId: number; left: number; top: number; right: number; bottom: number }
+  /**
+   * Crop, colour and text requests name only the settings they change: the back
+   * end keeps the others as the project has them when it applies the request.
+   * The view here can be behind (an earlier change not answered yet), so sending
+   * every setting from it would put old values back.
+   */
+  | { type: "setClipCrop"; clipId: number; changes: Partial<CropView> }
   | { type: "resetClipPicture"; clipId: number }
   | { type: "setClipSpeed"; clipId: number; speed: number }
-  | { type: "setClipColor"; clipId: number; settings: ColorSettings }
+  | { type: "setClipColor"; clipId: number; changes: Partial<ColorSettings> }
   | { type: "resetClipColor"; clipId: number }
-  | { type: "setClipText"; clipId: number; settings: TextSettings }
+  | { type: "setClipText"; clipId: number; changes: Partial<TextSettings> }
   | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle };
 
 export type ClipValueName = "volume" | "opacity" | "positionX" | "positionY" | "scale" | "rotation";
