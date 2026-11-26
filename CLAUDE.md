@@ -19,9 +19,10 @@ It is the source of truth for scope, phases and rules.
 ## Current state
 
 - **Phase 0 (foundations): done and validated**, tagged `v0.1.0`.
-- **Phase 1 (data model): done** on branch `feature/phase-1-data-model`, merged through
-  pull request #1. Tag `v0.2.0` once the owner validates the phase.
-- **Next: phase 2** — decoding, encoding and export from the command line.
+- **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
+- **Phase 2 (media and export): done** on branch `feature/phase-2-media-export`. Tag
+  `v0.3.0` once the owner validates the phase.
+- **Next: phase 3** — GPU rendering (`wgpu`), text, transitions, blurs, benchmarks.
 
 ## Decisions taken with the owner
 
@@ -57,9 +58,10 @@ updated, CHANGELOG updated, summary to the owner, **stop and wait for validation
 ## Architecture in one paragraph
 
 `kadr-core` (data model, commands, undo, validation, `.kadr` file) has no Kadr
-dependency; read [docs/data-model.md](docs/data-model.md) before changing it. `kadr-media` (FFmpeg /
-MediaCodec), `kadr-render` (wgpu) and `kadr-vision` (classic tracking) do the heavy
-work. `kadr-engine` is the only API interfaces use. `kadr-tools` defines the tools
+dependency; read [docs/data-model.md](docs/data-model.md) before changing it.
+`kadr-media` exposes `MediaBackend` traits implemented with FFmpeg (MediaCodec later),
+`kadr-render` composites layers (CPU now, wgpu in phase 3) and `kadr-vision` (classic
+tracking) will do the face blur. `kadr-engine` is the only API interfaces use. `kadr-tools` defines the tools
 Claude can call; `kadr-mcp` serves them over stdio. `kadr-cli` is for testing. The
 desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/architecture.md).
 
@@ -85,9 +87,25 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   when the crate actually uses it.
 - In Git Bash, Rust tools live in `~/.cargo/bin`; a shell opened before installing
   rustup needs `export PATH="$HOME/.cargo/bin:$PATH"`.
-- The installed FFmpeg command line (Gyan, version 9.x) is a **static** build without
-  headers or `.lib` files. Phase 2 needs a *shared* build with `include/` and `lib/`,
-  and must check which FFmpeg versions the `ffmpeg-next` crate supports.
+- FFmpeg: the owner's machine has the Gyan **static** CLI (for scripts) and the BtbN
+  **shared** 9.0 build (winget `BtbN.FFmpeg.GPL.Shared.9.0`) with `FFMPEG_DIR` set as a
+  user variable. Git Bash sessions opened before that need `FFMPEG_DIR`,
+  `LIBCLANG_PATH` and the BtbN `bin` folder exported by hand. `ffmpeg-next` 9.1
+  supports FFmpeg up to 9.x; Kadr requires FFmpeg 7+ (channel layout API).
+- `ffmpeg-next`'s scaler (`software::scaling::Context`) is **not `Send`**: video sources
+  and export sinks live on the thread that created them (`VideoFrameSource` is not Send).
+- Always set a packet duration when muxing MP4 video: without it the last frame gets a
+  zero duration and is dropped by players (found by the round-trip test).
+- The audio filter graph returns `Eof` once `atrim` has passed the end of the range:
+  that is the normal end, not an error.
+- FFmpeg's `avg_frame_rate` is wrong for short files (3600/119 for 4 s at 30 fps): probe
+  uses the nominal `r_frame_rate` first.
+- `atempo` (pitch-keeping speed change) shifts sounds by up to ~15 ms without drifting:
+  sync tests use 20 ms tolerance with speed changes, 10 ms without.
+- Export speed on the owner's laptop varies 2–3× between runs (power state). Measured
+  per 1080p frame: YUV→RGBA 6 ms, RGBA→YUV 7 ms (swscale, single-threaded), CPU
+  composite 5 ms (one-to-one) to 25 ms (scaled sources), decode 1 ms, QSV encode 1 ms.
+  Phase 3 (GPU) must move conversions and compositing to the GPU.
 - MCP over stdio: **never print to stdout** in `kadr-mcp` except protocol messages.
 - `kadr-core` invariants: every command's `apply` must check everything **before** the
   first mutation, and `revert` must restore the project exactly (including the

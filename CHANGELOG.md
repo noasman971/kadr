@@ -8,6 +8,32 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+## [0.3.0] — Phase 2: media and export
+
+### Added
+
+- `kadr-media`: the `MediaBackend` traits (probe, frame-accurate video source, audio
+  segment decoding, export sink) and their FFmpeg implementation (`ffmpeg-next`,
+  FFmpeg 7 or newer):
+  - probing of video, audio and image files;
+  - frame-accurate reading, in order or with jumps, keeping one frame ahead;
+  - sound decoding of any range at any speed, pitch preserved (`atempo`), stereo,
+    padded or cut to the exact clip length;
+  - MP4 writing (H.264 + AAC) choosing the first working encoder: NVIDIA NVENC,
+    Intel Quick Sync, AMD AMF, Apple VideoToolbox, then libx264.
+- `kadr-media::test_patterns`: barcode frames and beeps to check exports exactly.
+- `kadr-render`: CPU compositor with fit, position, scale, rotation, crop and
+  opacity, rows rendered in parallel.
+- `kadr-engine`: atomic `.kadr` saving and loading, timeline sound mixing with
+  animated volume, frame-by-frame export with progress and cancellation (a failed or
+  cancelled export never leaves a broken file), and quick assembly of files end to end.
+- `kadr-cli`: `probe`, `assemble` and `render` commands; Ctrl+C cancels an export cleanly.
+- `FrameRate::frame_count_covering` in `kadr-core`.
+- Acceptance test: three cuts, a 1.5× speed change and a music track export with
+  every frame taken from the exact expected source frame and every beep within 20 ms.
+- CI installs FFmpeg 9 on Windows, Linux and macOS.
+- Decision record 0005 (FFmpeg through `ffmpeg-next`).
+
 ## [0.2.0] — Phase 1: data model
 
 ### Added

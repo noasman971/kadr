@@ -9,6 +9,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0002](0002-gpl-3-license.md) | GPL-3.0-or-later license | Accepted |
 | [0003](0003-face-blur-by-classic-tracking.md) | Face blur by classic region tracking, without AI | Accepted |
 | [0004](0004-claude-through-local-mcp-only.md) | Claude only through a local MCP server, no Claude API | Accepted |
+| [0005](0005-ffmpeg-through-ffmpeg-next.md) | FFmpeg through `ffmpeg-next`, behind backend traits | Accepted |
 
 ## Template
 
