@@ -19,6 +19,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0020](0020-svelte-typescript-front-end.md) | Svelte 5 and TypeScript for the desktop front end | Accepted |
 | [0021](0021-desktop-app-layout.md) | The desktop app in `apps/desktop/`, its Rust crate in the workspace | Accepted |
 | [0022](0022-front-end-and-engine-communication.md) | The back end owns the project; preview frames and sound rendered by the engine, sent as binary | Accepted |
+| [0050](0050-transitions-at-clip-edges.md) | Transitions at clip edges, using the neighbouring clip's handles | Accepted |
 
 ## Template
 

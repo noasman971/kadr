@@ -14,6 +14,7 @@
 | [design-system.md](design-system.md) | Interface tokens (colours, spacing, type, motion) and components |
 | [desktop-app.md](desktop-app.md) | How the desktop app is built: back end, front end, preview, playback, adding an edit |
 | [mcp-server.md](mcp-server.md) | The MCP server: how Claude drives Kadr, the rules every tool follows, every tool, how it is tested |
+| [transitions-and-text-animations.md](transitions-and-text-animations.md) | Fade, slide and zoom transitions between clips, text animations (type-on…), how they are drawn |
 
 Documents added in later phases:
 

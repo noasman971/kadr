@@ -151,6 +151,24 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   another size, shared by Claude's tools and the app, and `refit_clips_to_canvas`,
   which keeps titles in place when the canvas changes shape.
 
+### Added (phase 8a: transitions and text animations)
+
+- `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
+  in four directions, `zoom` in or out) and entry and exit **text animations** on texts
+  (`fade`, `slide`, `pop`, `type_on`, `word_by_word`), with the undoable commands
+  `SetClipTransition` and `SetTextAnimation` and their validation rules. A clip
+  touching a transition's edge on the same track shows underneath, so a fade between
+  two clips is a dissolve and a slide pushes the previous clip out. Splitting keeps
+  the entry on the first part and the exit on the second.
+- File format version 2, with a migration from version 1.
+- `kadr-render`: `transition_motion` and `text_animation_frame` move layers (opacity,
+  position, scale) on both renderers; `TextRasterizer::rasterize_revealed` draws
+  part of a text for type-on and word-by-word animations.
+- `kadr-engine`: exports draw transitions, reading the touching clip's source past its
+  cut (holding the file's last or first frame where it ends).
+- `kadr-cli assemble --transition … --title … --title-animation …` to try them.
+- `docs/transitions-and-text-animations.md`, decision record 0050.
+
 ### Changed
 
 - Build scripts and procedural macros are compiled with optimisations, so `bindgen`

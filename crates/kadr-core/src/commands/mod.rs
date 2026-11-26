@@ -20,6 +20,7 @@ mod keyframe_commands;
 mod media_commands;
 mod project_commands;
 mod track_commands;
+mod transition_commands;
 
 use std::fmt;
 
@@ -32,6 +33,7 @@ pub use keyframe_commands::{RemoveKeyframe, SetKeyframe};
 pub use media_commands::{ImportMedia, RemoveMedia};
 pub use project_commands::ChangeProjectSettings;
 pub use track_commands::{AddTrack, RemoveTrack, SetTrackHidden, SetTrackMuted, TrackPosition};
+pub use transition_commands::{SetClipTransition, SetTextAnimation};
 
 use crate::clip::Clip;
 use crate::error::EditError;

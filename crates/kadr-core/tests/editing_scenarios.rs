@@ -14,8 +14,8 @@ use kadr_core::animation::{Interpolation, Keyframe};
 use kadr_core::clip::{AnimatableProperty, PlaybackSpeed};
 use kadr_core::commands::{
     AddClip, AddEffect, AddTrack, ClipEdge, CreatedObjectsExt, EditCommand, ImportMedia, MoveClip,
-    RemoveClip, ReplaceEffect, SetClipPropertyValue, SetClipSpeed, SetKeyframe, SplitClip,
-    TrackPosition, TrimClip,
+    RemoveClip, ReplaceEffect, SetClipPropertyValue, SetClipSpeed, SetClipTransition, SetKeyframe,
+    SetTextAnimation, SplitClip, TrackPosition, TrimClip,
 };
 use kadr_core::effect::{
     BlurShape, BlurStyle, ColorAdjustment, EffectKind, PixelRegion, RegionSample,
@@ -26,8 +26,10 @@ use kadr_core::ids::{ClipId, TrackId};
 use kadr_core::media_asset::{AudioFormat, MediaAssetDescription, MediaKind, PictureSize};
 use kadr_core::project::{Project, ProjectSettings};
 use kadr_core::project_file::{load_project_from_json, save_project_to_json};
+use kadr_core::text_animation::{TextAnimation, TextAnimationStyle};
 use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
+use kadr_core::transition::{SlideDirection, Transition, TransitionStyle, ZoomDirection};
 use kadr_core::validation::validate_project;
 
 fn seconds(value: u64) -> Timestamp {
@@ -68,8 +70,71 @@ fn background_music() -> MediaAssetDescription {
 }
 
 /// Builds a short vertical video the way a user (or Claude) would:
-/// two cuts of an interview, a speed-up, a blurred face, a fading title and music.
+/// two cuts of an interview, a speed-up, a blurred face, a fading title and music,
+/// then (with phase 8) transitions and a text animation.
 fn edit_a_vertical_interview(session: &mut EditSession) {
+    edit_a_vertical_interview_before_phase_8(session);
+    let timeline = session.project().timeline();
+    let interview_clip_ids: Vec<ClipId> = timeline.tracks()[0]
+        .clips()
+        .iter()
+        .map(|clip| clip.id)
+        .collect();
+    let title_clip_id = timeline.tracks()[1].clips()[0].id;
+    let transition = |style, duration_in_milliseconds| {
+        Some(Transition {
+            style,
+            duration: TimeSpan::from_milliseconds(duration_in_milliseconds),
+        })
+    };
+
+    // Fade in from black, push from the first cut to the second, zoom out at the end.
+    session
+        .execute(SetClipTransition::new(
+            interview_clip_ids[0],
+            ClipEdge::Start,
+            transition(TransitionStyle::Fade, 500),
+        ))
+        .unwrap();
+    session
+        .execute(SetClipTransition::new(
+            interview_clip_ids[1],
+            ClipEdge::Start,
+            transition(
+                TransitionStyle::Slide {
+                    direction: SlideDirection::Left,
+                },
+                400,
+            ),
+        ))
+        .unwrap();
+    session
+        .execute(SetClipTransition::new(
+            interview_clip_ids[1],
+            ClipEdge::End,
+            transition(
+                TransitionStyle::Zoom {
+                    direction: ZoomDirection::Out,
+                },
+                1_000,
+            ),
+        ))
+        .unwrap();
+    // The title is erased letter by letter when it leaves.
+    session
+        .execute(SetTextAnimation::new(
+            title_clip_id,
+            ClipEdge::End,
+            Some(TextAnimation {
+                style: TextAnimationStyle::TypeOn,
+                duration: TimeSpan::from_milliseconds(800),
+            }),
+        ))
+        .unwrap();
+}
+
+/// The same edit as it was possible before phase 8 (format 1).
+fn edit_a_vertical_interview_before_phase_8(session: &mut EditSession) {
     let video_id = session
         .execute(ImportMedia::new(interview_video()))
         .unwrap()
@@ -261,8 +326,9 @@ fn a_full_edit_can_be_undone_and_redone_step_by_step() {
     }
     assert_eq!(session.project(), &empty_project);
     // 2 imports, 3 tracks, 1 clip, 2 splits, 1 removal, 1 move, 1 speed change,
-    // 3 effect changes, 1 grouped title (with its 2 keyframes), 1 music clip, 1 volume.
-    assert_eq!(undone_step_count, 17);
+    // 3 effect changes, 1 grouped title (with its 2 keyframes), 1 music clip, 1 volume,
+    // 3 transitions, 1 text animation.
+    assert_eq!(undone_step_count, 21);
 
     while session.can_redo() {
         session.redo().unwrap();
@@ -312,6 +378,21 @@ fn a_project_survives_saving_and_loading() {
 
     assert_eq!(&reloaded_project, session.project());
     insta::assert_snapshot!("vertical_interview_project_file", json_text);
+}
+
+#[test]
+fn a_format_1_file_is_upgraded_to_the_same_project() {
+    let mut session =
+        EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+    edit_a_vertical_interview_before_phase_8(&mut session);
+
+    // The snapshot of this edit saved before phase 8 changed the format.
+    let format_1_file = include_str!("fixtures/vertical_interview_format_1.kadr");
+    assert!(format_1_file.contains("\"format_version\": 1"));
+    assert_eq!(
+        &load_project_from_json(format_1_file).unwrap(),
+        session.project()
+    );
 }
 
 /// A tiny deterministic random number generator, so the test is reproducible

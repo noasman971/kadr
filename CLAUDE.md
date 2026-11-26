@@ -26,7 +26,7 @@ It is the source of truth for scope, phases and rules.
   with a draft pull request whose description starts with "Status for resuming".
   **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
   another computer, and the prompt to start each session with: read it first.**
-  Phases 8 and 9 are paused by the owner until 4, 5 and 6 are merged. Phase 7 waits
+  Phase 9 is paused by the owner; phase 8 resumed on 2026-11-26. Phase 7 waits
   for 4 and 6; phase 10 (iOS) needs a Mac. Versions are tagged in phase order
   (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
 
@@ -54,7 +54,8 @@ It is the source of truth for scope, phases and rules.
   a check that never runs. Tags can still be pushed.
 - Architecture decisions are recorded in [docs/decisions/](docs/decisions/). While
   phases run in parallel, record numbers are reserved to avoid clashes: phase 4 uses
-  0007–0009, phase 5 0010–0019, phase 6 0020–0029.
+  0007–0009, phase 5 0010–0019, phase 6 0020–0029, phase 7 0030–0039, phase 9
+  0040–0049, phase 8 0050–0059.
 
 ## Commands
 
@@ -145,6 +146,16 @@ Details: [docs/architecture.md](docs/architecture.md).
 - GPU tests: `KADR_GPU_ADAPTER=software` forces WARP / lavapipe, `KADR_REQUIRE_GPU=1`
   turns "no GPU" into a failure. To check GPU vs CPU on a real export, compare both
   files with `ffmpeg -i a.mp4 -i b.mp4 -lavfi psnr -f null -` (47 dB today).
+- GPU-vs-CPU test pictures: the GPU interpolates the half-size colour planes, the CPU
+  reuses each 2 × 2 block, so a sharp edge between two very different colours (red
+  and green, about 130 apart in V) puts 13 % of V values more than 10 apart with no
+  bug at all. Make test edges sharp in brightness (compared at full resolution) and
+  milder in colour, rather than loosening the shared thresholds.
+- On the desktop PC (RTX 4060), WARP (`KADR_GPU_ADAPTER=software`) crashes with an
+  access violation (`0xC0000005`) in about half the parallel runs of
+  `gpu_matches_cpu`, `main`'s tests alone included; `--test-threads=1` passes, the
+  RTX 4060 never crashes, and CI's WARP does not. Treat such a crash there as the
+  machine's, after a single-threaded rerun.
 - Inter 4's variable font declares the family **"Inter Variable"**, not "Inter": a
   request for "Inter" silently fell back to Segoe UI until `text.rs` redirected it.
   `TextRasterizer::has_font_family` and a test now guard it. Look at rendered text
@@ -242,3 +253,13 @@ Details: [docs/architecture.md](docs/architecture.md).
 - Editable number text must read back as the same number: `Intl` grouping turns 1200
   into "1,200" in English, which parses as 1.2. Use `formatEditableNumber` /
   `parseEditableNumber` (`src/lib/ui/numberText.ts`) for anything typed back.
+- Transitions (phase 8a, decision 0050) live on clip **edges** (`entry_transition`,
+  `exit_transition`), never as separate objects: no command has to update them when
+  clips move. The clip touching the edge is drawn underneath by
+  `kadr-engine/src/export/clip_layers.rs`; its source continues past its cut. Keep
+  that file the only place deciding which clips a track shows.
+- File format changes: bump `CURRENT_FORMAT_VERSION`, add a `Migration`, keep the
+  previous snapshot as a fixture in `crates/kadr-core/tests/fixtures/` (format 1:
+  `vertical_interview_format_1.kadr`) with a test that it still opens. A new enum
+  variant (effect kind…) needs a version bump too, even with a no-op migration: an
+  older Kadr must say "newer version" rather than "damaged file".

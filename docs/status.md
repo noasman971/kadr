@@ -57,7 +57,7 @@ which is more detailed and is the reference for its phase.
 | 5. MCP server | Draft (#9): 34 of 35 tools tested | `feature/phase-5-mcp-server`, [#9](https://github.com/noasman971/kadr/pull/9) | Run the tests after the merge of `main`, then merge |
 | 6. Desktop app | 6a (#6), 6b (#10) and 6c (#14) merged. 6d in PR #15, tried by hand | `feature/phase-6d-inspector-export`, [#15](https://github.com/noasman971/kadr/pull/15) | Merge 6d, then the owner's edit-and-export test |
 | 7. Blur and Claude in the app | Waits for phases 4 and 6 | — | — |
-| 8. Features, engine side | **Paused** by the owner. 8a in draft (#11) | `feature/phase-8a-transitions-text-animations`, [#11](https://github.com/noasman971/kadr/pull/11) | Owner: resume or not |
+| 8. Features | Resumed on 2026-11-26. 8a (transitions, text animations) in #11, `main` merged in, every test passing | `feature/phase-8a-transitions-text-animations`, [#11](https://github.com/noasman971/kadr/pull/11) | Merge #11, then the next feature after the owner's go-ahead |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -126,16 +126,26 @@ Versions are tagged in phase order, each only after the owner validates the phas
 - **Resume with:** *"Resume phase 6 of Kadr: read CLAUDE.md, docs/status.md and the
   'Status for resuming' section of PR #15, then continue with its next step."*
 
-## Phase 8: features, engine side (paused)
+## Phase 8: features
 
-- **Paused** at the owner's request (2026-11-26) until phases 4, 5 and 6 are merged.
-- 8a (transitions and text animations) is in draft PR #11. Everything passes except
-  one GPU-vs-CPU test (push transition, chroma differences). The PR explains the
-  likely cause and the fix to try.
-- **Decision for the owner:** resume phase 8 or not, and in which order after 8a:
-  LUTs, automatic proxies, SRT subtitles, stabilisation, silence removal.
+- **Resumed** on 2026-11-26, one pull request per feature. The owner is asked in
+  one line before each one starts (the specification requires it).
+- 8a, transitions and text animations, is in PR #11: everything passes, GPU tests
+  included (NVIDIA RTX 4060 and WARP). The GPU-vs-CPU test that failed used a
+  red and green checkerboard whose colour edges the two renderers sample
+  differently; it now uses a light and dark one. Tried by hand with
+  `kadr-cli assemble --transition … --title … --title-animation …` (push, dissolve,
+  zoom; type-on, word by word, pop).
+- **Proposed order for what is left**, following the specification: silence removal
+  (built on phase 5's `detect_silences`), LUT `.cube` files for colour grading,
+  stabilisation (`kadr-vision`'s optical flow and smoothing), editable keyframes in
+  the interface, automatic proxies for heavy 4K videos, SRT subtitles. Also waiting:
+  Claude's `add_transition` still makes fades from opacity keyframes, and the
+  inspector has no transition controls yet.
+- Decision records 0050–0059 (8a's is 0050).
 - **Resume with:** *"Resume phase 8 of Kadr: read CLAUDE.md, docs/status.md and the
-  'Status for resuming' section of PR #11, then continue with its next step."*
+  'Status for resuming' section of the open phase 8 pull request, then continue with
+  its next step."*
 
 ## Phase 9: Android (paused)
 
