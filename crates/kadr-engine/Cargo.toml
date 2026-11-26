@@ -8,14 +8,26 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+# The media backend the engine is built with (see
+# docs/decisions/0040-media-backend-features.md):
+# - desktop (Windows, macOS, Linux): `ffmpeg`, on by default;
+# - Android: `--no-default-features`, then the MediaCodec backend (phase 9).
+[features]
+default = ["ffmpeg"]
+ffmpeg = ["kadr-media/ffmpeg"]
+
 [dependencies]
 kadr-core.workspace = true
-kadr-media = { workspace = true, features = ["ffmpeg"] }
+kadr-media.workspace = true
 kadr-render.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 image.workspace = true
+# The tests decode and encode real files on the development machine, so they
+# always use FFmpeg, whatever features the library is built with. Android builds
+# check the library alone (`--lib`).
+kadr-media = { workspace = true, features = ["ffmpeg"] }
 tempfile.workspace = true
 
 [lints]

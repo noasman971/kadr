@@ -5,19 +5,24 @@
 //!
 //! - [`project_files`]: save and open `.kadr` files (atomically);
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
-//! - [`quick_assembly`]: build a simple project from a list of files.
+//! - [`quick_assembly`]: build a simple project from a list of files;
+//! - [`platform_media`]: the media backend this build was made with (FFmpeg on
+//!   desktop, MediaCodec on Android).
 //!
 //! ## Rules for this crate
 //!
 //! - No user interface code and no dependency on Tauri: the engine is shared
 //!   between desktop and mobile.
 //! - Media access goes through a [`kadr_media::MediaBackend`], never directly
-//!   through FFmpeg, so the Android backend can replace it.
+//!   through FFmpeg, so the Android backend can replace it. The backend is chosen
+//!   by Cargo features: `ffmpeg` (on by default) for desktop; Android builds use
+//!   `--no-default-features`.
 //! - Long tasks report progress and can be cancelled from another thread.
 //!
 //! See `docs/architecture.md`.
 
 pub mod export;
+pub mod platform_media;
 pub mod project_files;
 pub mod quick_assembly;
 
@@ -25,3 +30,4 @@ pub use export::{
     ExportCancellation, ExportError, ExportProgress, ExportReport, ExportRequest, export_project,
 };
 pub use kadr_render::RendererPreference;
+pub use platform_media::create_platform_media_backend;
