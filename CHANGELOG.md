@@ -8,6 +8,37 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+### Added (phase 5: MCP server, file mode)
+
+- `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
+  3.11, that Claude Desktop and Claude Code start with `--allowed-folder <folder>`
+  arguments. Nothing but the protocol is written to stdout; logs go to stderr.
+- `kadr-tools`: 34 tools defined once (name, description for a language model, JSON
+  schema generated with `schemars`, code), independent of MCP: project
+  (`create_project`, `open_project`, `save_project`, `get_project_info`,
+  `set_project_settings`, `undo`, `redo`), media (`find_media_files`, `probe_media`,
+  `import_media`, `list_media`), timeline (`get_timeline`, `get_clip`, `add_track`,
+  `remove_track`, `add_clip`, `remove_clip`, `move_clip`, `trim_clip`, `split_clip`),
+  clip properties (`set_clip_speed`, `set_clip_volume`, `set_transform`), content
+  (`add_text`, `edit_text`, `add_transition`, `remove_transitions`,
+  `add_color_adjustment`, `remove_effect`), pictures (`get_frame`,
+  `get_contact_sheet`) and export (`export`, `get_export_status`, `cancel_export`).
+- One tool call is one undo step labelled "Claude: …"; the project file is saved
+  after every change and never overwritten if another program changed it.
+- File access limited to the allowed folders (links and `..` resolved), no file
+  replaced without `"overwrite": true`, no file deleted.
+- Pictures for Claude are JPEG with the longest side at most 1024 pixels, with the
+  original size and the conversion factor stated.
+- Exports run in the background with a task id; presets for TikTok / Reels / Shorts,
+  YouTube 1080p and 4K, with automatic scaling when the shape matches.
+- `kadr-engine::still_frames`: single pictures of a file, a clip or the finished
+  timeline, and labelled contact sheets.
+- `kadr-vision::silence_detection` (RMS level per 10 ms window), wired to a
+  `detect_silences` tool once phase 4a's `kadr-vision` changes are merged.
+- Integration tests driving the server through an MCP client, including the real
+  binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
+  README section "Editing with Claude".
+
 ### Added (phase 3a: GPU rendering)
 
 - `VideoFrame` is now `Rgba` or `Yuv420`: decoders hand over their YUV planes and the

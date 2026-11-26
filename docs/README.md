@@ -8,6 +8,7 @@
 | [decisions/](decisions/) | Architecture decision records: why things are the way they are |
 | [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works |
 | [rendering.md](rendering.md) | YUV from end to end, colour spaces, the GPU and CPU renderers, how they are compared, benchmarks |
+| [mcp-server.md](mcp-server.md) | The MCP server: how Claude drives Kadr, the rules every tool follows, every tool, how it is tested |
 
 Documents added in later phases:
 
@@ -15,7 +16,6 @@ Documents added in later phases:
 |---|---|
 | `gpu-rendering.md` — `wgpu` pipeline, shaders, adding an effect | 3 |
 | `tracking-and-blur.md` — the region tracker, its parameters and limits | 4 |
-| `mcp.md` — every MCP tool, Claude Desktop / Claude Code setup, example conversations | 5 |
 | `design-system.md` and `user-journeys.md` — interface tokens, components, user journeys | 6 |
 
 A feature is not finished until its documentation is up to date, in the same pull

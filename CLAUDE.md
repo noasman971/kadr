@@ -26,6 +26,13 @@ It is the source of truth for scope, phases and rules.
   chose to bundle it), 3c colour adjustment and tracked blur rendering (branch
   `feature/phase-3c-effects`). Tag `v0.4.0` once the owner validates the phase.
 - **Next: phase 4** — face tracking (MOSSE/KCF) filling the tracked blurs.
+- **Phase 5 (MCP server, file mode)**: branch `feature/phase-5-mcp-server`, run in
+  parallel with phase 4. 34 tools in `kadr-tools`, served by `kadr-mcp`.
+  **Pending:** `detect_silences` (the analysis is written in
+  `crates/kadr-vision/src/silence_detection.rs`; add `pub mod silence_detection;` to
+  `kadr-vision/src/lib.rs`, the engine call and the tool once phase 4a is merged),
+  `blur_region` and `get_blur_status` (need phase 4b's tracking in `kadr-engine`).
+  Version tags go in phase order: v0.5.0 = phase 4, v0.6.0 = phase 5.
 
 ## Decisions taken with the owner
 
@@ -72,8 +79,10 @@ dependency; read [docs/data-model.md](docs/data-model.md) before changing it.
 `kadr-media` exposes `MediaBackend` traits implemented with FFmpeg (MediaCodec later)
 and the `VideoFrame` (YUV or RGBA) and colour-space types; `kadr-render` turns layers
 into BT.709 YUV frames on the GPU (`wgpu`) or the CPU (reference); `kadr-vision`
-(classic tracking) will do the face blur. `kadr-engine` is the only API interfaces use. `kadr-tools` defines the tools
-Claude can call; `kadr-mcp` serves them over stdio. `kadr-cli` is for testing. The
+(classic tracking) will do the face blur. `kadr-engine` is the only API interfaces use (it re-exports the media backend
+types). `kadr-tools` defines the tools Claude can call (`KadrToolbox::call_tool`,
+no MCP dependency); `kadr-mcp` serves them over stdio with `rmcp`. Read
+[docs/mcp-server.md](docs/mcp-server.md) before changing a tool. `kadr-cli` is for testing. The
 desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/architecture.md).
 
 ## Conventions (short version — full version in docs/contributing.md)
@@ -134,6 +143,21 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy 1.100 wants `as_chunks::<N>()` instead of `chunks_exact(N)` for constant sizes,
   and flags enum variants much larger than the others (box them).
 - MCP over stdio: **never print to stdout** in `kadr-mcp` except protocol messages.
+  The test `kadr-mcp/tests/stdio_binary.rs` runs the real binary and fails otherwise.
+- `rmcp` 3.11: implement `ServerHandler::list_tools` / `call_tool` by hand (tools are
+  defined in `kadr-tools`, not with `#[tool]` macros, see ADR 0010). Return tool
+  failures as `CallToolResult::error`, never as `ErrorData`: clients hide protocol
+  errors from the model. Do not implement `get_tool`: it turns on `rmcp`'s own
+  argument validation, whose errors are less clear than ours.
+- `schemars` keeps the line breaks of wrapped doc comments and puts the struct's doc
+  in the schema: `catalog.rs` removes the root description and joins the lines.
+- Tool parameter structs use `#[serde(deny_unknown_fields)]` so a misspelt argument
+  is reported to Claude instead of silently ignored.
+- Times shown to Claude are rounded to the microsecond; tools snap clip edges given
+  within half a frame of another edge (`time_input::snap_to_nearby_clip_edge`), or a
+  copied `1.999999` would overlap the previous clip by a fraction of a microsecond.
+- Several sessions compiling at once on the owner's laptop make a workspace test
+  build take 10+ minutes: run long cargo commands in the background.
 - `kadr-core` invariants: every command's `apply` must check everything **before** the
   first mutation, and `revert` must restore the project exactly (including the
   `IdAllocator`). The helper `commands::test_support::apply_and_check_revert` checks
