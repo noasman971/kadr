@@ -1,114 +1,129 @@
 //! # kadr-cli — Kadr from the command line
 //!
-//! A small binary to exercise the engine without the desktop app: rendering a
-//! project, probing a file, testing the face-blur tracker.
+//! A small binary to use the engine without the desktop app:
 //!
-//! In phase 0 it only knows `--version` and `--help`. Real commands arrive with
-//! the features they test (`probe` and `render` in phase 2, `blur` in phase 4).
+//! ```text
+//! kadr-cli probe video.mp4
+//! kadr-cli assemble --output edit.kadr --format vertical clip1.mp4 clip2.mp4 music.mp3
+//! kadr-cli render edit.kadr edit.mp4
+//! ```
 
+mod arguments;
+mod reports;
+
+use std::error::Error;
+use std::path::Path;
 use std::process::ExitCode;
+use std::time::Instant;
 
-/// Name of the program, as typed by the user.
-const PROGRAM_NAME: &str = "kadr-cli";
+use clap::Parser;
+use kadr_core::project::ProjectSettings;
+use kadr_core::time::TimeSpan;
+use kadr_engine::project_files::{load_project_file, save_project_file};
+use kadr_engine::quick_assembly::assemble_project_from_files;
+use kadr_engine::{ExportCancellation, ExportRequest, export_project};
+use kadr_media::{EncodingSpeed, FfmpegBackend, MediaBackend, VideoEncoderPreference};
 
-/// Version of the program, taken from the workspace `Cargo.toml`.
-const PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// What the program prints and how it exits, decided from the command-line arguments.
-#[derive(Debug, PartialEq, Eq)]
-struct CommandLineResponse {
-    /// Text printed to the terminal.
-    message: String,
-    /// Whether the arguments were understood.
-    is_success: bool,
-}
+use arguments::{CanvasFormat, Command, CommandLine};
 
 fn main() -> ExitCode {
-    let arguments_after_program_name: Vec<String> = std::env::args().skip(1).collect();
-    let response = respond_to_arguments(&arguments_after_program_name);
+    let command_line = CommandLine::parse();
+    match run(command_line.command) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
-    if response.is_success {
-        println!("{}", response.message);
-        ExitCode::SUCCESS
+fn run(command: Command) -> Result<(), Box<dyn Error>> {
+    let backend = FfmpegBackend::new()?;
+    match command {
+        Command::Probe { file, json } => probe(&backend, &file, json),
+        Command::Assemble {
+            output,
+            format,
+            image_duration,
+            files,
+        } => {
+            let image_duration = TimeSpan::from_seconds(image_duration)?;
+            let project = assemble_project_from_files(
+                &backend,
+                &files,
+                settings_for(format),
+                image_duration,
+            )?;
+            save_project_file(&project, &output)?;
+            println!("{}", reports::describe_assembled_project(&output, &project));
+            Ok(())
+        }
+        Command::Render {
+            project,
+            output,
+            software_encoder,
+            fast,
+        } => render(&backend, &project, &output, software_encoder, fast),
+    }
+}
+
+fn settings_for(format: CanvasFormat) -> ProjectSettings {
+    match format {
+        CanvasFormat::Landscape => ProjectSettings::landscape_1080p(),
+        CanvasFormat::Vertical => ProjectSettings::vertical_1080x1920(),
+        CanvasFormat::Square => ProjectSettings::square_1080(),
+    }
+}
+
+fn probe(backend: &FfmpegBackend, file: &Path, as_json: bool) -> Result<(), Box<dyn Error>> {
+    let description = backend.probe(file)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&description)?);
     } else {
-        eprintln!("{}", response.message);
-        ExitCode::FAILURE
+        println!("{}", reports::describe_media(&description));
     }
+    Ok(())
 }
 
-/// Decides what to print for the given arguments (the program name excluded).
-fn respond_to_arguments(arguments: &[String]) -> CommandLineResponse {
-    match arguments.first().map(String::as_str) {
-        Some("--version" | "-V") => CommandLineResponse {
-            message: build_version_text(),
-            is_success: true,
+fn render(
+    backend: &FfmpegBackend,
+    project_path: &Path,
+    output_path: &Path,
+    software_encoder: bool,
+    fast: bool,
+) -> Result<(), Box<dyn Error>> {
+    let project = load_project_file(project_path)?;
+    let cancellation = ExportCancellation::new();
+    let cancellation_for_ctrl_c = cancellation.clone();
+    // Ctrl+C stops the export cleanly instead of leaving a half-written file.
+    ctrlc::set_handler(move || cancellation_for_ctrl_c.cancel())?;
+
+    let request = ExportRequest {
+        output_path: output_path.to_path_buf(),
+        video_encoder_preference: if software_encoder {
+            VideoEncoderPreference::SoftwareOnly
+        } else {
+            VideoEncoderPreference::HardwareFirst
         },
-        None | Some("--help" | "-h") => CommandLineResponse {
-            message: build_help_text(),
-            is_success: true,
+        encoding_speed: if fast {
+            EncodingSpeed::Fast
+        } else {
+            EncodingSpeed::Balanced
         },
-        Some(unknown_argument) => CommandLineResponse {
-            message: format!(
-                "Unknown argument: {unknown_argument}\n\n{}",
-                build_help_text()
-            ),
-            is_success: false,
-        },
-    }
-}
-
-/// Returns the text printed by `--version`, for example `kadr-cli 0.1.0`.
-fn build_version_text() -> String {
-    format!("{PROGRAM_NAME} {PROGRAM_VERSION}")
-}
-
-/// Returns the text printed by `--help`.
-fn build_help_text() -> String {
-    format!(
-        "{PROGRAM_NAME} {PROGRAM_VERSION} — Kadr from the command line\n\
-         \n\
-         Usage: {PROGRAM_NAME} [OPTION]\n\
-         \n\
-         Options:\n  \
-         -h, --help       Show this help\n  \
-         -V, --version    Show the version"
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn to_arguments(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| value.to_string()).collect()
-    }
-
-    #[test]
-    fn version_flag_prints_program_name_and_version() {
-        for flag in ["--version", "-V"] {
-            let response = respond_to_arguments(&to_arguments(&[flag]));
-
-            assert!(response.is_success);
-            assert_eq!(response.message, format!("kadr-cli {PROGRAM_VERSION}"));
-        }
-    }
-
-    #[test]
-    fn help_is_shown_without_arguments_and_with_help_flags() {
-        for arguments in [vec![], to_arguments(&["--help"]), to_arguments(&["-h"])] {
-            let response = respond_to_arguments(&arguments);
-
-            assert!(response.is_success);
-            assert!(response.message.contains("Usage: kadr-cli"));
-        }
-    }
-
-    #[test]
-    fn unknown_argument_fails_and_names_the_argument() {
-        let response = respond_to_arguments(&to_arguments(&["--explode"]));
-
-        assert!(!response.is_success);
-        assert!(response.message.contains("Unknown argument: --explode"));
-        assert!(response.message.contains("Usage: kadr-cli"));
-    }
+    };
+    let started_at = Instant::now();
+    let mut progress_line = reports::ProgressLine::default();
+    let report = export_project(
+        &project,
+        backend,
+        &request,
+        &mut |progress| progress_line.update(progress),
+        &cancellation,
+    );
+    progress_line.finish();
+    println!(
+        "{}",
+        reports::describe_export(&report?, started_at.elapsed())
+    );
+    Ok(())
 }
