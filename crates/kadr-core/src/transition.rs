@@ -15,7 +15,7 @@
 //! [`text_animation`](crate::text_animation): [`fitted_edge_durations`] and
 //! [`edge_phase_at`].
 //!
-//! Decision record: `docs/decisions/0030-transitions-at-clip-edges.md`.
+//! Decision record: `docs/decisions/0050-transitions-at-clip-edges.md`.
 
 use serde::{Deserialize, Serialize};
 

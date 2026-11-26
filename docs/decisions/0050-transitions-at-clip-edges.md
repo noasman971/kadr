@@ -1,4 +1,4 @@
-# 0030. Transitions at clip edges, using the neighbouring clip's handles
+# 0050. Transitions at clip edges, using the neighbouring clip's handles
 
 - Status: Accepted
 - Date: 2026-11-26

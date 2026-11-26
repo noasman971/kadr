@@ -4,7 +4,7 @@ How videos and images enter and leave the picture, and how texts appear and
 disappear. Code: `kadr-core` (`transition.rs`, `text_animation.rs`, the
 `SetClipTransition` and `SetTextAnimation` commands), `kadr-render`
 (`transitions.rs`, `text.rs`), `kadr-engine` (`export/clip_layers.rs`). Why it works
-this way: [decision record 0030](decisions/0030-transitions-at-clip-edges.md).
+this way: [decision record 0050](decisions/0050-transitions-at-clip-edges.md).
 
 ## Transitions belong to clip edges
 
@@ -109,11 +109,14 @@ Durations are in ticks (705 600 000 per second).
    (opacity, offset, scale) — `transition_motion` and `text_animation_frame` — and
    moves the layer's placement with it.
 3. Type-on and word-by-word texts are rasterised with only part of their letters
-   (`TextRasterizer::rasterize_revealed`); the export re-rasterises them only while
-   the reveal changes.
+   (`TextRasterizer::rasterize_revealed`); the frame composer re-rasterises them
+   only while the reveal changes.
 4. Both renderers draw the moved layers like any others: no shader is specific to
    transitions, and `gpu_matches_cpu.rs` checks dissolves, pushes, zooms and
    animated texts on both.
+
+Exports, the desktop app's preview and Claude's frames (`get_frame`) all go through
+the same frame composer, so they show transitions and text animations the same way.
 
 ## Trying it from the command line
 
@@ -139,3 +142,6 @@ top track (`--title-seconds`, 3 by default) that appears and disappears with
 - The transitioning clip is always drawn above the touching one.
 - Keyframes inside transitions (custom curves) are future work, with the keyframe
   editor of the desktop app.
+- Claude's `add_transition` tool still makes fades from opacity keyframes, and the
+  desktop app's inspector has no transition controls yet: for now, transitions are
+  set from the command line or the `kadr-core` commands.

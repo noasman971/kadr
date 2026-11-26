@@ -20,12 +20,15 @@
 //! `docs/tracking-and-blur.md` explains the whole pipeline, its settings and its
 //! limits.
 //!
+//! The crate also finds the **silent parts of a sound** ([`silence_detection`]),
+//! for cutting silences: its loudness is measured window by window.
+//!
 //! ## Rules for this crate
 //!
 //! - **No neural network, no pre-trained model, no model file.** Every algorithm
 //!   is classic, explainable, and documented step by step with a reference to its
 //!   original paper.
-//! - Algorithms work on plain buffers (grey-level images) and depend on no other
+//! - Algorithms work on plain buffers (grey-level images, audio samples) and depend on no other
 //!   Kadr crate, so they can be tested on synthetic data ([`synthetic_scenes`]).
 //!
 //! See also `docs/decisions/0003-face-blur-by-classic-tracking.md`.
@@ -35,6 +38,7 @@ mod fourier;
 mod geometry;
 mod grey_image;
 mod optical_flow;
+pub mod silence_detection;
 mod smoothing;
 pub mod synthetic_scenes;
 mod template_matching;

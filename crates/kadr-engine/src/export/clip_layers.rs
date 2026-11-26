@@ -3,7 +3,7 @@
 //! Usually a track shows the one clip under the playhead. During a transition it
 //! may show two: the transitioning clip on top, and the clip **touching** that
 //! edge on the same track underneath, continuing past its own cut (see
-//! `docs/decisions/0030-transitions-at-clip-edges.md`).
+//! `docs/decisions/0050-transitions-at-clip-edges.md`).
 //!
 //! The motion of each picture comes from `kadr-render`
 //! ([`transition_motion`], [`text_animation_frame`]); this module only decides

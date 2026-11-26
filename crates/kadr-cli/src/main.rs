@@ -7,9 +7,11 @@
 //! kadr-cli assemble --output edit.kadr --format vertical clip1.mp4 clip2.mp4 music.mp3
 //! kadr-cli assemble --output demo.kadr --transition fade --title "Hello" clip1.mp4 clip2.mp4
 //! kadr-cli render edit.kadr edit.mp4
+//! kadr-cli blur interview.mp4 --at 2.5 --rect 420,180,160,200 -o blurred.mp4 --debug
 //! ```
 
 mod arguments;
+mod blur;
 mod finishing_touches;
 mod reports;
 
@@ -87,6 +89,32 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
             &project,
             &output,
             RenderOptions {
+                software_encoder,
+                fast,
+                cpu,
+            },
+        ),
+        Command::Blur {
+            video,
+            at,
+            rect,
+            output,
+            style,
+            debug,
+            save_project,
+            software_encoder,
+            fast,
+            cpu,
+        } => blur::blur(
+            &backend,
+            &blur::BlurCommand {
+                video,
+                at_seconds: at,
+                rectangle: rect,
+                output,
+                style,
+                write_debug_video: debug,
+                project_output: save_project,
                 software_encoder,
                 fast,
                 cpu,

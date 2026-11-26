@@ -17,7 +17,7 @@ app.
 | `kadr-tools` | Editing tools Claude can call: name, description, JSON schema, execution | 5 |
 | `kadr-mcp` | Local MCP server (stdio) exposing `kadr-tools` to Claude Desktop / Claude Code | 5, 7 |
 | `kadr-cli` | Command-line binary to test the engine without an interface | 0 → |
-| `apps/desktop` | Tauri 2 desktop app (web front end + Rust back end calling `kadr-engine`) | 6 |
+| `apps/desktop` | Tauri 2 desktop app: Svelte front end, Rust back end (crate `kadr-desktop`) calling the engine. See [desktop-app.md](desktop-app.md) | 6 |
 | `apps/mobile` | The same Tauri 2 app built for Android | 9 |
 
 ## Planned dependencies
@@ -25,7 +25,10 @@ app.
 An arrow means "depends on". Dependencies are declared in `Cargo.toml` only when the
 code starts using them (Cargo warns about unused ones and CI fails on warnings). Since
 phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` are real;
-the others arrive with their phase.
+since phase 4, `kadr-engine → kadr-vision` (region tracking, and silence analysis
+since phase 5); since phase 5, `kadr-mcp → kadr-tools → kadr-engine / kadr-core`
+too (`kadr-mcp` also uses `kadr-engine` directly, for the FFmpeg backend the engine
+re-exports). The others arrive with their phase.
 
 ```mermaid
 flowchart TD
@@ -68,7 +71,10 @@ flowchart LR
     encoder --> export[Exported MP4]
 ```
 
-Preview and export use the same renderer, so what the user sees is what they get.
+Preview and export use the same renderer, so what the user sees is what they get: the
+desktop app's preview frames come from `kadr_engine::preview`, which composes frames
+with the export's own code and only shrinks the result to the panel's size (see
+[desktop-app.md](desktop-app.md)).
 
 ## How Claude edits a project (from phase 5)
 
@@ -89,4 +95,5 @@ sequenceDiagram
 ```
 
 No request ever goes from Kadr to Anthropic. See
-[decisions/0004-claude-through-local-mcp-only.md](decisions/0004-claude-through-local-mcp-only.md).
+[decisions/0004-claude-through-local-mcp-only.md](decisions/0004-claude-through-local-mcp-only.md)
+and, for the tools and their rules, [mcp-server.md](mcp-server.md).

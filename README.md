@@ -16,8 +16,9 @@ Claude conversation.**
 
 > **Status: phase 3 — GPU rendering.** Kadr can read video, audio and image files,
 > build a project, and export it to MP4 from the command line, rendering on the GPU
-> with text, colour adjustment and tracked blurs. There is no graphical interface yet. See the [roadmap](#roadmap) and
-> [Trying Kadr today](#trying-kadr-today).
+> with text, colour adjustment and tracked blurs. The desktop app (phase 6) is being
+> built: it already imports media, plays the edit with its sound and saves projects.
+> See the [roadmap](#roadmap) and [Trying Kadr today](#trying-kadr-today).
 
 ---
 
@@ -30,8 +31,8 @@ Claude conversation.**
 | 2 | Decoding, encoding and export from the command line | ✅ Done |
 | 3 | GPU rendering (`wgpu`): compositing, text, effects | 🔍 In review |
 | 4 | Face blur by classic region tracking | |
-| 5 | Local MCP server for Claude | |
-| 6 | Desktop app (Tauri 2) — MVP | |
+| 5 | Local MCP server for Claude | 🔍 In review |
+| 6 | Desktop app (Tauri 2) — MVP | 🚧 In progress |
 | 7 | Face blur and Claude inside the app | |
 | 8 | Silence removal, transitions, colour, stabilisation, keyframes, proxies | |
 | 9 | Android app | |
@@ -141,6 +142,25 @@ powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
 
 ## Trying Kadr today
 
+### The desktop app (in progress)
+
+With [Node.js](#setting-up-windows) installed, from `apps/desktop/`:
+
+```powershell
+npm ci
+```
+
+```powershell
+npm run tauri dev
+```
+
+Create a project, drop videos, photos or music on the window, click **+** on a
+thumbnail to put it on the timeline, and play it (Space, J/K/L). Projects are saved
+automatically in `Documents/Kadr/`. Editing on the timeline, the inspector and export
+arrive in the next steps of phase 6. See [apps/desktop/README.md](apps/desktop/README.md).
+
+### The command line
+
 Build the command-line tool once (optimised):
 
 ```powershell
@@ -180,6 +200,94 @@ phone videos with a rotation flag are not rotated yet.
 
 ---
 
+## Editing with Claude
+
+Kadr includes a local MCP server, `kadr-mcp`. Once it is added to Claude Desktop or
+Claude Code, you describe the edit in a normal conversation and Claude does it with
+Kadr, on your computer. **No API key and no extra cost: your regular Claude
+subscription is enough.** Kadr never sends anything to Anthropic or anywhere else.
+
+**Your videos stay on your computer.** A video attached to the conversation is *not*
+passed to Kadr. Tell Claude the name of the file or the folder it is in; Claude finds
+it with Kadr's search tool, which only looks in the folders you allowed.
+
+### 1. Build the server
+
+```powershell
+cargo build --release -p kadr-mcp
+```
+
+The program is `target\release\kadr-mcp.exe`. It needs the FFmpeg DLLs on your
+`PATH` (the winget installation of [Setting up Windows](#setting-up-windows) does
+it; restart Claude after installing FFmpeg).
+
+### 2. Choose the folders Kadr may use
+
+Kadr only reads and writes inside the folders you give it with `--allowed-folder`
+(repeat it for several folders): your videos, where projects are saved, where
+exports go. It never replaces a file unless you agree, and never deletes files.
+
+### 3a. Claude Desktop
+
+1. Open Claude Desktop, then **Settings → Developer → Edit Config**. This shows
+   `claude_desktop_config.json` wherever your installation keeps it (usually
+   `%APPDATA%\Claude\` on Windows; some installations keep it under
+   `%LOCALAPPDATA%`).
+2. Add Kadr (use your own paths; in JSON, every `\` is written `\\`):
+
+   ```json
+   {
+     "mcpServers": {
+       "kadr": {
+         "command": "C:\\Users\\sam\\Projects\\kadr\\target\\release\\kadr-mcp.exe",
+         "args": [
+           "--allowed-folder", "C:\\Users\\sam\\Videos",
+           "--allowed-folder", "D:\\Edits"
+         ]
+       }
+     }
+   }
+   ```
+
+   Keep what the file already contains: add `"mcpServers"` next to the existing
+   entries, separated by a comma, or, if it already has an `mcpServers` section, add
+   the `"kadr"` entry inside it.
+3. Quit Claude Desktop completely (also from the system tray) and start it again.
+   Kadr's tools appear in the tools menu of a new conversation.
+
+If Kadr does not appear, Claude Desktop's log `mcp-server-kadr.log`, in the `logs`
+folder next to `claude_desktop_config.json`, says why.
+
+### 3b. Claude Code
+
+```powershell
+claude mcp add kadr --scope user -- C:\Users\sam\Projects\kadr\target\release\kadr-mcp.exe --allowed-folder C:\Users\sam\Videos
+```
+
+Then `claude mcp list` shows `kadr`, and `/mcp` inside Claude Code shows its tools.
+
+### 4. Ask
+
+Five requests to try:
+
+1. *"Create a Kadr project called holiday in my Videos folder, find my beach videos
+   and put them one after another."*
+2. *"Make a 20-second vertical video of the best moment of beach.mp4 with the title
+   'Summer 2026' at the top, and export it for TikTok."*
+3. *"Look at the interview and cut everything between 1:12 and 1:20, then fade out the
+   end."*
+4. *"Lower the music to 30 %, make the second clip a bit warmer and brighter, and show
+   me a frame so I can check."*
+5. *"Undo that last change, then export the project in 1080p to D:\Edits\final.mp4."*
+
+Claude looks at the video through pictures Kadr sends back (a frame, or thumbnails
+across a clip), so it can check its own work. Every request it carries out is one
+step in the undo history. The project file is saved after every change.
+
+The list of tools and their rules is in [docs/mcp-server.md](docs/mcp-server.md).
+
+---
+
 ## Project layout
 
 ```
@@ -192,6 +300,8 @@ crates/
   kadr-tools    editing tools exposed to Claude
   kadr-mcp      local MCP server for Claude Desktop / Claude Code
   kadr-cli      command-line binary for testing
+apps/
+  desktop       desktop app: Svelte front end, Tauri back end (crate kadr-desktop)
 docs/           architecture, decisions, guides
 scripts/        environment check and test video generation
 tests/fixtures/ test video descriptions (videos are generated, not committed)

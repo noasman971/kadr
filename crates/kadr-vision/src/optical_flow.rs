@@ -32,11 +32,19 @@
 //!    occlusion, a uniform area) and is ignored.
 //! 5. The region's motion is the median of the remaining points' motions, which
 //!    ignores the few points that followed the background.
-//! 6. Its change of size is the median, over every pair of remaining points, of
-//!    how much their distance changed: if the region comes 3 % closer, every
-//!    distance grows by 3 %. This is the "Median Flow" estimate of Kalal et al.
-//!    Nothing is learnt from frame to frame, so a small error on one frame does
-//!    not become the reference for the next one.
+//! 6. Its change of size is the median, over every pair of points, of how much
+//!    their distance changed: if the region comes 3 % closer, every distance
+//!    grows by 3 %. This is the "Median Flow" estimate of Kalal et al. Nothing is
+//!    learnt from frame to frame, so a small error on one frame does not become
+//!    the reference for the next one.
+//! 7. Only the points that move **with** the region count for the size: points on
+//!    the background, or on parts moving inside the region (a mouth, a scrolling
+//!    text), have their own motion, and their distances to the others change for
+//!    reasons that have nothing to do with size. A point moves with the region
+//!    when its motion is the median motion, give or take what a change of size of
+//!    a few percent explains at its distance from the centre. When the remaining
+//!    pairs disagree (their ratios are spread), the size is left as it is: a size
+//!    that drifts lets the blur slide onto the background.
 
 use crate::geometry::{Point, Region};
 use crate::grey_image::{GreyImage, ImagePyramid};
@@ -77,6 +85,18 @@ const MINIMUM_RELIABLE_POINTS: usize = 4;
 /// left out of the size estimate: a tiny error on their distance would be a large
 /// error on its ratio.
 const MINIMUM_PAIR_DISTANCE_FRACTION: f32 = 0.2;
+
+/// A point moves with the region when its motion differs from the median motion
+/// by at most this much…
+const INLIER_TOLERANCE_IN_PIXELS: f32 = 0.5;
+
+/// …plus this fraction of its distance from the region's centre (what a 5 %
+/// change of size explains).
+const INLIER_TOLERANCE_PER_DISTANCE: f32 = 0.05;
+
+/// Above this spread of the pairs' size ratios (median absolute deviation of
+/// their logarithms, about 1 %), they disagree and the size is left as it is.
+const MAXIMUM_SCALE_SPREAD: f32 = 0.01;
 
 /// How the region moved from one frame to the next.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,19 +157,52 @@ pub(crate) fn estimate_region_motion(
         .iter()
         .map(|(from, to)| to.y - from.y)
         .collect();
+    let (motion_x, motion_y) = (
+        median(&mut horizontal_motions),
+        median(&mut vertical_motions),
+    );
+    let moving_with_the_region: Vec<(Point, Point)> = followed_points
+        .into_iter()
+        .filter(|(from, to)| {
+            let deviation = (to.x - from.x - motion_x).hypot(to.y - from.y - motion_y);
+            let distance_from_center = (from.x - region.center_x).hypot(from.y - region.center_y);
+            deviation
+                <= INLIER_TOLERANCE_IN_PIXELS + INLIER_TOLERANCE_PER_DISTANCE * distance_from_center
+        })
+        .collect();
     let minimum_pair_distance = MINIMUM_PAIR_DISTANCE_FRACTION * region.width.min(region.height);
+    let scale_change = if moving_with_the_region.len() >= MINIMUM_RELIABLE_POINTS {
+        agreed_distance_ratio(&moving_with_the_region, minimum_pair_distance).unwrap_or(1.0)
+    } else {
+        1.0
+    };
     Some(RegionMotion {
-        motion_x: median(&mut horizontal_motions),
-        motion_y: median(&mut vertical_motions),
-        scale_change: median_distance_ratio(&followed_points, minimum_pair_distance).unwrap_or(1.0),
+        motion_x,
+        motion_y,
+        scale_change,
     })
 }
 
-/// The median, over pairs of points at least `minimum_distance` apart, of how
-/// much their distance changed.
-fn median_distance_ratio(followed_points: &[(Point, Point)], minimum_distance: f32) -> Option<f32> {
+/// The median change of distance over the pairs, when the pairs agree on it
+/// (`None` when they disagree or there is no pair).
+fn agreed_distance_ratio(followed_points: &[(Point, Point)], minimum_distance: f32) -> Option<f32> {
+    let mut ratios = distance_ratios(followed_points, minimum_distance);
+    if ratios.is_empty() {
+        return None;
+    }
+    let ratio = median(&mut ratios);
+    let mut deviations: Vec<f32> = ratios
+        .iter()
+        .map(|other| (other / ratio).ln().abs())
+        .collect();
+    (median(&mut deviations) <= MAXIMUM_SCALE_SPREAD).then_some(ratio)
+}
+
+/// How much the distance changed, for every pair of points at least
+/// `minimum_distance` apart.
+fn distance_ratios(followed_points: &[(Point, Point)], minimum_distance: f32) -> Vec<f32> {
     let distance = |first: Point, second: Point| (first.x - second.x).hypot(first.y - second.y);
-    let mut ratios: Vec<f32> = followed_points
+    followed_points
         .iter()
         .enumerate()
         .flat_map(|(index, first)| {
@@ -161,8 +214,7 @@ fn median_distance_ratio(followed_points: &[(Point, Point)], minimum_distance: f
             let before = distance(*from_first, *from_second);
             (before >= minimum_distance).then(|| distance(*to_first, *to_second) / before)
         })
-        .collect();
-    (!ratios.is_empty()).then(|| median(&mut ratios))
+        .collect()
 }
 
 /// The coarsest level on which the region still spans enough pixels.
@@ -354,6 +406,31 @@ mod tests {
                 "{motion:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_still_background_inside_the_region_does_not_change_its_size() {
+        // The left half of the region moves 6 pixels to the right, the right half
+        // stays still (a background showing through): the distances between the
+        // halves change, but the region does not grow.
+        let moving_left_half = |shift_x: f32| {
+            let image = GreyImage::from_fn(320, 240, |column, row| {
+                let x = column as f32 + 0.5;
+                let shifted_x = if x < 150.0 { x - shift_x } else { x };
+                30.0 + 190.0 * textured_value(shifted_x, row as f32 + 0.5, 10.0, 21)
+            });
+            ImagePyramid::new(image, 16)
+        };
+        let region = Region::from_top_left(110.0, 80.0, 60.0, 70.0);
+        let motion = estimate_region_motion(
+            &moving_left_half(0.0),
+            &moving_left_half(6.0),
+            &region,
+            (0.0, 0.0),
+        )
+        .unwrap();
+        // Only the moving half counts, and it did not change size.
+        assert!((motion.scale_change - 1.0).abs() < 0.002, "{motion:?}");
     }
 
     #[test]

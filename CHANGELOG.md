@@ -8,24 +8,6 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
-### Added (phase 8a: transitions and text animations)
-
-- `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
-  in four directions, `zoom` in or out) and entry and exit **text animations** on texts
-  (`fade`, `slide`, `pop`, `type_on`, `word_by_word`), with the undoable commands
-  `SetClipTransition` and `SetTextAnimation` and their validation rules. A clip
-  touching a transition's edge on the same track shows underneath, so a fade between
-  two clips is a dissolve and a slide pushes the previous clip out. Splitting keeps
-  the entry on the first part and the exit on the second.
-- File format version 2, with a migration from version 1.
-- `kadr-render`: `transition_motion` and `text_animation_frame` move layers (opacity,
-  position, scale) on both renderers; `TextRasterizer::rasterize_revealed` draws
-  part of a text for type-on and word-by-word animations.
-- `kadr-engine`: exports draw transitions, reading the touching clip's source past its
-  cut (holding the file's last or first frame where it ends).
-- `kadr-cli assemble --transition … --title … --title-animation …` to try them.
-- `docs/transitions-and-text-animations.md`, decision record 0030.
-
 ### Added (phase 4a: region tracker)
 
 - `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
@@ -45,6 +27,152 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   occlusion, leaving the frame, backwards) and `criterion` benchmarks
   (`cargo bench -p kadr-vision`).
 - `docs/tracking-and-blur.md`, decision record 0007.
+
+### Added (phase 4b: blur analysis)
+
+- `kadr-engine`: `region_tracking`:
+  - `RegionTrackingRequest::for_clip` turns a selection on a clip into a request;
+  - `track_region` tracks it forwards and backwards from the selected frame. The
+    backward pass decodes in chunks. It reports progress and can be cancelled;
+  - the result is smoothed and stored as few samples as possible (within a pixel);
+  - `export_tracking_debug_video` draws the tracked box and its confidence.
+- `TrackedBlur::unsure_ranges` lists where the tracker was uncertain or lost.
+- `kadr-vision`: `TrackingError::RegionWithoutDetail` for a uniform region on a
+  textured background. A recovered region now counts as uncertain, and the
+  recovery search starts at exactly one region size.
+- `kadr-cli blur video.mp4 --at 2.5 --rect 420,180,160,200 -o out.mp4 [--debug]`.
+- `scripts/generate-tracking-benchmark.ps1`, the `track_video` example and
+  `scripts/compare-tracking-with-truth.py`: measure the tracker on a 60 s 1080p video
+  whose true path is known.
+
+### Fixed (phase 4b: tracking drift on a real video)
+
+On the 1080p benchmark the region slid off the object by 2 to 4 pixels per second
+while every frame stayed "confident" (mean centre error 197 px, size error 24 %). Now
+2 px and 1.7 % (decision record 0008):
+
+- Median Flow measures the size only from points moving with the region, and the
+  correlation filter's window is weighted towards the region.
+- The correlation filter learns at 0.02 instead of 0.125: it no longer forgets the
+  selection within a few frames.
+- Every confident frame is anchored to the selection's appearance: searched a few
+  cells around the answer at three sizes, the region is pulled towards it where it
+  matches clearly.
+- A confident frame that does not look like the selection at all is reported as
+  uncertain, and the region is re-anchored where the selection is found again nearby.
+
+### Added (phase 5: MCP server, file mode)
+
+- `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
+  3.11, that Claude Desktop and Claude Code start with `--allowed-folder <folder>`
+  arguments. Nothing but the protocol is written to stdout; logs go to stderr.
+- `kadr-tools`: 35 tools defined once (name, description for a language model, JSON
+  schema generated with `schemars`, code), independent of MCP: project
+  (`create_project`, `open_project`, `save_project`, `get_project_info`,
+  `set_project_settings`, `undo`, `redo`), media (`find_media_files`, `probe_media`,
+  `import_media`, `list_media`), timeline (`get_timeline`, `get_clip`, `add_track`,
+  `remove_track`, `add_clip`, `remove_clip`, `move_clip`, `trim_clip`, `split_clip`),
+  clip properties (`set_clip_speed`, `set_clip_volume`, `set_transform`), content
+  (`add_text`, `edit_text`, `add_transition`, `remove_transitions`,
+  `add_color_adjustment`, `remove_effect`), pictures (`get_frame`,
+  `get_contact_sheet`), sound (`detect_silences`) and export (`export`,
+  `get_export_status`, `cancel_export`).
+- One tool call is one undo step labelled "Claude: …"; the project file is saved
+  after every change and never overwritten if another program changed it.
+- File access limited to the allowed folders (links and `..` resolved), no file
+  replaced without `"overwrite": true`, no file deleted.
+- Pictures for Claude are JPEG with the longest side at most 1024 pixels, with the
+  original size and the conversion factor stated.
+- Exports run in the background with a task id; presets for TikTok / Reels / Shorts,
+  YouTube 1080p and 4K, with automatic scaling when the shape matches.
+- `kadr-engine::still_frames`: single pictures of a file, a clip or the finished
+  timeline, and labelled contact sheets.
+- Silence detection: `kadr-vision::silence_detection` (RMS level per 10 ms window,
+  incremental), `kadr-engine::silence_analysis` (sound decoded piece by piece at
+  16 kHz), the `detect_silences` tool.
+- Integration tests driving the server through an MCP client, including the real
+  binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
+  README section "Editing with Claude".
+
+### Added (phase 6a: desktop app design)
+
+- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
+  notifications, keyboard shortcuts, languages and accessibility.
+- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
+  light themes, with measured WCAG contrast, and the component list.
+- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
+  both languages.
+- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
+  repository) and 0022 (how the front end and the engine talk).
+
+### Added (phase 6b: desktop app skeleton)
+
+- `kadr-engine`: `preview` (the export's frame composition at any time, shrunk to a
+  panel's size), `timeline_sound` (any range of the timeline's sound, mixed exactly
+  like the export, decoded clips kept), `media_overview` (thumbnails with decoders kept
+  open, waveform peaks) and `picture_scaling` (box-filter shrinking). Export behaviour
+  is unchanged; its frame composer now takes the project per frame.
+- `apps/desktop`: the Tauri 2 desktop app. Rust back end (crate `kadr-desktop`) owning
+  the project, saved after every change, with preview and thumbnail threads; Svelte 5
+  front end in French and English, dark and light themes, interface size setting.
+- Home screen (new project with its format, open, recent projects), media import by
+  drag and drop or dialog with reading and error tiles, + to add at the end of the
+  timeline, automatic format from the first video, preview drawn with WebGL, playback
+  with sound (Space, J/K/L, frame and second steps), timeline with zoom, undo and redo.
+- CI: WebKitGTK on Linux for the desktop crate, and a job checking, testing and
+  building the front end.
+
+### Added (phase 6c: timeline editing)
+
+- Clips on the timeline show thumbnails along pictures and a waveform along sound,
+  with badges for a changed speed or volume.
+- Drag a file from the library onto a track or onto the "new track" zone; move
+  clips along their track, to another track or to a new one; trim either edge
+  (the preview shows the frame at the edge). A ghost shows where the clip would
+  land, or turns red and says why it cannot (overlap, wrong kind of track).
+- Snapping to clip edges, the playhead and the start (N, or Alt held to drag
+  without it); split at the playhead (S); delete the selection (Delete, with an
+  Undo notice); previous and next cut (↑ / ↓); hide, mute and remove tracks.
+- Every gesture is one undo step whose name appears in the undo button and notices.
+
+### Added (phase 6d: inspector, titles and export)
+
+- Inspector for the selected clip: picture (position, scale, rotation, opacity,
+  crop), sound (volume), speed (0.5× to 2× or any value), colour (exposure, contrast,
+  saturation, temperature) and text (words, font, size, colour, alignment, length),
+  each with a Reset; number fields take typing, arrow keys and dragging.
+- Titles: T, the timeline's button or three ready-made styles in the Text tab, on a
+  Titles track.
+- Export dialog (Ctrl+E): presets (project format, YouTube 1080p and 4K, TikTok ·
+  Reels · Shorts, square), file name and folder, quality, encoder, estimated size;
+  progress with time left, cancel, *Keep editing* with a progress pill; the finished
+  file with *Show in folder* and *Play the video*, or a clear error with *Try again*.
+- `kadr_engine::export_presets`: the export sizes and the scaling of a project to
+  another size, shared by Claude's tools and the app, and `refit_clips_to_canvas`,
+  which keeps titles in place when the canvas changes shape.
+
+### Added (phase 8a: transitions and text animations)
+
+- `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
+  in four directions, `zoom` in or out) and entry and exit **text animations** on texts
+  (`fade`, `slide`, `pop`, `type_on`, `word_by_word`), with the undoable commands
+  `SetClipTransition` and `SetTextAnimation` and their validation rules. A clip
+  touching a transition's edge on the same track shows underneath, so a fade between
+  two clips is a dissolve and a slide pushes the previous clip out. Splitting keeps
+  the entry on the first part and the exit on the second.
+- File format version 2, with a migration from version 1.
+- `kadr-render`: `transition_motion` and `text_animation_frame` move layers (opacity,
+  position, scale) on both renderers; `TextRasterizer::rasterize_revealed` draws
+  part of a text for type-on and word-by-word animations.
+- `kadr-engine`: exports draw transitions, reading the touching clip's source past its
+  cut (holding the file's last or first frame where it ends).
+- `kadr-cli assemble --transition … --title … --title-animation …` to try them.
+- `docs/transitions-and-text-animations.md`, decision record 0050.
+
+### Changed
+
+- Build scripts and procedural macros are compiled with optimisations, so `bindgen`
+  no longer overflows the stack of Windows build scripts.
 
 ## [0.4.0] — Phase 3: GPU rendering
 

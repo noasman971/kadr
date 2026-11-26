@@ -22,14 +22,13 @@ It is the source of truth for scope, phases and rules.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
 - **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
-- **Phase 4 (tracking): in progress.** 4a, the region tracker in `kadr-vision`
-  (MOSSE, PSR, Lucas-Kanade with Median Flow size, NCC recovery, One Euro smoothing),
-  on branch `feature/phase-4a-region-tracker`. Next, 4b: the analysis in
-  `kadr-engine` (forwards and backwards from the selected frame, samples stored in the
-  `TrackedBlur`), `kadr-cli blur … --debug`, speed on a real 1080p video.
-- **Phases 5 and 6 run in parallel** (owner's request, 2026-11-26), each in its own
-  session and worktree: phase 5 the MCP server, phase 6 the desktop app. Versions are
-  still tagged in phase order, after the owner validates each phase.
+- **Phases 4, 5, 6, 8 and 9 are in progress in parallel**, each on its own branch
+  with a draft pull request whose description starts with "Status for resuming".
+  **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
+  another computer, and the prompt to start each session with: read it first.**
+  Phase 9 is paused by the owner; phase 8 resumed on 2026-11-26. Phase 7 waits
+  for 4 and 6; phase 10 (iOS) needs a Mac. Versions are tagged in phase order
+  (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
 
 ## Decisions taken with the owner
 
@@ -46,15 +45,17 @@ It is the source of truth for scope, phases and rules.
   validation: at the end of a phase, still stop and wait for the owner's OK before
   tagging the version and starting the next phase.
 - **`main` is protected on GitHub** (owner's request, 2026-11-26), administrators
-  included: pull request required (0 approvals), the five CI checks required
+  included: pull request required (0 approvals), the six CI checks required
   ("Formatting", the three "Build, lint, test and docs (…)" jobs, "Test video fixtures
-  can be generated"), conversations resolved, no force push, no deletion. Direct pushes
+  can be generated", and since 2026-11-26 "Desktop front end (types, tests, build)"),
+  conversations resolved, no force push, no deletion. Direct pushes
   to `main` are refused. If a CI job is renamed, update the required checks too
   (`gh api repos/noasman971/kadr/branches/main/protection`), or every PR will wait for
   a check that never runs. Tags can still be pushed.
 - Architecture decisions are recorded in [docs/decisions/](docs/decisions/). While
   phases run in parallel, record numbers are reserved to avoid clashes: phase 4 uses
-  0007–0009, phase 5 0010–0019, phase 6 0020–0029.
+  0007–0009, phase 5 0010–0019, phase 6 0020–0029, phase 7 0030–0039, phase 9
+  0040–0049, phase 8 0050–0059.
 
 ## Commands
 
@@ -68,6 +69,15 @@ powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1
 powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
 ```
 
+Desktop app, from `apps/desktop/` (Node.js 20.19+):
+
+```powershell
+npm ci
+npm run tauri dev
+npm run check
+npm test
+```
+
 End-of-phase checklist: build without warnings, clippy, fmt, tests, `cargo doc`, docs
 updated, CHANGELOG updated, summary to the owner, **stop and wait for validation**.
 
@@ -78,9 +88,14 @@ dependency; read [docs/data-model.md](docs/data-model.md) before changing it.
 `kadr-media` exposes `MediaBackend` traits implemented with FFmpeg (MediaCodec later)
 and the `VideoFrame` (YUV or RGBA) and colour-space types; `kadr-render` turns layers
 into BT.709 YUV frames on the GPU (`wgpu`) or the CPU (reference); `kadr-vision`
-(classic tracking) will do the face blur. `kadr-engine` is the only API interfaces use. `kadr-tools` defines the tools
-Claude can call; `kadr-mcp` serves them over stdio. `kadr-cli` is for testing. The
-desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/architecture.md).
+(classic tracking) will do the face blur. `kadr-engine` is the only API interfaces
+use (it re-exports the media backend types). `kadr-tools` defines the tools Claude can
+call (`KadrToolbox::call_tool`, no MCP dependency); `kadr-mcp` serves them over stdio
+with `rmcp`. Read [docs/mcp-server.md](docs/mcp-server.md) before changing a tool.
+`kadr-cli` is for testing. The desktop app `apps/desktop` (Tauri 2) has a Svelte front
+end and a Rust back end, the crate `kadr-desktop`, which owns the project and answers
+with project views, frames and sound ([docs/desktop-app.md](docs/desktop-app.md)).
+Details: [docs/architecture.md](docs/architecture.md).
 
 ## Conventions (short version — full version in docs/contributing.md)
 
@@ -131,6 +146,16 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - GPU tests: `KADR_GPU_ADAPTER=software` forces WARP / lavapipe, `KADR_REQUIRE_GPU=1`
   turns "no GPU" into a failure. To check GPU vs CPU on a real export, compare both
   files with `ffmpeg -i a.mp4 -i b.mp4 -lavfi psnr -f null -` (47 dB today).
+- GPU-vs-CPU test pictures: the GPU interpolates the half-size colour planes, the CPU
+  reuses each 2 × 2 block, so a sharp edge between two very different colours (red
+  and green, about 130 apart in V) puts 13 % of V values more than 10 apart with no
+  bug at all. Make test edges sharp in brightness (compared at full resolution) and
+  milder in colour, rather than loosening the shared thresholds.
+- On the desktop PC (RTX 4060), WARP (`KADR_GPU_ADAPTER=software`) crashes with an
+  access violation (`0xC0000005`) in about half the parallel runs of
+  `gpu_matches_cpu`, `main`'s tests alone included; `--test-threads=1` passes, the
+  RTX 4060 never crashes, and CI's WARP does not. Treat such a crash there as the
+  machine's, after a single-threaded rerun.
 - Inter 4's variable font declares the family **"Inter Variable"**, not "Inter": a
   request for "Inter" silently fell back to Segoe UI until `text.rs` redirected it.
   `TextRasterizer::has_font_family` and a test now guard it. Look at rendered text
@@ -140,6 +165,19 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy 1.100 wants `as_chunks::<N>()` instead of `chunks_exact(N)` for constant sizes,
   and flags enum variants much larger than the others (box them).
 - MCP over stdio: **never print to stdout** in `kadr-mcp` except protocol messages.
+  The test `kadr-mcp/tests/stdio_binary.rs` runs the real binary and fails otherwise.
+- `rmcp` 3.11: implement `ServerHandler::list_tools` / `call_tool` by hand (tools are
+  defined in `kadr-tools`, not with `#[tool]` macros, see ADR 0010). Return tool
+  failures as `CallToolResult::error`, never as `ErrorData`: clients hide protocol
+  errors from the model. Do not implement `get_tool`: it turns on `rmcp`'s own
+  argument validation, whose errors are less clear than ours.
+- `schemars` keeps the line breaks of wrapped doc comments and puts the struct's doc
+  in the schema: `catalog.rs` removes the root description and joins the lines.
+- Tool parameter structs use `#[serde(deny_unknown_fields)]` so a misspelt argument
+  is reported to Claude instead of silently ignored.
+- Times shown to Claude are rounded to the microsecond; tools snap clip edges given
+  within half a frame of another edge (`time_input::snap_to_nearby_clip_edge`), or a
+  copied `1.999999` would overlap the previous clip by a fraction of a microsecond.
 - `kadr-core` invariants: every command's `apply` must check everything **before** the
   first mutation, and `revert` must restore the project exactly (including the
   `IdAllocator`). The helper `commands::test_support::apply_and_check_revert` checks
@@ -151,6 +189,19 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
   files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
   with a comment explaining why.
+- **Parallel sessions:** each worktree has its own `target/`, so every session
+  compiles the whole workspace. Five at once filled 32 GB of memory and made
+  everything 10 to 20 times slower. Run two or three sessions at most, with
+  `CARGO_BUILD_JOBS=4`.
+- **Tracking:** synthetic scenes are not enough. A real 1080p video
+  (`scripts/generate-tracking-benchmark.ps1`, measured with the `track_video`
+  example and `scripts/compare-tracking-with-truth.py`) showed drifts that every
+  synthetic scenario missed, while the PSR stayed "confident". Measure changes there.
+- Tracking, drift: a high PSR only means the filter found what it learnt. With
+  MOSSE's usual learning rate (0.125) the region slid off a real video's object by
+  2–4 px/s while every frame stayed "confident". The filter now learns at 0.02 and
+  every confident frame is anchored to the selection's appearance (decision 0008):
+  re-measure on the benchmark before touching either.
 - Tracking, size: MOSSE tried at several scales drifts (it learns the slightly wrong
   size every frame), and DSST on grey levels cannot see a zoom at all. The size comes
   from the optical flow points (Median Flow): see decision 0007 before changing it.
@@ -164,7 +215,34 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
   the script to the scratchpad and run it from there.
-- Transitions (phase 8a, decision 0030) live on clip **edges** (`entry_transition`,
+- Since the desktop crate joined the workspace, its procedural macros enable more of
+  `syn`, and a debug `bindgen` overflowed the 1 MB stack of Windows build scripts
+  (`ffmpeg-sys-next`, `STATUS_STACK_OVERFLOW`). Build scripts are now compiled with
+  `opt-level = 3` (`[profile.*.build-override]` in `Cargo.toml`): keep it.
+- Tauri: synchronous commands run on the main thread and freeze the window; every
+  command is `async`, and heavy work goes to `spawn_blocking` or a worker thread.
+  Large data (frames, sound) is answered as `tauri::ipc::Response` bytes, never JSON.
+- Tauri's file drop (`dragDropEnabled`, needed to get dropped file paths) disables
+  HTML5 drag and drop inside the page on Windows: in-app drags (library → timeline,
+  clips) use pointer events.
+- `@lucide/svelte` (thousands of files) stalled `npm install` on a slow network; the
+  few icons used are copied into `apps/desktop/src/lib/ui/icons.ts`.
+- In Git Bash, `tasklist` can hang: use PowerShell's `Get-Process` to see running
+  `cargo`/`rustc`. Several sessions building at once slow every build down a lot.
+- `gh` sometimes fails with `Post "https://api.github.com/graphql": EOF`: retry; check
+  with `gh pr view` whether the action went through before repeating it.
+- Merging `origin/main` can put a CHANGELOG entry under the wrong version once a
+  phase is tagged: check where each entry lands after a merge.
+- Desktop app, interface size: the setting scales `body` with CSS `zoom`. Pointer
+  positions and `getBoundingClientRect()` are then zoomed, element sizes and
+  `scrollLeft` are not: turn pointer positions into timeline pixels with
+  `pointerOffsetX` (`src/lib/ui/pointer.ts`), or seeks land 1.5 times too far at 150 %.
+- CSS `repeat(0, …)` is invalid and drops the whole `grid-template-rows`: build the
+  track list in code (an empty timeline had a 70 px ruler).
+- Checking the running app from a script (DevTools port, faking the file dialog and
+  file drops): see docs/desktop-app.md, "Driving the running app from a script".
+  Computer use may be refused; the script route needs no permission.
+- Transitions (phase 8a, decision 0050) live on clip **edges** (`entry_transition`,
   `exit_transition`), never as separate objects: no command has to update them when
   clips move. The clip touching the edge is drawn underneath by
   `kadr-engine/src/export/clip_layers.rs`; its source continues past its cut. Keep
