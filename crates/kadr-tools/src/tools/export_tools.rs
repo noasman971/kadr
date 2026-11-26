@@ -2,12 +2,11 @@
 
 use std::path::PathBuf;
 
-use kadr_core::animation::Keyframe;
-use kadr_core::clip::{AnimatableProperty, ClipContent};
-use kadr_core::commands::{ChangeProjectSettings, SetClipPropertyValue, SetClipText, SetKeyframe};
-use kadr_core::history::EditSession;
 use kadr_core::media_asset::PictureSize;
 use kadr_core::project::Project;
+use kadr_engine::export_presets::{
+    ExportPreset as EnginePreset, ExportSizeError, project_at_export_size,
+};
 use kadr_engine::{EncodingSpeed, ExportRequest, RendererPreference, VideoEncoderPreference};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -171,9 +170,9 @@ fn target_size_of(
     };
     Ok(match parameters.preset {
         ExportPreset::Project => canvas_size,
-        ExportPreset::TiktokReelsShorts => size(1080, 1920),
-        ExportPreset::Youtube1080p => size(1920, 1080),
-        ExportPreset::Youtube4k => size(3840, 2160),
+        ExportPreset::TiktokReelsShorts => EnginePreset::VerticalReelsShorts.picture_size(),
+        ExportPreset::Youtube1080p => EnginePreset::Youtube1080p.picture_size(),
+        ExportPreset::Youtube4k => EnginePreset::Youtube4k.picture_size(),
         ExportPreset::Custom => match (parameters.width_in_pixels, parameters.height_in_pixels) {
             (Some(width), Some(height)) => size(width, height),
             _ => {
@@ -186,78 +185,21 @@ fn target_size_of(
 }
 
 /// The project to export at `target_size`: the project itself at its own size,
-/// or a scaled copy for another size of the same shape.
+/// or a scaled copy for another size of the same shape (`kadr_engine::export_presets`).
 fn project_at_size(project: &Project, target_size: PictureSize) -> Result<Project, ToolError> {
-    let canvas_size = project.settings().canvas_size;
-    if target_size == canvas_size {
-        return Ok(project.clone());
-    }
-    let same_shape = u64::from(target_size.width_in_pixels)
-        * u64::from(canvas_size.height_in_pixels)
-        == u64::from(target_size.height_in_pixels) * u64::from(canvas_size.width_in_pixels);
-    if !same_shape {
-        return Err(ToolError::new(format!(
-            "the project is {}×{} but this export is {}×{}, another shape: the picture would be \
-             distorted or badly framed. First call set_project_settings with the new size (for \
-             example canvas vertical_1080x1920), check the framing with get_frame (set_transform \
-             with fit \"fill_canvas\" fills the canvas), then export with preset \"project\"",
-            canvas_size.width_in_pixels,
-            canvas_size.height_in_pixels,
-            target_size.width_in_pixels,
-            target_size.height_in_pixels
-        )));
-    }
-    project_scaled_to_canvas(project, target_size)
-}
-
-/// A copy of `project` drawn on a canvas of `new_size` (same shape): positions
-/// and text sizes, measured in canvas pixels, are scaled by the same factor.
-/// Video scales are relative to the canvas, blur regions are in source pixels,
-/// crops are fractions: they stay as they are.
-fn project_scaled_to_canvas(
-    project: &Project,
-    new_size: PictureSize,
-) -> Result<Project, ToolError> {
-    let factor =
-        new_size.width_in_pixels as f32 / project.settings().canvas_size.width_in_pixels as f32;
-    let mut settings = *project.settings();
-    settings.canvas_size = new_size;
-    let mut session = EditSession::new(project.clone())?;
-    session.transaction("Scale for export", |transaction| {
-        transaction.execute(ChangeProjectSettings::new(settings))?;
-        let clips: Vec<_> = transaction
-            .project()
-            .timeline()
-            .all_clips()
-            .map(|(_, clip)| clip.clone())
-            .collect();
-        for clip in clips {
-            for property in [AnimatableProperty::PositionX, AnimatableProperty::PositionY] {
-                let value = clip.animated_property(property);
-                if value.is_animated() {
-                    for keyframe in value.keyframes() {
-                        let scaled = Keyframe {
-                            value: keyframe.value * factor,
-                            ..*keyframe
-                        };
-                        transaction.execute(SetKeyframe::new(clip.id, property, scaled))?;
-                    }
-                } else if value.constant_value != 0.0 {
-                    let scaled = value.constant_value * factor;
-                    transaction.execute(SetClipPropertyValue::new(clip.id, property, scaled))?;
-                }
-            }
-            if let ClipContent::Text(text_content) = &clip.content {
-                let mut style = text_content.style.clone();
-                style.font_size_in_pixels *= factor;
-                transaction.execute(
-                    SetClipText::new(clip.id, text_content.text.clone()).with_style(style),
-                )?;
-            }
-        }
-        Ok(())
-    })?;
-    Ok(session.into_project())
+    project_at_export_size(project, target_size).map_err(|error| match error {
+        ExportSizeError::OtherShape {
+            project_size,
+            export_size,
+        } => ToolError::new(format!(
+            "the project is {}×{} but this export is {}×{}, another shape: the picture would be              distorted or badly framed. First call set_project_settings with the new size (for              example canvas vertical_1080x1920), check the framing with get_frame (set_transform              with fit \"fill_canvas\" fills the canvas), then export with preset \"project\"",
+            project_size.width_in_pixels,
+            project_size.height_in_pixels,
+            export_size.width_in_pixels,
+            export_size.height_in_pixels
+        )),
+        ExportSizeError::Edit(edit_error) => ToolError::from(edit_error),
+    })
 }
 
 // ----- get_export_status -----
