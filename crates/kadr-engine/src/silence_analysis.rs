@@ -44,7 +44,36 @@ pub fn find_silent_parts(
     source_end: Timestamp,
     settings: SilenceDetectionSettings,
 ) -> Result<Vec<SilentPart>, MediaError> {
+    let silent_parts = find_silent_parts_with_progress(
+        backend,
+        file_path,
+        source_start,
+        source_end,
+        settings,
+        |_| true,
+    )?;
+    Ok(silent_parts.unwrap_or_default())
+}
+
+/// Like [`find_silent_parts`], for long files: after each decoded piece,
+/// `keep_going` receives the fraction analysed (0 to 1) and returns `false` to
+/// stop. Returns `None` when stopped.
+///
+/// # Errors
+///
+/// Fails when the file cannot be opened or has no sound.
+pub fn find_silent_parts_with_progress(
+    backend: &dyn MediaBackend,
+    file_path: &Path,
+    source_start: Timestamp,
+    source_end: Timestamp,
+    settings: SilenceDetectionSettings,
+    mut keep_going: impl FnMut(f64) -> bool,
+) -> Result<Option<Vec<SilentPart>>, MediaError> {
     let mut detector = SilenceDetector::new(ANALYSIS_SAMPLE_RATE_IN_HERTZ, settings);
+    let analysed_span = source_end
+        .span_since(source_start)
+        .unwrap_or(TimeSpan::ZERO);
     let mut piece_start = source_start;
     while piece_start < source_end {
         let piece_end = piece_start
@@ -63,6 +92,13 @@ pub fn find_silent_parts(
         })?;
         detector.push_samples(&piece.to_mono());
         piece_start = piece_end;
+        let analysed_fraction = piece_end
+            .span_since(source_start)
+            .unwrap_or(TimeSpan::ZERO)
+            .fraction_of(analysed_span);
+        if !keep_going(analysed_fraction) {
+            return Ok(None);
+        }
     }
     let silent_parts = detector
         .finish()
@@ -75,7 +111,7 @@ pub fn find_silent_parts(
             .min(source_end),
         })
         .collect();
-    Ok(silent_parts)
+    Ok(Some(silent_parts))
 }
 
 #[cfg(test)]
