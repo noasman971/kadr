@@ -8,13 +8,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use image::{Rgba, RgbaImage};
-use kadr_core::clip::CropInsets;
+use kadr_core::clip::{CropInsets, TextStyle};
 use kadr_core::color::Color;
 use kadr_core::effect::ColorAdjustment;
 use kadr_core::media_asset::PictureSize;
+use kadr_core::text_animation::TextAnimationStyle;
+use kadr_core::transition::{EdgePhase, SlideDirection, TransitionStyle, ZoomDirection};
 use kadr_media::{VideoFrame, YuvColorSpace, YuvMatrix, YuvPicture, YuvRange};
 use kadr_render::{
-    CanvasDescription, CpuRenderer, FrameRenderer, GpuRenderer, LayerPlacement, VisualLayer,
+    CanvasDescription, CpuRenderer, FrameRenderer, GpuRenderer, LayerPlacement, LayerSizing,
+    TextRasterizer, TransitionRole, VisualLayer, text_animation_frame, transition_motion,
 };
 
 /// The GPU renderer, or `None` (test skipped) when there is no GPU and it is not required.
@@ -258,4 +261,136 @@ fn colour_adjusted_layers_match() {
         },
     ];
     assert_gpu_matches_cpu("colour adjustments", &canvas(320, 180), &layers);
+}
+
+/// A second, different video picture: a checkerboard of two colours.
+fn checkerboard_video_picture(width: u32, height: u32) -> VideoFrame {
+    let image = RgbaImage::from_fn(width, height, |x, y| {
+        if (x / 20 + y / 20) % 2 == 0 {
+            Rgba([230, 60, 40, 255])
+        } else {
+            Rgba([30, 160, 90, 255])
+        }
+    });
+    VideoFrame::Yuv420(YuvPicture::from_rgba(&image, YuvColorSpace::BT709_LIMITED))
+}
+
+/// The two layers of a transition from `outgoing` to `incoming`, `progress` of
+/// the way through `incoming`'s entry.
+fn transition_layers<'picture>(
+    outgoing: &'picture VideoFrame,
+    incoming: &'picture VideoFrame,
+    style: TransitionStyle,
+    progress: f32,
+    canvas_size: PictureSize,
+) -> [VisualLayer<'picture>; 2] {
+    let phase = EdgePhase::Entering { progress };
+    let placement_for =
+        |role| LayerPlacement::FITTED.moved_by(transition_motion(style, phase, role, canvas_size));
+    [
+        VisualLayer {
+            picture: outgoing,
+            placement: placement_for(TransitionRole::TouchingClip),
+            color_adjustments: &[],
+        },
+        VisualLayer {
+            picture: incoming,
+            placement: placement_for(TransitionRole::TransitioningClip),
+            color_adjustments: &[],
+        },
+    ]
+}
+
+#[test]
+fn transitions_between_two_videos_match() {
+    let scene_canvas = canvas(320, 180);
+    let outgoing = gradient_video_picture(320, 180, YuvColorSpace::BT709_LIMITED);
+    let incoming = checkerboard_video_picture(256, 144);
+    let scenes = [
+        ("dissolve", TransitionStyle::Fade, 0.4),
+        (
+            "push to the left",
+            TransitionStyle::Slide {
+                direction: SlideDirection::Left,
+            },
+            0.35,
+        ),
+        (
+            "push upwards",
+            TransitionStyle::Slide {
+                direction: SlideDirection::Up,
+            },
+            0.6,
+        ),
+        (
+            "zoom in",
+            TransitionStyle::Zoom {
+                direction: ZoomDirection::In,
+            },
+            0.5,
+        ),
+        (
+            "zoom out",
+            TransitionStyle::Zoom {
+                direction: ZoomDirection::Out,
+            },
+            0.3,
+        ),
+    ];
+    for (scene_name, style, progress) in scenes {
+        let layers = transition_layers(&outgoing, &incoming, style, progress, scene_canvas.size);
+        assert_gpu_matches_cpu(scene_name, &scene_canvas, &layers);
+    }
+}
+
+#[test]
+fn an_animated_text_matches() {
+    let scene_canvas = canvas(320, 180);
+    let background = gradient_video_picture(320, 180, YuvColorSpace::BT709_LIMITED);
+    let style = TextStyle {
+        font_size_in_pixels: 40.0,
+        ..TextStyle::default()
+    };
+    let mut rasterizer = TextRasterizer::new();
+    let mut layers_at = |animation, progress| {
+        let (motion, reveal) = text_animation_frame(
+            animation,
+            EdgePhase::Entering { progress },
+            style.font_size_in_pixels,
+        );
+        let text_picture =
+            VideoFrame::Rgba(rasterizer.rasterize_revealed("Hello Kadr", &style, reveal));
+        let placement = LayerPlacement {
+            sizing: LayerSizing::NativePixels,
+            ..LayerPlacement::FITTED
+        }
+        .moved_by(motion);
+        (text_picture, placement)
+    };
+    for (scene_name, animation, progress) in [
+        ("typed-on text", TextAnimationStyle::TypeOn, 0.55),
+        ("popping text", TextAnimationStyle::Pop, 0.7),
+        (
+            "sliding text",
+            TextAnimationStyle::Slide {
+                direction: SlideDirection::Up,
+            },
+            0.5,
+        ),
+    ] {
+        let (text_picture, placement) = layers_at(animation, progress);
+        let layers = [
+            VisualLayer {
+                picture: &background,
+                placement: LayerPlacement::FITTED,
+                color_adjustments: &[],
+            },
+            VisualLayer {
+                picture: &text_picture,
+                placement,
+                color_adjustments: &[],
+            },
+        ];
+        assert_gpu_matches_cpu(scene_name, &scene_canvas, &layers);
+    }
 }

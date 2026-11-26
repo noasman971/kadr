@@ -9,12 +9,19 @@
 //! `assets/fonts/Inter-LICENSE.txt`), so the default style looks the same on
 //! every machine. System fonts are loaded too: they serve other families the
 //! user picks, and characters Inter lacks (emoji, many scripts).
+//!
+//! Type-on and word-by-word animations draw only part of the text
+//! ([`TextReveal`]), on a picture the size of the whole text, so the visible
+//! letters never move while the others appear.
 
 use cosmic_text::{
-    Align, Attrs, Buffer, Color as TextColor, Family, FontSystem, Metrics, Shaping, SwashCache,
+    Align, Attrs, Buffer, Color as TextColor, Family, FontSystem, LayoutRun, Metrics, Shaping,
+    SwashCache,
 };
 use image::{Rgba, RgbaImage};
 use kadr_core::clip::{TextAlignment, TextStyle};
+
+use crate::transitions::TextReveal;
 
 /// The family name of the bundled font, the default for new text clips.
 pub const BUNDLED_FONT_FAMILY: &str = "Inter";
@@ -79,6 +86,18 @@ impl TextRasterizer {
     /// (plus a small margin). Line breaks in `text` start new lines; lines are not
     /// wrapped.
     pub fn rasterize(&mut self, text: &str, style: &TextStyle) -> RgbaImage {
+        self.rasterize_revealed(text, style, TextReveal::Everything)
+    }
+
+    /// Like [`TextRasterizer::rasterize`], but only draws the part of the text
+    /// that `reveal` shows. The picture has the size of the whole text, so the
+    /// letters already visible stay in place.
+    pub fn rasterize_revealed(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        reveal: TextReveal,
+    ) -> RgbaImage {
         let font_size = style.font_size_in_pixels.max(1.0);
         let mut buffer = Buffer::new(
             &mut self.font_system,
@@ -107,21 +126,149 @@ impl TextRasterizer {
         let mut picture = RgbaImage::new(picture_width, picture_height);
         let color = style.color;
         let text_color = TextColor::rgba(color.red, color.green, color.blue, color.alpha);
-        let (margin_x, margin_y) = (margin as i32, margin as i32);
-        buffer.draw(
-            &mut self.font_system,
-            &mut self.glyph_cache,
-            text_color,
-            |x, y, width, height, drawn_color| {
-                for row in (y + margin_y)..(y + margin_y + height as i32) {
-                    for column in (x + margin_x)..(x + margin_x + width as i32) {
-                        blend_glyph_pixel(&mut picture, column, row, drawn_color);
-                    }
+        let margin_in_pixels = margin as i32;
+        let character_opacities = CharacterOpacities::of_laid_out_text(&buffer, reveal);
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs {
+                let opacity = character_opacities.of_glyph_starting_at(&run, glyph.start);
+                if opacity <= 0.0 {
+                    continue;
                 }
-            },
-        );
+                let physical_glyph = glyph.physical((0.0, run.line_y), 1.0);
+                let glyph_color = faded(glyph.color_opt.unwrap_or(text_color), opacity);
+                self.glyph_cache.with_pixels(
+                    &mut self.font_system,
+                    physical_glyph.cache_key,
+                    glyph_color,
+                    |x, y, drawn_color| {
+                        blend_glyph_pixel(
+                            &mut picture,
+                            physical_glyph.x + x + margin_in_pixels,
+                            physical_glyph.y + y + margin_in_pixels,
+                            drawn_color,
+                        );
+                    },
+                );
+            }
+        }
         picture
     }
+}
+
+/// The opacity of every character of a laid-out text under a [`TextReveal`].
+///
+/// Characters are numbered across lines, in reading order of the source text,
+/// line breaks excluded.
+struct CharacterOpacities {
+    /// The number of the first character of each source line.
+    first_character_of_line: Vec<usize>,
+    /// The opacity of each character, from 0 to 1; `None` when all are visible.
+    opacities: Option<Vec<f32>>,
+}
+
+impl CharacterOpacities {
+    fn of_laid_out_text(buffer: &Buffer, reveal: TextReveal) -> Self {
+        let mut line_texts: Vec<String> = Vec::new();
+        for run in buffer.layout_runs() {
+            // A long line can be laid out in several runs; they share its text.
+            if run.line_i >= line_texts.len() {
+                line_texts.resize(run.line_i + 1, String::new());
+                line_texts[run.line_i] = run.text.to_string();
+            }
+        }
+        let mut first_character_of_line = Vec::with_capacity(line_texts.len());
+        let mut line_lengths = Vec::with_capacity(line_texts.len());
+        let mut characters: Vec<char> = Vec::new();
+        for line_text in &line_texts {
+            first_character_of_line.push(characters.len());
+            let line_characters: Vec<char> = line_text.chars().collect();
+            line_lengths.push(line_characters.len());
+            characters.extend(line_characters);
+        }
+        let opacities = match reveal {
+            TextReveal::Everything => None,
+            TextReveal::Characters { shown_fraction } => {
+                Some(opacities_by_character(characters.len(), shown_fraction))
+            }
+            TextReveal::Words { shown_fraction } => Some(opacities_by_word(
+                &characters,
+                &first_character_of_line,
+                shown_fraction,
+            )),
+        };
+        Self {
+            first_character_of_line,
+            opacities,
+        }
+    }
+
+    /// The opacity of the glyph starting at byte `glyph_start` of `run`'s line.
+    fn of_glyph_starting_at(&self, run: &LayoutRun<'_>, glyph_start: usize) -> f32 {
+        let Some(opacities) = &self.opacities else {
+            return 1.0;
+        };
+        let characters_before_in_line = run
+            .text
+            .get(..glyph_start)
+            .map_or(0, |before| before.chars().count());
+        let line_first_character = self
+            .first_character_of_line
+            .get(run.line_i)
+            .copied()
+            .unwrap_or(0);
+        opacities
+            .get(line_first_character + characters_before_in_line)
+            .copied()
+            .unwrap_or(1.0)
+    }
+}
+
+/// Characters appear one after another: with `shown_fraction` of `character_count`
+/// characters shown, character `k` has opacity `shown_fraction × count − k`,
+/// between 0 and 1, so the one being typed fades in.
+fn opacities_by_character(character_count: usize, shown_fraction: f32) -> Vec<f32> {
+    let shown_count = shown_fraction.clamp(0.0, 1.0) * character_count as f32;
+    (0..character_count)
+        .map(|index| (shown_count - index as f32).clamp(0.0, 1.0))
+        .collect()
+}
+
+/// Words appear one after another, the same way characters do. A word is a run
+/// of non-space characters; a line start also starts a new word.
+fn opacities_by_word(
+    characters: &[char],
+    first_character_of_line: &[usize],
+    shown_fraction: f32,
+) -> Vec<f32> {
+    let mut word_of_character: Vec<Option<usize>> = Vec::with_capacity(characters.len());
+    let mut word_count = 0;
+    let mut is_inside_word = false;
+    for (index, character) in characters.iter().enumerate() {
+        if first_character_of_line.contains(&index) {
+            is_inside_word = false;
+        }
+        if character.is_whitespace() {
+            is_inside_word = false;
+            word_of_character.push(None);
+            continue;
+        }
+        if !is_inside_word {
+            word_count += 1;
+            is_inside_word = true;
+        }
+        word_of_character.push(Some(word_count - 1));
+    }
+    let shown_count = shown_fraction.clamp(0.0, 1.0) * word_count as f32;
+    word_of_character
+        .into_iter()
+        .map(|word| word.map_or(0.0, |index| (shown_count - index as f32).clamp(0.0, 1.0)))
+        .collect()
+}
+
+/// `color` with its alpha multiplied by `opacity`.
+fn faded(color: TextColor, opacity: f32) -> TextColor {
+    let alpha = (f32::from(color.a()) * opacity.clamp(0.0, 1.0)).round() as u8;
+    TextColor::rgba(color.r(), color.g(), color.b(), alpha)
 }
 
 /// The family to ask the font database for: the bundled file's own name when
@@ -229,6 +376,80 @@ mod tests {
                 .filter(|pixel| pixel[3] > 0)
                 .all(|pixel| pixel[0] == 255)
         );
+    }
+
+    #[test]
+    fn a_typed_on_text_shows_its_first_letters_in_place() {
+        let mut rasterizer = TextRasterizer::new();
+        let text_style = style(BUNDLED_FONT_FAMILY, TextAlignment::Left);
+        let whole = rasterizer.rasterize("AAAA", &text_style);
+        let half = rasterizer.rasterize_revealed(
+            "AAAA",
+            &text_style,
+            TextReveal::Characters {
+                shown_fraction: 0.5,
+            },
+        );
+        let nothing = rasterizer.rasterize_revealed(
+            "AAAA",
+            &text_style,
+            TextReveal::Characters {
+                shown_fraction: 0.0,
+            },
+        );
+        assert_eq!(
+            half.dimensions(),
+            whole.dimensions(),
+            "the layout never moves"
+        );
+        assert!(nothing.pixels().all(|pixel| pixel[3] == 0));
+        // The two letters shown are exactly those of the whole text, on the left.
+        let all_rows = 0..whole.height();
+        let (_, whole_right, _, _) = visible_bounds(&whole, all_rows.clone()).unwrap();
+        let (half_left, half_right, _, _) = visible_bounds(&half, all_rows.clone()).unwrap();
+        assert_eq!(half_left, visible_bounds(&whole, all_rows).unwrap().0);
+        assert!(
+            half_right < whole_right * 6 / 10,
+            "{half_right} vs {whole_right}"
+        );
+        for (shown, full) in half.pixels().zip(whole.pixels()) {
+            assert!(shown[3] == 0 || shown == full);
+        }
+    }
+
+    #[test]
+    fn words_appear_one_after_another_across_lines() {
+        let mut rasterizer = TextRasterizer::new();
+        let text_style = style(BUNDLED_FONT_FAMILY, TextAlignment::Left);
+        let visible_pixels = |shown_fraction| {
+            rasterizer
+                .rasterize_revealed(
+                    "one two
+three four",
+                    &text_style,
+                    TextReveal::Words { shown_fraction },
+                )
+                .pixels()
+                .filter(|pixel| pixel[3] > 0)
+                .count()
+        };
+        let counts = [0.0, 0.25, 0.5, 0.75, 1.0].map(visible_pixels);
+        assert_eq!(counts[0], 0);
+        assert!(
+            counts.windows(2).all(|pair| pair[0] < pair[1]),
+            "{counts:?}"
+        );
+        // Half the words: the first line only.
+        let first_line_only = rasterizer.rasterize_revealed(
+            "one two
+three four",
+            &text_style,
+            TextReveal::Words {
+                shown_fraction: 0.5,
+            },
+        );
+        let line_height = (64.0 * LINE_HEIGHT_RATIO) as u32;
+        assert!(visible_bounds(&first_line_only, line_height..first_line_only.height()).is_none());
     }
 
     #[test]
