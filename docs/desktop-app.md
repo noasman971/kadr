@@ -164,6 +164,28 @@ the new sound.
   change, or Ctrl+S, tries again.
 - Renaming the project renames its file. The recent list follows renames.
 
+## Editing on the timeline
+
+Every gesture is worked out in the front end while it happens and sent as **one**
+request when it ends, so one gesture is one undo step:
+
+- **Rules during a gesture** live in `src/lib/timeline/placement.ts`, as pure,
+  tested functions: snapping (clip edges, the playhead and the start, within 8 screen
+  pixels), overlaps, which tracks accept a clip, trimming limits (the other edge, the
+  file's length, the neighbours), and the cut times for ↑ / ↓.
+- **`TimelinePanel`** shows the result before anything is sent: a ghost where the
+  clip would land (red, with the reason, when it cannot), the yellow snapping guide,
+  the length while trimming. Clips are dragged with pointer events, not HTML drag
+  and drop (see the pitfalls in `CLAUDE.md`).
+- **Media dragged from the library** cross two panels: `state/mediaDrag.svelte.ts`
+  holds the gesture, the library starts it, the timeline previews and places the
+  clip, and the editor screen draws the badge under the pointer.
+- **The back end** (`editing.rs`, `editing/arrangement.rs`) turns each request into
+  `kadr-core` commands in one transaction. The engine checks everything again: the
+  front-end rules only make refusals visible before the release.
+- Pointer positions go through `pointerOffsetX` (`src/lib/ui/pointer.ts`), because
+  the interface size setting zooms the page.
+
 ## Adding an edit
 
 1. Add a variant to `EditRequest` in `editing.rs`, with a test, and a branch in
