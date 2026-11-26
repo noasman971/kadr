@@ -15,8 +15,10 @@ class MediaDrag {
   media = $state<MediaView | null>(null);
   clientX = $state(0);
   clientY = $state(0);
-  /** Set by the timeline while the pointer is over it: where the clip would go. */
+  /** Set by the timeline while the pointer is over it: where the clip would go, or why it cannot. */
   dropLabel = $state<string | null>(null);
+  /** Set by the timeline: `dropLabel` explains a refusal. */
+  isDropRefused = $state(false);
 
   private pressed: { media: MediaView; startX: number; startY: number } | null = null;
   private dropHandlers: Array<(media: MediaView, clientX: number, clientY: number) => void> = [];
@@ -57,6 +59,7 @@ class MediaDrag {
     this.pressed = null;
     this.media = null;
     this.dropLabel = null;
+    this.isDropRefused = false;
     if (media) {
       for (const handler of this.dropHandlers) {
         handler(media, event.clientX, event.clientY);

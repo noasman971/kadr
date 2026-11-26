@@ -31,11 +31,14 @@
         { action: "shortcuts.frameStep", keys: ["←", "→"] },
         { action: "shortcuts.secondStep", keys: ["key.shift", "←", "→"] },
         { action: "shortcuts.startEnd", keys: ["key.home", "key.end"] },
+        { action: "shortcuts.cuts", keys: ["↑", "↓"] },
       ],
     },
     {
       title: "shortcuts.editing",
       shortcuts: [
+        { action: "shortcuts.split", keys: ["S"] },
+        { action: "shortcuts.delete", keys: ["key.delete"] },
         { action: "shortcuts.undo", keys: ["Ctrl", "Z"] },
         { action: "shortcuts.redo", keys: ["Ctrl", "Y"] },
         { action: "shortcuts.deselect", keys: ["key.escape"] },
@@ -46,6 +49,8 @@
       shortcuts: [
         { action: "shortcuts.zoom", keys: ["+", "−"] },
         { action: "shortcuts.fit", keys: ["key.shift", "Z"] },
+        { action: "shortcuts.snapping", keys: ["N"] },
+        { action: "shortcuts.noSnapping", keys: ["Alt"] },
       ],
     },
     {

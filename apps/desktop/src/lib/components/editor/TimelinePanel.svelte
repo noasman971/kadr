@@ -326,8 +326,12 @@
       return;
     }
     const pointer = { clientX: mediaDrag.clientX, clientY: mediaDrag.clientY, altKey: false } as PointerEvent;
-    mediaPreview = previewDrop(pointer, mediaClipKind(media), media.name, mediaDurationTicks(media), 0, null);
-    mediaDrag.dropLabel = mediaPreview?.refusal ?? (mediaPreview ? formatTimecode(mediaPreview.startTicks, editor.frameRate) : null);
+    // A local copy: reading `mediaPreview` back here would make the effect depend
+    // on what it writes, and loop.
+    const preview = previewDrop(pointer, mediaClipKind(media), media.name, mediaDurationTicks(media), 0, null);
+    mediaPreview = preview;
+    mediaDrag.dropLabel = preview?.refusal ?? (preview ? formatTimecode(preview.startTicks, editor.frameRate) : null);
+    mediaDrag.isDropRefused = (preview?.refusal ?? null) !== null;
   });
 
   onMount(() =>
@@ -593,7 +597,8 @@
         length: formatTimecode(clipDuringTrim(gesture.clip).durationTicks, editor.frameRate),
       })}
     </div>
-  {:else if activePreview?.refusal}
+  {:else if gesture?.type === "move" && activePreview?.refusal}
+    <!-- A media file dragged from the library shows its refusal on the badge under the pointer. -->
     <div class="gesture-label refused"><Icon name="alert" size={14} />{activePreview.refusal}</div>
   {/if}
 </section>
