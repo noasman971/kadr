@@ -14,8 +14,9 @@ Claude conversation.**
 - **Desktop first, Android next.** Windows, macOS and Linux, then an Android app built
   on the same engine.
 
-> **Status: phase 0 — foundations.** The workspace, CI and tooling are in place. Nothing
-> is usable as an editor yet. See the [roadmap](#roadmap).
+> **Status: phase 1 — data model.** The project model, undo/redo and the `.kadr` file
+> format exist as a library. There is no video decoding or interface yet. See the
+> [roadmap](#roadmap).
 
 ---
 
@@ -24,8 +25,8 @@ Claude conversation.**
 | Phase | Content | Status |
 |---|---|---|
 | 0 | Foundations: workspace, CI, scripts, documentation | ✅ Done |
-| 1 | Data model: timeline, clips, effects, undo/redo, project file | ⏳ Next |
-| 2 | Decoding, encoding and export from the command line | |
+| 1 | Data model: timeline, clips, effects, undo/redo, project file | 🔍 In review |
+| 2 | Decoding, encoding and export from the command line | ⏳ Next |
 | 3 | GPU rendering (`wgpu`) | |
 | 4 | Face blur by classic region tracking | |
 | 5 | Local MCP server for Claude | |
