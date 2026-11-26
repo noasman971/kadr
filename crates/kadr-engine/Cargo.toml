@@ -11,10 +11,11 @@ publish.workspace = true
 # The media backend the engine is built with (see
 # docs/decisions/0040-media-backend-features.md):
 # - desktop (Windows, macOS, Linux): `ffmpeg`, on by default;
-# - Android: `--no-default-features`, then the MediaCodec backend (phase 9).
+# - Android: `--no-default-features --features mediacodec`.
 [features]
 default = ["ffmpeg"]
 ffmpeg = ["kadr-media/ffmpeg"]
+mediacodec = ["kadr-media/mediacodec"]
 
 [dependencies]
 kadr-core.workspace = true
