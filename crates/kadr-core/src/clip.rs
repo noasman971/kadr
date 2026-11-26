@@ -416,6 +416,25 @@ impl Clip {
         )
     }
 
+    /// The timeline moment showing `source_time` of the media file, for media
+    /// clips whose source range contains it: the reverse of
+    /// [`Clip::source_time_at`] (rounded down to a tick with speed changes).
+    pub fn timeline_time_showing(&self, source_time: Timestamp) -> Option<Timestamp> {
+        let ClipContent::Media(segment) = &self.content else {
+            return None;
+        };
+        if source_time < segment.source_start || segment.source_end <= source_time {
+            return None;
+        }
+        let elapsed_in_source = source_time.span_since(segment.source_start)?;
+        Some(
+            self.timeline_start
+                + segment
+                    .speed
+                    .timeline_span_for_source_span(elapsed_in_source),
+        )
+    }
+
     /// The animated value of `property`.
     pub fn animated_property(&self, property: AnimatableProperty) -> &AnimatedValue {
         match property {
@@ -740,6 +759,8 @@ mod tests {
         }
         assert_eq!(clip.timeline_duration(), TimeSpan::from_whole_seconds(5));
         assert_eq!(clip.source_time_at(seconds(2)), Some(seconds(4)));
+        assert_eq!(clip.timeline_time_showing(seconds(4)), Some(seconds(2)));
+        assert_eq!(clip.timeline_time_showing(seconds(10)), None);
     }
 
     #[test]
