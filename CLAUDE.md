@@ -21,10 +21,11 @@ It is the source of truth for scope, phases and rules.
 - **Phase 0 (foundations): done and validated**, tagged `v0.1.0`.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
-- **Phase 3 (GPU rendering): in progress**, in three pull requests: 3a GPU compositing
-  and YUV colour pipeline (merged, PR #3), 3b text with the bundled Inter font (the
-  owner chose to bundle it; branch `feature/phase-3b-text`), 3c colour adjustment,
-  blur and pixelation effects. Tag `v0.4.0` when all three are merged and validated.
+- **Phase 3 (GPU rendering): done**, in three pull requests: 3a GPU compositing and
+  YUV colour pipeline (PR #3), 3b text with the bundled Inter font (PR #4; the owner
+  chose to bundle it), 3c colour adjustment and tracked blur rendering (branch
+  `feature/phase-3c-effects`). Tag `v0.4.0` once the owner validates the phase.
+- **Next: phase 4** — face tracking (MOSSE/KCF) filling the tracked blurs.
 
 ## Decisions taken with the owner
 
@@ -121,6 +122,8 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   request for "Inter" silently fell back to Segoe UI until `text.rs` redirected it.
   `TextRasterizer::has_font_family` and a test now guard it. Look at rendered text
   (export a frame, extract it with ffmpeg) rather than trusting pixel counts alone.
+- For visual checks, use detailed pictures (FFmpeg's `mandelbrot` source): blurring the
+  flat colour bars of a test pattern only shows at their borders.
 - Clippy 1.100 wants `as_chunks::<N>()` instead of `chunks_exact(N)` for constant sizes,
   and flags enum variants much larger than the others (box them).
 - MCP over stdio: **never print to stdout** in `kadr-mcp` except protocol messages.
