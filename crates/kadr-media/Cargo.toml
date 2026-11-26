@@ -18,6 +18,7 @@ ffmpeg = ["dep:ffmpeg-next"]
 ffmpeg-next = { workspace = true, optional = true }
 image.workspace = true
 kadr-core.workspace = true
+rayon.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

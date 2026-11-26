@@ -52,6 +52,10 @@ jobs:
           "FFMPEG_DIR=$ffmpegDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "$ffmpegDirectory\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          # No GPU on the runner: render with WARP, Windows' software adapter, and
+          # make the GPU tests fail instead of skipping if it does not work.
+          "KADR_GPU_ADAPTER=software" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KADR_REQUIRE_GPU=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install FFmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -61,8 +65,14 @@ jobs:
           echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg/lib" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/ffmpeg/bin" >> "$GITHUB_PATH"
+          # No GPU on the runner: render with lavapipe, Mesa's software Vulkan,
+          # and make the GPU tests fail instead of skipping if it does not work.
+          sudo apt-get update && sudo apt-get install --yes mesa-vulkan-drivers
+          echo "KADR_GPU_ADAPTER=software" >> "$GITHUB_ENV"
+          echo "KADR_REQUIRE_GPU=1" >> "$GITHUB_ENV"
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
+        # GPU tests run on Metal when the runner exposes it, and are skipped otherwise.
         run: brew install pkgconf ffmpeg
 
       - uses: dtolnay/rust-toolchain@stable

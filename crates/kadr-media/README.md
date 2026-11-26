@@ -17,7 +17,7 @@ whose sound beeps at known times, to check exports exactly.
 - **Used by:** `kadr-engine`, `kadr-cli`.
 - **Backends:** FFmpeg 7+ on desktop (phase 2); Android `MediaCodec` (phase 9) behind
   the same traits.
-- **Status:** implemented (phase 2). Hardware *decoding* arrives with GPU rendering
-  (phase 3).
+- **Status:** implemented (phase 2); pictures stay in YUV since phase 3a. Hardware
+  *decoding* is not used yet: CPU decoding is not the bottleneck (decision record 0006).
 
 See [docs/media-and-export.md](../../docs/media-and-export.md).

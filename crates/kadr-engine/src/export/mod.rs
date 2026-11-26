@@ -24,6 +24,7 @@ use kadr_media::audio_buffer::sample_index_at;
 use kadr_media::{
     EncodingSpeed, ExportSink, ExportSinkSettings, MediaBackend, MediaError, VideoEncoderPreference,
 };
+use kadr_render::{RenderError, RendererPreference, create_renderer};
 
 use audio_mixer::mix_timeline_sound;
 use frame_composer::FrameComposer;
@@ -37,6 +38,8 @@ pub struct ExportRequest {
     pub video_encoder_preference: VideoEncoderPreference,
     /// Speed / quality trade-off.
     pub encoding_speed: EncodingSpeed,
+    /// GPU when available, or always CPU.
+    pub renderer_preference: RendererPreference,
 }
 
 /// How far the export has gone.
@@ -92,6 +95,8 @@ pub struct ExportReport {
     pub duration: TimeSpan,
     /// The video encoder used, for example `"h264_qsv"` or `"libx264"`.
     pub video_encoder_name: String,
+    /// What rendered the frames, for example `"GPU: Intel(R) Arc(TM) Graphics (Vulkan)"` or `"CPU"`.
+    pub renderer_description: String,
     /// Parts of the project that were not rendered yet, in plain words.
     pub warnings: Vec<String>,
 }
@@ -108,6 +113,9 @@ pub enum ExportError {
     /// Reading a source file or writing the video failed.
     #[error(transparent)]
     Media(#[from] MediaError),
+    /// Rendering a frame failed.
+    #[error(transparent)]
+    Render(#[from] RenderError),
     /// The finished file could not be put in place.
     #[error("could not create \"{}\": {reason}", output_path.display())]
     CannotPlaceOutput {
@@ -197,7 +205,12 @@ fn write_export(
         encoding_speed: request.encoding_speed,
     })?;
     let video_encoder_name = sink.video_encoder_name().to_string();
-    let mut composer = FrameComposer::new(project, backend);
+    let mut composer = FrameComposer::new(
+        project,
+        backend,
+        create_renderer(request.renderer_preference)?,
+    );
+    let renderer_description = composer.renderer_description();
     let mut written_sample_count = 0;
 
     for frame_index in 0..total_frame_count {
@@ -237,6 +250,7 @@ fn write_export(
         frame_count: total_frame_count,
         duration,
         video_encoder_name,
+        renderer_description,
         warnings: describe_unrendered_parts(project),
     })
 }

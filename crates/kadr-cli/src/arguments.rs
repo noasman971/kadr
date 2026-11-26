@@ -52,6 +52,9 @@ pub enum Command {
         /// Encode faster, with larger files (for previews).
         #[arg(long)]
         fast: bool,
+        /// Render on the CPU even if a GPU is available.
+        #[arg(long)]
+        cpu: bool,
     },
 }
 
@@ -86,13 +89,14 @@ mod tests {
             output,
             software_encoder,
             fast,
+            cpu,
         } = parsed.command
         else {
             panic!("expected the render command");
         };
         assert_eq!(project, PathBuf::from("edit.kadr"));
         assert_eq!(output, PathBuf::from("out.mp4"));
-        assert!(fast && !software_encoder);
+        assert!(fast && !software_encoder && !cpu);
     }
 
     #[test]

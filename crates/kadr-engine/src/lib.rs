@@ -24,3 +24,4 @@ pub mod quick_assembly;
 pub use export::{
     ExportCancellation, ExportError, ExportProgress, ExportReport, ExportRequest, export_project,
 };
+pub use kadr_render::RendererPreference;

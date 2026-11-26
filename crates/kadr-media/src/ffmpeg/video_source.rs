@@ -16,6 +16,7 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_next::Rational;
 use kadr_core::time::{TimeSpan, Timestamp};
 
+use super::picture_conversion::PictureConverter;
 use super::time_conversion::{microseconds_from_timestamp, timestamp_from_stream_units};
 use super::{decoding_failure, find_picture_stream, is_still_image_format, open_input_file};
 use crate::backend::VideoFrameSource;
@@ -25,7 +26,7 @@ use crate::video_frame::VideoFrame;
 /// Beyond this distance ahead, jumping to a keyframe is faster than decoding forward.
 const MAXIMUM_FORWARD_DECODING_DISTANCE: TimeSpan = TimeSpan::from_milliseconds(2_000);
 
-/// A frame decoded from the file, converted to RGBA only when it is shown.
+/// A frame decoded from the file, converted to a [`VideoFrame`] only when it is shown.
 struct DecodedFrame {
     source_time: Timestamp,
     raw_picture: ffmpeg::frame::Video,
@@ -40,21 +41,13 @@ pub(crate) struct FfmpegVideoFrameSource {
     stream_time_base: Rational,
     stream_start_in_stream_units: i64,
     decoder: ffmpeg::decoder::Video,
-    rgba_converter: Option<RgbaConverter>,
+    picture_converter: PictureConverter,
     is_still_image: bool,
     end_of_file_reached: bool,
     /// The frame on screen at the last requested time.
     current_frame: Option<DecodedFrame>,
     /// The frame after `current_frame`, already decoded.
     upcoming_frame: Option<DecodedFrame>,
-}
-
-/// Converts decoded pictures of one pixel format and size to RGBA.
-struct RgbaConverter {
-    source_format: ffmpeg::format::Pixel,
-    width: u32,
-    height: u32,
-    scaler: ffmpeg::software::scaling::Context,
 }
 
 impl FfmpegVideoFrameSource {
@@ -90,7 +83,7 @@ impl FfmpegVideoFrameSource {
             stream_time_base,
             stream_start_in_stream_units,
             decoder,
-            rgba_converter: None,
+            picture_converter: PictureConverter::default(),
             is_still_image,
             end_of_file_reached: false,
             current_frame: None,
@@ -204,8 +197,8 @@ impl FfmpegVideoFrameSource {
         }
     }
 
-    /// Converts the current frame to RGBA (once) and returns it.
-    fn current_frame_as_rgba(
+    /// Converts the current frame (once) and returns it.
+    fn current_frame_converted(
         &mut self,
         source_time: Timestamp,
     ) -> Result<Arc<VideoFrame>, MediaError> {
@@ -220,13 +213,10 @@ impl FfmpegVideoFrameSource {
         if let Some(converted_picture) = &current_frame.converted_picture {
             return Ok(Arc::clone(converted_picture));
         }
-        let converter = rgba_converter_for(
-            &mut self.rgba_converter,
-            &current_frame.raw_picture,
-            &file_path,
-        )?;
-        let converted_picture =
-            Arc::new(converter.convert(&current_frame.raw_picture, &file_path)?);
+        let converted_picture = Arc::new(
+            self.picture_converter
+                .convert(&current_frame.raw_picture, &file_path)?,
+        );
         current_frame.converted_picture = Some(Arc::clone(&converted_picture));
         Ok(converted_picture)
     }
@@ -240,73 +230,6 @@ impl VideoFrameSource for FfmpegVideoFrameSource {
             }
             self.decode_forward_to(source_time)?;
         }
-        self.current_frame_as_rgba(source_time)
+        self.current_frame_converted(source_time)
     }
-}
-
-/// The converter matching `picture`, created or replaced if the format or size changed.
-fn rgba_converter_for<'converter>(
-    slot: &'converter mut Option<RgbaConverter>,
-    picture: &ffmpeg::frame::Video,
-    file_path: &Path,
-) -> Result<&'converter mut RgbaConverter, MediaError> {
-    let matches_picture = slot.as_ref().is_some_and(|converter| {
-        converter.source_format == picture.format()
-            && converter.width == picture.width()
-            && converter.height == picture.height()
-    });
-    if !matches_picture {
-        let scaler = ffmpeg::software::scaling::Context::get(
-            picture.format(),
-            picture.width(),
-            picture.height(),
-            ffmpeg::format::Pixel::RGBA,
-            picture.width(),
-            picture.height(),
-            ffmpeg::software::scaling::Flags::BILINEAR,
-        )
-        .map_err(|error| decoding_failure(file_path, "preparing the colour conversion", error))?;
-        *slot = Some(RgbaConverter {
-            source_format: picture.format(),
-            width: picture.width(),
-            height: picture.height(),
-            scaler,
-        });
-    }
-    slot.as_mut().ok_or_else(|| {
-        decoding_failure(file_path, "preparing the colour conversion", "no converter")
-    })
-}
-
-impl RgbaConverter {
-    /// Converts a decoded picture to a tightly packed RGBA image.
-    fn convert(
-        &mut self,
-        picture: &ffmpeg::frame::Video,
-        file_path: &Path,
-    ) -> Result<VideoFrame, MediaError> {
-        let mut rgba_picture = ffmpeg::frame::Video::empty();
-        self.scaler
-            .run(picture, &mut rgba_picture)
-            .map_err(|error| decoding_failure(file_path, "converting colours", error))?;
-        copy_rgba_plane_into_image(&rgba_picture, file_path)
-    }
-}
-
-/// Copies an FFmpeg RGBA picture (whose rows may be padded) into an image.
-fn copy_rgba_plane_into_image(
-    rgba_picture: &ffmpeg::frame::Video,
-    file_path: &Path,
-) -> Result<VideoFrame, MediaError> {
-    let (width, height) = (rgba_picture.width(), rgba_picture.height());
-    let row_length_in_bytes = width as usize * 4;
-    let stride_in_bytes = rgba_picture.stride(0);
-    let plane = rgba_picture.data(0);
-    let mut pixels = Vec::with_capacity(row_length_in_bytes * height as usize);
-    for row in 0..height as usize {
-        let row_start = row * stride_in_bytes;
-        pixels.extend_from_slice(&plane[row_start..row_start + row_length_in_bytes]);
-    }
-    VideoFrame::from_raw(width, height, pixels)
-        .ok_or_else(|| decoding_failure(file_path, "converting colours", "unexpected picture size"))
 }

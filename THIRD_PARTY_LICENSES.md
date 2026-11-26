@@ -33,6 +33,8 @@ run while compiling (procedural macros) and are not part of the program.
 | `rayon` (+ `crossbeam-*`, `either`) | Parallel rendering | MIT OR Apache-2.0 |
 | `clap` and its dependencies | Command-line arguments of `kadr-cli` | MIT OR Apache-2.0 |
 | `ctrlc` | Clean cancellation with Ctrl+C in `kadr-cli` | MIT OR Apache-2.0 |
+| `wgpu`, `naga` and their dependencies (`ash`, `glow`, `gpu-allocator`, `half`…) | GPU rendering | MIT OR Apache-2.0 (some also Zlib, BSD, ISC, Apache-2.0 only) |
+| `pollster` | Waiting for GPU operations | MIT OR Apache-2.0 |
 
 ## Rust crates used only by tests (not shipped)
 
@@ -40,6 +42,7 @@ run while compiling (procedural macros) and are not part of the program.
 |---|---|---|
 | `insta` | Snapshot tests of the project file | Apache-2.0 |
 | `tempfile` | Temporary folders in tests | MIT OR Apache-2.0 |
+| `criterion` and its dependencies | Benchmarks | Apache-2.0 OR MIT |
 | `similar`, `console`, `tempfile` and their dependencies | Used by `insta` | Apache-2.0 / MIT / MIT OR Apache-2.0 |
 
 ## Native libraries

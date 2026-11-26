@@ -16,8 +16,9 @@ The engine never calls FFmpeg directly. It uses a `MediaBackend`:
 
 The desktop implementation is `FfmpegBackend`; Android will get a `MediaCodec` one.
 
-Internally, pictures are 8-bit RGBA (`VideoFrame`) and sound is interleaved stereo
-32-bit float (`AudioBuffer`), whatever the source file uses.
+Internally, pictures are `VideoFrame`s — YUV 4:2:0 planes as videos store them, or
+RGBA for transparent images (see [rendering.md](rendering.md)) — and sound is
+interleaved stereo 32-bit float (`AudioBuffer`), whatever the source file uses.
 
 ## Frame-accurate pictures
 
@@ -27,7 +28,8 @@ Compressed video can only be entered at keyframes. To show the frame at time *t*
    before *t* and flush the decoder.
 2. Decode forward. The source keeps **one frame ahead**: the current frame is right
    as long as the next one has not started.
-3. Convert only the frame actually shown to RGBA (once, then shared through `Arc`).
+3. Convert only the frame actually shown (once, then shared through `Arc`): 8-bit
+   YUV 4:2:0 is copied as is, other layouts are converted.
 
 Requests in increasing order (export, playback) never jump. Still images decode once.
 
@@ -56,8 +58,8 @@ flowchart LR
     project[Project] --> mixer[Mix every clip's sound]
     project --> composer[For each frame: clips under the playhead]
     composer --> sources[Video sources, one per clip]
-    sources --> compositor[Compositor: fit, move, scale, rotate, crop, opacity]
-    compositor --> sink[MP4 sink: RGBA→YUV, H.264]
+    sources --> compositor[Renderer, GPU or CPU: fit, move, scale, rotate, crop, opacity]
+    compositor --> sink[MP4 sink: YUV planes, H.264]
     mixer --> sink2[AAC, written alongside each frame]
     sink --> file[file.mp4.exporting → file.mp4]
     sink2 --> file
@@ -94,7 +96,9 @@ Keyframes every 2 s; `+faststart` so the file plays while downloading.
   expected source frame, every beep must be within 20 ms, the music must be present at
   the right volume. Cancellation and empty projects are tested too.
 
-## Performance today (phase 2, CPU)
+## Performance in phase 2 (CPU, before phase 3a)
+
+Kept for history; current numbers are in [rendering.md](rendering.md).
 
 Measured on the owner's laptop (Intel Core Ultra 9 185H, Intel Arc), per 1080p frame:
 

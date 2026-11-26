@@ -21,7 +21,7 @@ use kadr_core::project::ProjectSettings;
 use kadr_core::time::TimeSpan;
 use kadr_engine::project_files::{load_project_file, save_project_file};
 use kadr_engine::quick_assembly::assemble_project_from_files;
-use kadr_engine::{ExportCancellation, ExportRequest, export_project};
+use kadr_engine::{ExportCancellation, ExportRequest, RendererPreference, export_project};
 use kadr_media::{EncodingSpeed, FfmpegBackend, MediaBackend, VideoEncoderPreference};
 
 use arguments::{CanvasFormat, Command, CommandLine};
@@ -63,7 +63,17 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
             output,
             software_encoder,
             fast,
-        } => render(&backend, &project, &output, software_encoder, fast),
+            cpu,
+        } => render(
+            &backend,
+            &project,
+            &output,
+            RenderOptions {
+                software_encoder,
+                fast,
+                cpu,
+            },
+        ),
     }
 }
 
@@ -85,12 +95,18 @@ fn probe(backend: &FfmpegBackend, file: &Path, as_json: bool) -> Result<(), Box<
     Ok(())
 }
 
+/// The `render` switches.
+struct RenderOptions {
+    software_encoder: bool,
+    fast: bool,
+    cpu: bool,
+}
+
 fn render(
     backend: &FfmpegBackend,
     project_path: &Path,
     output_path: &Path,
-    software_encoder: bool,
-    fast: bool,
+    options: RenderOptions,
 ) -> Result<(), Box<dyn Error>> {
     let project = load_project_file(project_path)?;
     let cancellation = ExportCancellation::new();
@@ -100,15 +116,20 @@ fn render(
 
     let request = ExportRequest {
         output_path: output_path.to_path_buf(),
-        video_encoder_preference: if software_encoder {
+        video_encoder_preference: if options.software_encoder {
             VideoEncoderPreference::SoftwareOnly
         } else {
             VideoEncoderPreference::HardwareFirst
         },
-        encoding_speed: if fast {
+        encoding_speed: if options.fast {
             EncodingSpeed::Fast
         } else {
             EncodingSpeed::Balanced
+        },
+        renderer_preference: if options.cpu {
+            RendererPreference::CpuOnly
+        } else {
+            RendererPreference::GpuIfAvailable
         },
     };
     let started_at = Instant::now();

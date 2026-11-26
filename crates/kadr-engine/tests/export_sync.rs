@@ -21,7 +21,9 @@ use kadr_core::project::{Project, ProjectSettings};
 use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
 use kadr_engine::quick_assembly::assemble_project_from_files;
-use kadr_engine::{ExportCancellation, ExportError, ExportRequest, export_project};
+use kadr_engine::{
+    ExportCancellation, ExportError, ExportRequest, RendererPreference, export_project,
+};
 use kadr_media::test_patterns::{
     BeepPattern, TestVideoDescription, find_beep_starts, read_frame_index_barcode, tone_strength,
     write_test_video,
@@ -181,6 +183,7 @@ fn software_export_request(output_path: PathBuf) -> ExportRequest {
         output_path,
         video_encoder_preference: VideoEncoderPreference::SoftwareOnly,
         encoding_speed: EncodingSpeed::Fast,
+        renderer_preference: RendererPreference::GpuIfAvailable,
     }
 }
 
