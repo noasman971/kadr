@@ -21,8 +21,12 @@ use kadr_core::timeline::TrackKind;
 use serde::{Deserialize, Serialize};
 
 mod arrangement;
+mod clip_settings;
+mod titles;
 
 pub use arrangement::TrimEdge;
+pub use clip_settings::{ClipValue, ColorSettings, TextAlignmentChoice, TextSettings};
+pub use titles::{TITLE_DURATION, TITLES_TRACK_NAME, TitleStyle};
 
 /// How long a still picture lasts when it is placed on the timeline.
 pub const STILL_IMAGE_DURATION: TimeSpan = TimeSpan::from_whole_seconds(5);
@@ -114,6 +118,76 @@ pub enum EditRequest {
     RemoveTrack {
         /// The track.
         track_id: TrackId,
+    },
+    /// Sets one value of a clip (inspector number fields and sliders).
+    SetClipValue {
+        /// The clip.
+        clip_id: ClipId,
+        /// Which value.
+        value: ClipValue,
+        /// The new value, in the value's own unit (multiplier, pixels, degrees).
+        amount: f32,
+    },
+    /// Crops a clip's picture (fractions of each side).
+    SetClipCrop {
+        /// The clip.
+        clip_id: ClipId,
+        /// Fraction removed on the left.
+        left: f32,
+        /// Fraction removed at the top.
+        top: f32,
+        /// Fraction removed on the right.
+        right: f32,
+        /// Fraction removed at the bottom.
+        bottom: f32,
+    },
+    /// Puts a clip's picture settings back to their defaults.
+    ResetClipPicture {
+        /// The clip.
+        clip_id: ClipId,
+    },
+    /// Changes a clip's speed (its length changes with it).
+    SetClipSpeed {
+        /// The clip.
+        clip_id: ClipId,
+        /// Multiplier: 0.5 slower, 2 faster.
+        speed: f64,
+    },
+    /// Sets a clip's colour adjustment.
+    SetClipColor {
+        /// The clip.
+        clip_id: ClipId,
+        /// The settings.
+        settings: ColorSettings,
+    },
+    /// Removes a clip's colour adjustment.
+    ResetClipColor {
+        /// The clip.
+        clip_id: ClipId,
+    },
+    /// Changes a title's words and style.
+    SetClipText {
+        /// The title.
+        clip_id: ClipId,
+        /// The settings.
+        settings: TextSettings,
+    },
+    /// Adds a title at `start_ticks` on a *Titles* track.
+    AddTitle {
+        /// Where it starts.
+        start_ticks: u64,
+        /// Its words.
+        text: String,
+        /// One of the ready-made styles.
+        style: TitleStyle,
+    },
+    /// Changes the canvas size (an export preset of another shape, for example).
+    /// The format is no longer automatic afterwards.
+    SetCanvasSize {
+        /// New width in pixels (made even, within the engine's limits).
+        width: u32,
+        /// New height in pixels (made even, within the engine's limits).
+        height: u32,
     },
 }
 
@@ -219,6 +293,50 @@ pub fn apply_edit_request(
             is_hidden,
         } => arrangement::set_track_hidden(session, *track_id, *is_hidden),
         EditRequest::RemoveTrack { track_id } => arrangement::remove_track(session, *track_id),
+        EditRequest::SetClipValue {
+            clip_id,
+            value,
+            amount,
+        } => clip_settings::set_clip_value(session, *clip_id, *value, *amount),
+        EditRequest::SetClipCrop {
+            clip_id,
+            left,
+            top,
+            right,
+            bottom,
+        } => clip_settings::set_clip_crop(
+            session,
+            *clip_id,
+            kadr_core::clip::CropInsets {
+                left_fraction: *left,
+                top_fraction: *top,
+                right_fraction: *right,
+                bottom_fraction: *bottom,
+            },
+        ),
+        EditRequest::ResetClipPicture { clip_id } => {
+            clip_settings::reset_clip_picture(session, *clip_id)
+        }
+        EditRequest::SetClipSpeed { clip_id, speed } => {
+            clip_settings::set_clip_speed(session, *clip_id, *speed)
+        }
+        EditRequest::SetClipColor { clip_id, settings } => {
+            clip_settings::set_clip_color(session, *clip_id, *settings)
+        }
+        EditRequest::ResetClipColor { clip_id } => {
+            clip_settings::reset_clip_color(session, *clip_id)
+        }
+        EditRequest::SetClipText { clip_id, settings } => {
+            clip_settings::set_clip_text(session, *clip_id, settings)
+        }
+        EditRequest::AddTitle {
+            start_ticks,
+            text,
+            style,
+        } => titles::add_title(session, Timestamp::from_ticks(*start_ticks), text, *style),
+        EditRequest::SetCanvasSize { width, height } => {
+            set_canvas_size(session, adopts_first_video_format, *width, *height)
+        }
     }
 }
 
@@ -368,6 +486,26 @@ fn first_track_of_kind_or_new(
     }
 }
 
+/// Changes the canvas size as one undo step ("changeFormat").
+fn set_canvas_size(
+    session: &mut EditSession,
+    adopts_first_video_format: &mut bool,
+    width: u32,
+    height: u32,
+) -> Result<EditOutcome, EditError> {
+    let mut settings = *session.project().settings();
+    settings.canvas_size = PictureSize {
+        width_in_pixels: usable_canvas_side(width),
+        height_in_pixels: usable_canvas_side(height),
+    };
+    session.transaction("changeFormat", |transaction| {
+        transaction.execute(ChangeProjectSettings::new(settings))?;
+        Ok(EditOutcome::default())
+    })?;
+    *adopts_first_video_format = false;
+    Ok(EditOutcome::default())
+}
+
 /// A new track of `kind` above all the others (a drop on the "new track" zone).
 fn new_track_on_top(
     transaction: &mut Transaction<'_>,
@@ -442,7 +580,7 @@ fn missing_created_object() -> EditError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kadr_core::clip::ClipContent;
+    use kadr_core::clip::{AnimatableProperty, ClipContent};
     use kadr_core::media_asset::AudioFormat;
     use kadr_core::time::FrameRate;
     use std::path::PathBuf;
@@ -938,6 +1076,236 @@ mod tests {
     }
 
     #[test]
+    fn the_canvas_size_changes_in_one_undo_step_and_stops_being_automatic() {
+        let (mut session, _) = arranged_session();
+        let mut adopts = true;
+        apply_edit_request(
+            &mut session,
+            &mut adopts,
+            &EditRequest::SetCanvasSize {
+                width: 1080,
+                height: 1921,
+            },
+        )
+        .unwrap();
+        let canvas_size = session.project().settings().canvas_size;
+        assert_eq!(
+            (canvas_size.width_in_pixels, canvas_size.height_in_pixels),
+            (1080, 1920)
+        );
+        assert!(!adopts);
+        assert_eq!(session.next_undo_label(), Some("changeFormat"));
+        session.undo().unwrap();
+        assert_eq!(
+            session.project().settings(),
+            &ProjectSettings::landscape_1080p()
+        );
+    }
+
+    fn clip_of(session: &EditSession, clip_id: ClipId) -> kadr_core::clip::Clip {
+        session
+            .project()
+            .timeline()
+            .find_clip(clip_id)
+            .unwrap()
+            .1
+            .clone()
+    }
+
+    #[test]
+    fn inspector_values_change_one_step_at_a_time_and_reset() {
+        let (mut session, clip_ids) = arranged_session();
+        let clip_id = clip_ids[0];
+        for (value, amount) in [
+            (ClipValue::Opacity, 0.5),
+            (ClipValue::Scale, 1.5),
+            (ClipValue::PositionX, -120.0),
+        ] {
+            apply(
+                &mut session,
+                EditRequest::SetClipValue {
+                    clip_id,
+                    value,
+                    amount,
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(session.next_undo_label(), Some("changePosition"));
+        let clip = clip_of(&session, clip_id);
+        assert!(
+            (clip
+                .animated_property(AnimatableProperty::Opacity)
+                .constant_value
+                - 0.5)
+                .abs()
+                < 0.001
+        );
+        apply(
+            &mut session,
+            EditRequest::SetClipCrop {
+                clip_id,
+                left: 0.1,
+                top: 0.0,
+                right: 0.1,
+                bottom: 0.0,
+            },
+        )
+        .unwrap();
+        apply(&mut session, EditRequest::ResetClipPicture { clip_id }).unwrap();
+        assert_eq!(session.next_undo_label(), Some("resetPicture"));
+        let clip = clip_of(&session, clip_id);
+        assert!(
+            (clip
+                .animated_property(AnimatableProperty::Scale)
+                .constant_value
+                - 1.0)
+                .abs()
+                < 0.001
+        );
+        assert_eq!(
+            clip.animated_property(AnimatableProperty::PositionX)
+                .constant_value,
+            0.0
+        );
+    }
+
+    #[test]
+    fn a_faster_clip_gets_shorter_and_a_longer_one_may_not_overlap() {
+        let (mut session, clip_ids) = arranged_session();
+        apply(
+            &mut session,
+            EditRequest::SetClipSpeed {
+                clip_id: clip_ids[1],
+                speed: 2.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            clip_of(&session, clip_ids[1]).timeline_duration(),
+            TimeSpan::from_whole_seconds(2)
+        );
+        assert_eq!(session.next_undo_label(), Some("changeSpeed"));
+        // The first clip (0–3 s) is followed by the second at 3 s: slower would overlap.
+        let refused = apply(
+            &mut session,
+            EditRequest::SetClipSpeed {
+                clip_id: clip_ids[0],
+                speed: 0.5,
+            },
+        );
+        assert!(refused.is_err());
+    }
+
+    #[test]
+    fn the_colour_adjustment_is_added_once_replaced_then_removed() {
+        let (mut session, clip_ids) = arranged_session();
+        let clip_id = clip_ids[0];
+        let settings = |exposure| ColorSettings {
+            exposure,
+            contrast: 1.1,
+            saturation: 1.0,
+            temperature: 0.2,
+        };
+        apply(
+            &mut session,
+            EditRequest::SetClipColor {
+                clip_id,
+                settings: settings(0.5),
+            },
+        )
+        .unwrap();
+        apply(
+            &mut session,
+            EditRequest::SetClipColor {
+                clip_id,
+                settings: settings(-0.5),
+            },
+        )
+        .unwrap();
+        let clip = clip_of(&session, clip_id);
+        assert_eq!(clip.effects.len(), 1);
+        let kadr_core::effect::EffectKind::ColorAdjustment(adjustment) = &clip.effects[0].kind
+        else {
+            panic!("the effect is a colour adjustment");
+        };
+        assert!((adjustment.exposure_in_stops + 0.5).abs() < 0.001);
+        apply(&mut session, EditRequest::ResetClipColor { clip_id }).unwrap();
+        assert!(clip_of(&session, clip_id).effects.is_empty());
+        assert_eq!(session.next_undo_label(), Some("resetColor"));
+    }
+
+    #[test]
+    fn titles_go_on_titles_tracks_and_their_text_can_change() {
+        let (mut session, _) = arranged_session();
+        let first = apply(
+            &mut session,
+            EditRequest::AddTitle {
+                start_ticks: seconds(1),
+                text: "Lisbonne".to_string(),
+                style: TitleStyle::Subtitle,
+            },
+        )
+        .unwrap()
+        .created_clip_ids[0];
+        assert_eq!(session.next_undo_label(), Some("addTitle"));
+        let tracks = session.project().timeline().tracks();
+        assert_eq!(tracks.last().unwrap().name, TITLES_TRACK_NAME);
+        let title = clip_of(&session, first);
+        assert_eq!(title.timeline_duration(), TITLE_DURATION);
+        assert!(
+            title
+                .animated_property(AnimatableProperty::PositionY)
+                .constant_value
+                > 0.0
+        );
+
+        // A second title over the first goes on a new Titles track.
+        apply(
+            &mut session,
+            EditRequest::AddTitle {
+                start_ticks: seconds(2),
+                text: "Jour 1".to_string(),
+                style: TitleStyle::BigWord,
+            },
+        )
+        .unwrap();
+        let titles_tracks = session
+            .project()
+            .timeline()
+            .tracks()
+            .iter()
+            .filter(|track| track.name == TITLES_TRACK_NAME)
+            .count();
+        assert_eq!(titles_tracks, 2);
+
+        apply(
+            &mut session,
+            EditRequest::SetClipText {
+                clip_id: first,
+                settings: TextSettings {
+                    text: "Lisboa".to_string(),
+                    font_family: "Inter".to_string(),
+                    font_size: 72.0,
+                    color: "not a colour".to_string(),
+                    alignment: TextAlignmentChoice::Left,
+                },
+            },
+        )
+        .unwrap();
+        let kadr_core::clip::ClipContent::Text(text) = &clip_of(&session, first).content else {
+            panic!("a title is a text clip");
+        };
+        assert_eq!(text.text, "Lisboa");
+        assert!((text.style.font_size_in_pixels - 72.0).abs() < 0.001);
+        // An unreadable colour keeps the current one.
+        assert_eq!(
+            text.style.color,
+            kadr_core::clip::TextStyle::default().color
+        );
+    }
+
+    #[test]
     fn every_request_reads_from_the_front_end_json() {
         let requests = [
             r#"{ "type": "addMediaAt", "mediaId": 1, "trackId": null, "startTicks": 0 }"#,
@@ -948,6 +1316,15 @@ mod tests {
             r#"{ "type": "setTrackMuted", "trackId": 3, "isMuted": true }"#,
             r#"{ "type": "setTrackHidden", "trackId": 3, "isHidden": false }"#,
             r#"{ "type": "removeTrack", "trackId": 3 }"#,
+            r#"{ "type": "setCanvasSize", "width": 1080, "height": 1920 }"#,
+            r#"{ "type": "setClipValue", "clipId": 2, "value": "positionX", "amount": -40.5 }"#,
+            r#"{ "type": "setClipCrop", "clipId": 2, "left": 0.1, "top": 0, "right": 0, "bottom": 0.2 }"#,
+            r#"{ "type": "resetClipPicture", "clipId": 2 }"#,
+            r#"{ "type": "setClipSpeed", "clipId": 2, "speed": 1.5 }"#,
+            r#"{ "type": "setClipColor", "clipId": 2, "settings": { "exposure": 0.3, "contrast": 1, "saturation": 1.2, "temperature": -0.1 } }"#,
+            r#"{ "type": "resetClipColor", "clipId": 2 }"#,
+            r##"{ "type": "setClipText", "clipId": 2, "settings": { "text": "Hi", "fontFamily": "Inter", "fontSize": 64, "color": "#ffffffff", "alignment": "center" } }"##,
+            r#"{ "type": "addTitle", "startTicks": 0, "text": "Title", "style": "bigWord" }"#,
         ];
         for json in requests {
             assert!(

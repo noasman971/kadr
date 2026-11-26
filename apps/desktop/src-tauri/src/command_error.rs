@@ -36,6 +36,10 @@ pub enum ErrorCode {
     ExportCancelled,
     /// An export is already running.
     ExportAlreadyRunning,
+    /// The export file exists and the user has not agreed to replace it.
+    ExportFileExists,
+    /// The export size has another shape than the project (change the project first).
+    ExportOtherShape,
     /// Something that should not happen; the details say what.
     Internal,
 }
