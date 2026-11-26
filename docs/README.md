@@ -2,6 +2,7 @@
 
 | Document | What you will find |
 |---|---|
+| [status.md](status.md) | **Where every phase stands, and how to resume on another computer** |
 | [architecture.md](architecture.md) | The crates, how they depend on each other, how a frame travels from the source file to the export |
 | [data-model.md](data-model.md) | Time, identifiers, project, timeline, clips, animation, effects, commands and undo, validation rules, the `.kadr` file |
 | [contributing.md](contributing.md) | Environment, naming and code conventions, branches, commits, pull requests |

@@ -22,14 +22,13 @@ It is the source of truth for scope, phases and rules.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
 - **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
-- **Phase 4 (tracking): in progress.** 4a, the region tracker in `kadr-vision`
-  (MOSSE, PSR, Lucas-Kanade with Median Flow size, NCC recovery, One Euro smoothing),
-  on branch `feature/phase-4a-region-tracker`. Next, 4b: the analysis in
-  `kadr-engine` (forwards and backwards from the selected frame, samples stored in the
-  `TrackedBlur`), `kadr-cli blur … --debug`, speed on a real 1080p video.
-- **Phases 5 and 6 run in parallel** (owner's request, 2026-11-26), each in its own
-  session and worktree: phase 5 the MCP server, phase 6 the desktop app. Versions are
-  still tagged in phase order, after the owner validates each phase.
+- **Phases 4, 5, 6, 8 and 9 are in progress in parallel**, each on its own branch
+  with a draft pull request whose description starts with "Status for resuming".
+  **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
+  another computer, and the prompt to start each session with: read it first.**
+  Phases 8 and 9 are paused by the owner until 4, 5 and 6 are merged. Phase 7 waits
+  for 4 and 6; phase 10 (iOS) needs a Mac. Versions are tagged in phase order
+  (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
 
 ## Decisions taken with the owner
 
@@ -151,6 +150,14 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
   files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
   with a comment explaining why.
+- **Parallel sessions:** each worktree has its own `target/`, so every session
+  compiles the whole workspace. Five at once filled 32 GB of memory and made
+  everything 10 to 20 times slower. Run two or three sessions at most, with
+  `CARGO_BUILD_JOBS=4`.
+- **Tracking:** synthetic scenes are not enough. A real 1080p video
+  (`scripts/generate-tracking-benchmark.ps1`, measured with the `track_video`
+  example and `scripts/compare-tracking-with-truth.py`) showed drifts that every
+  synthetic scenario missed, while the PSR stayed "confident". Measure changes there.
 - Tracking, size: MOSSE tried at several scales drifts (it learns the slightly wrong
   size every frame), and DSST on grey levels cannot see a zoom at all. The size comes
   from the optical flow points (Median Flow): see decision 0007 before changing it.
