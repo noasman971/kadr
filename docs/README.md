@@ -8,13 +8,13 @@
 | [decisions/](decisions/) | Architecture decision records: why things are the way they are |
 | [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works |
 | [rendering.md](rendering.md) | YUV from end to end, colour spaces, the GPU and CPU renderers, how they are compared, benchmarks |
+| [tracking-and-blur.md](tracking-and-blur.md) | The region tracker behind the face blur, step by step: settings, accuracy, speed, limits |
 
 Documents added in later phases:
 
 | Document | Phase |
 |---|---|
 | `gpu-rendering.md` — `wgpu` pipeline, shaders, adding an effect | 3 |
-| `tracking-and-blur.md` — the region tracker, its parameters and limits | 4 |
 | `mcp.md` — every MCP tool, Claude Desktop / Claude Code setup, example conversations | 5 |
 | `design-system.md` and `user-journeys.md` — interface tokens, components, user journeys | 6 |
 
