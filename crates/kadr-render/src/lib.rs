@@ -23,14 +23,18 @@
 //!
 //! See `docs/rendering.md`.
 
+pub mod color_adjustment;
 pub mod cpu_compositor;
 pub mod gpu;
 pub mod layers;
+pub mod region_effects;
 pub mod renderer;
 pub mod text;
 
+pub use color_adjustment::{MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, adjust_color};
 pub use cpu_compositor::{CpuRenderer, composite_layers_to_rgba};
 pub use gpu::GpuRenderer;
 pub use layers::{CanvasDescription, LayerPlacement, LayerSizing, VisualLayer};
+pub use region_effects::{HiddenRegion, hide_regions};
 pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};
 pub use text::{BUNDLED_FONT_FAMILY, TextRasterizer};

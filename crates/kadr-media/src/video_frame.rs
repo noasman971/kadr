@@ -288,6 +288,11 @@ impl YuvPicture {
         self.color_space
     }
 
+    /// The three planes, for modification in place (their sizes cannot change).
+    pub fn planes_mut(&mut self) -> (&mut [u8], &mut [u8], &mut [u8]) {
+        (&mut self.y_plane, &mut self.u_plane, &mut self.v_plane)
+    }
+
     /// Converts to RGBA (opaque), each pixel using the colour of its 2×2 block.
     /// Rows are converted in parallel.
     pub fn to_rgba(&self) -> RgbaImage {
