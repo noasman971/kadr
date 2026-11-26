@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- The Kadr logo: a frame-like "K" on Kadr's violet. Source of every app icon (npm run tauri icon). -->
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6a5af9"/>
+      <stop offset="1" stop-color="#c25cff"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#background)"/>
+  <path d="M372 272 V752 M372 532 L652 272 M452 458 L668 752" stroke="#ffffff" stroke-width="104" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
