@@ -18,6 +18,7 @@ use kadr_core::media_asset::{MediaAssetDescription, MediaKind, PictureSize};
 use kadr_core::project::{Project, ProjectSettings};
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
+use kadr_engine::export_presets::refit_clips_to_canvas;
 use serde::{Deserialize, Serialize};
 
 mod arrangement;
@@ -486,7 +487,7 @@ fn first_track_of_kind_or_new(
     }
 }
 
-/// Changes the canvas size as one undo step ("changeFormat").
+/// Changes the canvas size as one undo step ("changeFormat"), refitting titles.
 fn set_canvas_size(
     session: &mut EditSession,
     adopts_first_video_format: &mut bool,
@@ -494,12 +495,15 @@ fn set_canvas_size(
     height: u32,
 ) -> Result<EditOutcome, EditError> {
     let mut settings = *session.project().settings();
+    let old_size = settings.canvas_size;
     settings.canvas_size = PictureSize {
         width_in_pixels: usable_canvas_side(width),
         height_in_pixels: usable_canvas_side(height),
     };
     session.transaction("changeFormat", |transaction| {
         transaction.execute(ChangeProjectSettings::new(settings))?;
+        // Titles keep their place on the picture; videos are fitted anyway.
+        refit_clips_to_canvas(transaction, old_size, settings.canvas_size)?;
         Ok(EditOutcome::default())
     })?;
     *adopts_first_video_format = false;

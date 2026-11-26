@@ -12,7 +12,7 @@ use kadr_core::animation::Keyframe;
 use kadr_core::clip::{AnimatableProperty, ClipContent};
 use kadr_core::commands::{ChangeProjectSettings, SetClipPropertyValue, SetClipText, SetKeyframe};
 use kadr_core::error::EditError;
-use kadr_core::history::EditSession;
+use kadr_core::history::{EditSession, Transaction};
 use kadr_core::media_asset::PictureSize;
 use kadr_core::project::Project;
 
@@ -107,52 +107,74 @@ pub fn project_at_export_size(
 
 /// A copy of `project` drawn on a canvas of `new_size` (same shape): positions
 /// and text sizes, measured in canvas pixels, are scaled by the same factor.
-/// Video scales are relative to the canvas, blur regions are in source pixels,
-/// crops are fractions: they stay as they are.
 fn project_scaled_to_canvas(
     project: &Project,
     new_size: PictureSize,
 ) -> Result<Project, EditError> {
-    let factor =
-        new_size.width_in_pixels as f32 / project.settings().canvas_size.width_in_pixels as f32;
+    let old_size = project.settings().canvas_size;
     let mut settings = *project.settings();
     settings.canvas_size = new_size;
     let mut session = EditSession::new(project.clone()).map_err(EditError::from)?;
     session.transaction("Scale for export", |transaction| {
         transaction.execute(ChangeProjectSettings::new(settings))?;
-        let clips: Vec<_> = transaction
-            .project()
-            .timeline()
-            .all_clips()
-            .map(|(_, clip)| clip.clone())
-            .collect();
-        for clip in clips {
-            for property in [AnimatableProperty::PositionX, AnimatableProperty::PositionY] {
-                let value = clip.animated_property(property);
-                if value.is_animated() {
-                    for keyframe in value.keyframes() {
-                        let scaled = Keyframe {
-                            value: keyframe.value * factor,
-                            ..*keyframe
-                        };
-                        transaction.execute(SetKeyframe::new(clip.id, property, scaled))?;
-                    }
-                } else if value.constant_value != 0.0 {
-                    let scaled = value.constant_value * factor;
-                    transaction.execute(SetClipPropertyValue::new(clip.id, property, scaled))?;
-                }
-            }
-            if let ClipContent::Text(text_content) = &clip.content {
-                let mut style = text_content.style.clone();
-                style.font_size_in_pixels *= factor;
-                transaction.execute(
-                    SetClipText::new(clip.id, text_content.text.clone()).with_style(style),
-                )?;
-            }
-        }
-        Ok(())
+        refit_clips_to_canvas(transaction, old_size, new_size)
     })?;
     Ok(session.into_project())
+}
+
+/// Moves and resizes what is measured in canvas pixels when the canvas goes from
+/// `old_size` to `new_size`: horizontal positions follow the width, vertical ones
+/// the height, and text sizes the smaller of the two changes, so titles keep
+/// their place on the picture and still fit, like videos (which are fitted to the
+/// canvas whatever its size). Video scales are relative to the canvas, blur
+/// regions are in source pixels and crops are fractions: they stay as they are.
+///
+/// Call it inside the transaction that changes the canvas size.
+///
+/// # Errors
+///
+/// The engine's refusal of one of the changes (the transaction is then undone).
+pub fn refit_clips_to_canvas(
+    transaction: &mut Transaction<'_>,
+    old_size: PictureSize,
+    new_size: PictureSize,
+) -> Result<(), EditError> {
+    let horizontal_factor = new_size.width_in_pixels as f32 / old_size.width_in_pixels as f32;
+    let vertical_factor = new_size.height_in_pixels as f32 / old_size.height_in_pixels as f32;
+    let text_factor = horizontal_factor.min(vertical_factor);
+    let clips: Vec<_> = transaction
+        .project()
+        .timeline()
+        .all_clips()
+        .map(|(_, clip)| clip.clone())
+        .collect();
+    for clip in clips {
+        for (property, factor) in [
+            (AnimatableProperty::PositionX, horizontal_factor),
+            (AnimatableProperty::PositionY, vertical_factor),
+        ] {
+            let value = clip.animated_property(property);
+            if value.is_animated() {
+                for keyframe in value.keyframes() {
+                    let scaled = Keyframe {
+                        value: keyframe.value * factor,
+                        ..*keyframe
+                    };
+                    transaction.execute(SetKeyframe::new(clip.id, property, scaled))?;
+                }
+            } else if value.constant_value != 0.0 {
+                let scaled = value.constant_value * factor;
+                transaction.execute(SetClipPropertyValue::new(clip.id, property, scaled))?;
+            }
+        }
+        if let ClipContent::Text(text_content) = &clip.content {
+            let mut style = text_content.style.clone();
+            style.font_size_in_pixels *= text_factor;
+            transaction
+                .execute(SetClipText::new(clip.id, text_content.text.clone()).with_style(style))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -243,6 +265,43 @@ mod tests {
         assert!((text.style.font_size_in_pixels - 60.0).abs() < 0.001);
         // The project itself is untouched.
         assert_eq!(project.settings().canvas_size.width_in_pixels, 1280);
+    }
+
+    #[test]
+    fn refitting_to_another_shape_keeps_titles_in_place_and_fitting() {
+        let (project, clip_id) = project_with_a_title();
+        let mut session = EditSession::new(project).unwrap();
+        let old_size = session.project().settings().canvas_size;
+        let new_size = ExportPreset::VerticalReelsShorts.picture_size();
+        session
+            .execute(SetClipPropertyValue::new(
+                clip_id,
+                AnimatableProperty::PositionY,
+                270.0,
+            ))
+            .unwrap();
+        session
+            .transaction("Refit", |transaction| {
+                let mut settings = *transaction.project().settings();
+                settings.canvas_size = new_size;
+                transaction.execute(ChangeProjectSettings::new(settings))?;
+                refit_clips_to_canvas(transaction, old_size, new_size)
+            })
+            .unwrap();
+        let (_, clip) = session.project().timeline().find_clip(clip_id).unwrap();
+        // 1280 × 720 → 1080 × 1920: x × 0.84375, y × 2.666…, text × 0.84375.
+        let x = clip
+            .animated_property(AnimatableProperty::PositionX)
+            .constant_value;
+        let y = clip
+            .animated_property(AnimatableProperty::PositionY)
+            .constant_value;
+        assert!((x - 84.375).abs() < 0.01);
+        assert!((y - 720.0).abs() < 0.01);
+        let ClipContent::Text(text) = &clip.content else {
+            panic!("the title is still a text clip");
+        };
+        assert!((text.style.font_size_in_pixels - 33.75).abs() < 0.01);
     }
 
     #[test]
