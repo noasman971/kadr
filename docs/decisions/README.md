@@ -12,6 +12,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0005](0005-ffmpeg-through-ffmpeg-next.md) | FFmpeg through `ffmpeg-next`, behind backend traits | Accepted |
 | [0006](0006-gpu-rendering-yuv-end-to-end.md) | GPU rendering with `wgpu`, YUV from end to end, CPU as reference | Accepted |
 | [0007](0007-scale-from-point-tracking.md) | The tracked region's size comes from point tracking (Median Flow) | Accepted |
+| [0008](0008-anchor-tracking-to-the-selection.md) | A slow-learning filter, anchored to the selection's appearance | Accepted |
 | [0020](0020-svelte-typescript-front-end.md) | Svelte 5 and TypeScript for the desktop front end | Accepted |
 | [0021](0021-desktop-app-layout.md) | The desktop app in `apps/desktop/`, its Rust crate in the workspace | Accepted |
 | [0022](0022-front-end-and-engine-communication.md) | The back end owns the project; preview frames and sound rendered by the engine, sent as binary | Accepted |

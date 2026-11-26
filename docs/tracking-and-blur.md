@@ -11,8 +11,9 @@ settings, how accurate and fast it is, and its limits. The analysis inside the e
 and the `kadr-cli blur` command are described at the end.
 
 See also [decisions/0003](decisions/0003-face-blur-by-classic-tracking.md) (why classic
-tracking) and [decisions/0007](decisions/0007-scale-from-point-tracking.md) (how the
-size is followed).
+tracking), [decisions/0007](decisions/0007-scale-from-point-tracking.md) (how the
+size is followed) and [decisions/0008](decisions/0008-anchor-tracking-to-the-selection.md)
+(why the filter learns slowly and is anchored to the selection).
 
 ## From a selection to a blurred clip
 
@@ -39,7 +40,10 @@ flowchart TD
     state -- no --> flow[Optical flow on a grid of points<br/>motion and change of size]
     flow --> mosse[MOSSE correlation filter<br/>at the previous and the predicted position]
     mosse --> psr{Peak-to-sidelobe ratio}
-    psr -- "≥ 12" --> confident[Confident: move, resize, learn]
+    psr -- "≥ 12" --> anchor{Like the selection, nearby?}
+    anchor -- "≥ 0.7" --> confident[Confident: pulled towards the selection's look,<br/>move, resize, learn]
+    anchor -- "0.5 to 0.7" --> changed[Confident: move, resize, learn]
+    anchor -- "< 0.5" --> suspect[Uncertain: drifted?<br/>search the selection further away, re-anchor if found]
     psr -- "7 to 12" --> uncertain[Uncertain: move, keep size, do not learn]
     psr -- "< 7, or 15 uncertain frames" --> lost[Lost: stay where last seen]
     state -- yes --> recover[Filter at the last position<br/>+ appearance search around it]
@@ -107,7 +111,12 @@ The filter (Bolme et al. 2010) finds the region in each new frame:
   with the filter. The response peaks where the region now is; the peak is refined
   between cells with a parabola.
 - **Learning.** When the answer is confident, the filter is blended with the new
-  window (learning rate 0.125), to follow slow changes of appearance.
+  window, to follow slow changes of appearance. The learning rate is **0.02**: the new
+  frame weighs 2 %. Bolme et al. use 0.125, but on a real video that made the filter
+  forget the selection within a few frames. Each small error of position was learnt as
+  the new centre, the errors added up, and the region slid off the object by 2 to 4
+  pixels per second while the PSR stayed high (see [Accuracy](#on-a-real-video)).
+  KCF and DSST use 0.02 to 0.025.
 
 ### 4. How sure? The peak-to-sidelobe ratio
 
@@ -124,7 +133,31 @@ flattens the response.
 
 After 15 uncertain frames in a row, the region is considered lost.
 
-### 5. Finding a lost region again
+### 5. Checking against the selection
+
+A high PSR only says that the filter found what it learnt, and the filter keeps
+learning. A slow learning rate makes drift slow, not impossible. The one reference that
+cannot drift is the **user's selection**: its picture (16 cells along the longer side,
+see below) never changes. On every confident frame:
+
+1. The selection's picture is searched **close to the filter's answer**: up to 3 cells
+   (about a fifth of the region) around it, at three sizes (4 % smaller, the same, 4 %
+   larger). The best position and size are refined between cells and between sizes
+   with parabolas.
+2. Then, by how well it matches (normalised cross-correlation):
+
+| Similarity | What it means | What the tracker does |
+|---|---|---|
+| ≥ 0.7 | The selection is there | Pulls the region **35 % of the way** towards where it matches best, then learns. A drift of position or size is corrected a little every frame and never builds up |
+| 0.5 to 0.7 | It changed (a head turning, a new expression) | Keeps the filter's answer |
+| < 0.5 | It does not look like the selection at all: the filter may have drifted onto something else | Searches the selection **further away**, up to 3 region sizes. If it matches there at **0.85** or more, the region jumps there and the filter starts afresh (re-anchoring). Either way the frame is **uncertain**, so the range is reported; the memorised recent appearance is not refreshed with what may be the wrong thing |
+
+The thresholds come from the real-video benchmark below: while the tracker is on the
+object (an error under a third of its width) the best similarity nearby stays above
+0.65, with a median of 0.9; once it has slid off by more than half its width, the
+median falls to 0.2.
+
+### 6. Finding a lost region again
 
 While lost, the region stays where it was last seen, and every frame:
 
@@ -139,7 +172,7 @@ While lost, the region stays where it was last seen, and every frame:
    confirms it there with a confident PSR. The region is then **uncertain** for that
    frame, and confident again from the next one if the filter agrees.
 
-### 6. Smoothing without lag
+### 7. Smoothing without lag
 
 The raw track jitters by a fraction of a pixel, which a blur would show as trembling.
 `smooth_track` applies a **One Euro filter** (Casiez et al. 2012) to the centre and the
@@ -164,13 +197,17 @@ still, little when moving fast.
 | Lost PSR | < 7 | `LOST_PEAK_TO_SIDELOBE_RATIO` |
 | Uncertain frames before lost | 15 | `MAXIMUM_UNCERTAIN_FRAMES_IN_A_ROW` |
 | Filter window | 2 × the region's longer side, 64 × 64 cells | `correlation_filter.rs` |
-| Filter learning rate | 0.125 | `correlation_filter.rs` |
+| Filter learning rate | 0.02 | `correlation_filter.rs` |
 | Size change | ≤ 5 % per frame | `tracker.rs` |
 | Optical flow | 4 × 4 points, 15 × 15 windows, up to pyramid level 3, 1 px round-trip error | `optical_flow.rs` |
 | Recovery | similarity ≥ 0.6, search from 1 to 3 region sizes | `tracker.rs`, `template_matching.rs` |
+| Anchor to the selection | ± 3 cells, sizes × 1/1.04, 1, 1.04; pulled 35 % of the way when similarity ≥ 0.7 | `tracker.rs` |
+| Drift alarm | similarity < 0.5 near a confident answer; re-anchored when found at ≥ 0.85 within 3 region sizes | `tracker.rs` |
 | Smoothing | 1 Hz + 0.5 Hz per region size per second, 1 s padding | `smoothing.rs` |
 
 ## Accuracy
+
+### On synthetic scenes
 
 `crates/kadr-vision/tests/tracking_scenarios.rs` tracks a textured ellipse over a
 textured background (`synthetic_scenes`). The true position is known exactly in every
@@ -178,31 +215,74 @@ frame. Measured centre errors:
 
 | Scenario | Frames | Mean error | Largest error | States |
 |---|---|---|---|---|
-| Steady motion, 2.5 px and 1.2 px per frame | 80 | 0.8 px | 1.4 px | all confident |
-| The same, tracked backwards | 60 | 0.7 px | 1.2 px | all confident |
-| Accelerating from 4 to 36 px per frame (640 × 360) | 20 | 0.1 px | 0.5 px | all confident |
-| Coming closer, size × 1.8 | 80 | 1.4 px | 3.1 px | all confident, final size within 2 % |
-| Moving away, size × 0.6 | 80 | 2.0 px | 3.2 px | all confident, final size within 2 % |
-| Camera pan, background sliding 6 px per frame | 60 | 0.3 px | 0.5 px | all confident |
-| Hidden for 15 frames behind an obstacle | 80 | 0.6 px | 1.1 px | lost on the first hidden frame, found again on the first visible one, confident on the next |
+| Steady motion, 2.5 px and 1.2 px per frame | 80 | 0.22 px | 0.39 px | all confident |
+| The same, tracked backwards | 60 | 0.12 px | 0.27 px | all confident |
+| Accelerating from 4 to 36 px per frame (640 × 360) | 20 | 0.13 px | 0.37 px | all confident |
+| Coming closer, size × 1.8 | 80 | 0.23 px | 0.36 px | all confident, final size within 2 % |
+| Moving away, size × 0.6 | 80 | 0.32 px | 0.57 px | all confident, final size within 2 % |
+| Camera pan, background sliding 6 px per frame | 60 | 0.12 px | 0.23 px | all confident |
+| Hidden for 15 frames behind an obstacle | 80 | 0.10 px | 0.43 px | lost on the first hidden frame, found again on the first visible one, confident on the next |
 | Leaving the frame | 70 | — | — | uncertain at the edge, lost once out |
 
 Run them with `cargo test -p kadr-vision --test tracking_scenarios -- --nocapture` to
-see the numbers.
+see the numbers. `crates/kadr-engine/tests/region_tracking.rs` tracks the same kind of
+scene encoded to H.264, forwards and backwards from the middle of the clip: largest
+error 0.47 px.
+
+### On a real video
+
+Synthetic scenes are not enough: the first real video showed a drift that every
+scenario missed. The benchmark is a 60-second 1080p video at 30 frames per second, a
+200 × 240 test pattern (FFmpeg's `testsrc2`: colour bars, a running clock, moving
+shapes) moving on a known path over a still, detailed Mandelbrot picture:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/generate-tracking-benchmark.ps1
+cargo run --release -p kadr-engine --example track_video -- `
+    tests/fixtures/generated/tracking/moving_box_1080p.mp4 2.5 1360,576,200,240 > track.csv
+python scripts/compare-tracking-with-truth.py track.csv
+```
+
+The selection is made at 2.5 s; the analysis runs forwards to the end and backwards to
+the start, 1 800 frames. Errors are in the video's pixels (1080p). The first measure,
+on the owner's laptop, gave a mean centre error of 218 px and a size error of 41 %; two
+fixes (the size measured only from points moving with the region, the filter's window
+weighted towards the region) brought it to about 120 px and 10 % there. The same
+version measures 197 px and 24 % on the desktop's encode of the video, the starting
+point of the table:
+
+| Version | Mean centre error | Worst | Mean size error | States |
+|---|---|---|---|---|
+| Before (with both fixes above) | 197 px | 880 px | 24 % | all confident |
+| + learning rate 0.02 instead of 0.125 | 4.4 px | 14 px | 18 % | 1 781 confident |
+| + anchored to the selection (today) | **2.05 px** | **8.3 px** | **1.7 %** (worst 4.9 %) | all confident |
+
+Before the fixes the region slid off the pattern by 2 to 4 pixels per second and
+ended on the background, while the PSR said "confident" on every frame, up to 500 on
+the still background. Today the error stays under 6 px at every point of the minute.
+Decision record 0008 lists the other settings tried. On the drifting version, the drift
+alarm alone flagged 95 % of the frames that were more than half a region off as
+uncertain, and none of those within a quarter of a region.
 
 ## Speed
 
-Measured with `cargo bench -p kadr-vision` on the owner's laptop, release build,
-640 × 360 tracking images:
+Measured on the owner's desktop PC (Intel i5-12400, 12 threads), release build, while
+two other Kadr sessions were working (CPU 54 to 79 % busy before each measure): the
+numbers vary by about 30 % from one run to the next.
+
+**On the real 1080p benchmark** (`track_video`, see [Accuracy](#on-a-real-video)):
+1 800 frames in 9.9 s, **182 frames per second**, decoding the H.264 video included.
+A minute of 1080p at 30 frames per second is analysed in about 10 seconds.
+
+**Per frame**, with `cargo bench -p kadr-vision` (640 × 360 tracking images):
 
 | Step | Time per frame |
 |---|---|
-| Shrinking a 1920 × 1080 Y plane to 640 × 360 | 1.2 ms |
-| Following a visible region (pyramid, flow, filter, learning) | 3.3 ms (300 frames per second) |
-| Searching for a hidden region | 5 ms (200 frames per second) |
-
-A minute of 1080p at 30 frames per second is 1 800 frames: about 8 seconds of tracking,
-plus decoding.
+| Shrinking a 1920 × 1080 Y plane to 640 × 360 | 1.0 ms |
+| Following a visible region (pyramid, flow, filter, anchor, learning) | 3.3 ms (300 frames per second) |
+| Searching for a hidden region | 3.6 ms |
+| The anchor to the selection (3 sizes, ± 3 cells), included in following | 0.05 ms |
+| The wider search for the selection, on suspect frames only | 2.1 ms |
 
 ## Limits
 
@@ -213,7 +293,12 @@ What the tracker cannot do, and what happens then:
   range is reported, and the user (or Claude) selects it again there.
 - **A big change of appearance.** A head turning from front to profile changes the
   picture the filter knows. The filter learns slow changes; a fast turn may make the
-  frame uncertain or lost.
+  frame uncertain or lost. While the region looks nothing like the selection
+  (similarity under 0.5), its frames are reported as uncertain even when the filter is
+  sure, and the anchor cannot correct a drift: the filter alone follows it, drifting
+  slowly. When the face turns back, the anchor pulls the region back if it is within
+  about a fifth of its size, and the wider search finds it further away if it matches
+  clearly. The thresholds were measured on a test pattern, not yet on real faces.
 - **Something that looks the same.** Two similar objects crossing can make the filter
   jump to the wrong one. The PSR usually drops when they overlap, which marks the range
   as uncertain.
@@ -232,8 +317,13 @@ real videos show the need; the rest of the pipeline would stay the same.
 
 - `synthetic_scenes` draws scenes from formulas, so every frame's truth is known.
 - Unit tests cover each piece: the Fourier transforms, the pyramid, the filter's peak
-  and PSR, optical flow (motion and zoom), template matching, smoothing.
+  and PSR, optical flow (motion and zoom), template matching (including the anchor's
+  search between cells and sizes), smoothing. Two tracker tests make the selection
+  look like something else: a sure match that does not look like it is reported as
+  uncertain, and the region is re-anchored where the selection is found nearby.
 - `tests/tracking_scenarios.rs` checks the whole tracker on the scenarios above.
+- **Measure every change of the tracker on the real-video benchmark** (see
+  [Accuracy](#on-a-real-video)): synthetic scenes missed the drift entirely.
 - `benches/track_region.rs` measures the speed.
 - The vision code is optimised even in debug builds (`[profile.dev.package.kadr-vision]`
   in the workspace `Cargo.toml`), so `cargo test` stays quick.

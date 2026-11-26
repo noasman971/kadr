@@ -53,7 +53,7 @@ which is more detailed and is the reference for its phase.
 | Phase | State | Branch / pull request | Next step |
 |---|---|---|---|
 | 0–3 | Done, validated, tagged `v0.1.0`–`v0.4.0` | `main` | — |
-| 4. Tracking and blur | 4a merged (#7). 4b in draft (#8): works on synthetic videos, **drifts on a real one** | `feature/phase-4b-blur-analysis`, [#8](https://github.com/noasman971/kadr/pull/8) | Find and fix the drift |
+| 4. Tracking and blur | 4a merged (#7). 4b (#8): drift on a real video fixed (mean error 197 → 2 px) | `feature/phase-4b-blur-analysis`, [#8](https://github.com/noasman971/kadr/pull/8) | Owner: validate phase 4, then tag `v0.5.0` |
 | 5. MCP server | Draft (#9): 34 of 35 tools tested | `feature/phase-5-mcp-server`, [#9](https://github.com/noasman971/kadr/pull/9) | Run the tests after the merge of `main`, then merge |
 | 6. Desktop app | 6a merged (#6). 6b in draft (#10). 6c started | `feature/phase-6b-app-skeleton`, [#10](https://github.com/noasman971/kadr/pull/10); `feature/phase-6c-timeline-editing` | Try 6b by hand |
 | 7. Blur and Claude in the app | Waits for phases 4 and 6 | — | — |
@@ -68,22 +68,24 @@ Versions are tagged in phase order, each only after the owner validates the phas
 
 - **Done:**
   - 4a, the tracker in `kadr-vision` (merged, PR #7);
-  - in PR #8, the analysis in `kadr-engine` (`region_tracking`: forwards and
+  - 4b in PR #8: the analysis in `kadr-engine` (`region_tracking`: forwards and
     backwards, samples stored in the `TrackedBlur`), the debug video,
-    `kadr-cli blur`, and the 16 fixes from a code review. All tests pass.
-- **Open problem: drift on a real video.**
+    `kadr-cli blur`, and the 16 fixes from a code review.
+- **The drift on a real video is fixed** (decision record 0008):
   - `scripts/generate-tracking-benchmark.ps1` makes a 60 s 1080p video where a
-    test pattern moves over a detailed, still background on a known path.
-  - The `track_video` example and `scripts/compare-tracking-with-truth.py` measure
-    the tracker on it.
-  - Two fixes are in PR #8: a size measured only from points moving with the
-    region, and a mask on the correlation filter's window. They brought the mean
-    centre error from 218 px to 120 px and the size error from 41 % to 10 %.
-  - The position still drifts by 2–4 px per second, while every frame stays
-    "confident". The next steps are listed in PR #8: find the cause, detect the
-    drift against the selection's appearance, re-anchor.
-- **Then:** measure the speed on a quiet machine, update `docs/tracking-and-blur.md`,
-  merge PR #8, and ask the owner to validate phase 4.
+    test pattern moves over a detailed, still background on a known path; the
+    `track_video` example and `scripts/compare-tracking-with-truth.py` measure the
+    tracker on it.
+  - The region slid off the object by 2–4 px per second while every frame stayed
+    "confident". The cause was the correlation filter's learning rate (0.125):
+    every small error was learnt as the new centre.
+  - Now the filter learns at 0.02, every confident frame is anchored to the
+    selection's appearance, and a confident frame that does not look like the
+    selection at all is reported as uncertain and re-anchored. Mean centre error
+    197 → 2.05 px, size error 24 % → 1.7 %, 182 frames per second decoding
+    included. `docs/tracking-and-blur.md` has the details.
+- **Next:** the owner validates phase 4 (ideally on a real video with faces, with
+  `kadr-cli blur … --debug`), then `v0.5.0` is tagged.
 - **Resume with:** *"Resume phase 4 of Kadr: read CLAUDE.md, docs/status.md and the
   'Status for resuming' section of PR #8, then continue with its next step."*
 
