@@ -29,6 +29,8 @@ kadr-engine = { path = "crates/kadr-engine" }
 
 clap = { version = "4.6.10", features = ["derive"] }
 ctrlc = "3.5.3"
+# Text layout and rasterisation; no fontconfig, so Linux needs no extra system library.
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
 # FFmpeg 7 or newer (see README.md, "FFmpeg development files").
 ffmpeg-next = "9.1.0"
 # Only the pixel buffer types and basic operations: no image file codecs.

@@ -7,6 +7,7 @@
 //!
 //! - [`create_renderer`] picks the [`GpuRenderer`] (wgpu) when a GPU works, the
 //!   [`CpuRenderer`] otherwise; both implement [`FrameRenderer`].
+//! - [`TextRasterizer`] draws text clips with the bundled Inter font.
 //! - [`LayerPlacement::of_clip_at`] reads a clip's (possibly animated)
 //!   placement at a given moment.
 //! - A single video that already fills the canvas is passed through untouched.
@@ -26,8 +27,10 @@ pub mod cpu_compositor;
 pub mod gpu;
 pub mod layers;
 pub mod renderer;
+pub mod text;
 
 pub use cpu_compositor::{CpuRenderer, composite_layers_to_rgba};
 pub use gpu::GpuRenderer;
-pub use layers::{CanvasDescription, LayerPlacement, VisualLayer};
+pub use layers::{CanvasDescription, LayerPlacement, LayerSizing, VisualLayer};
 pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};
+pub use text::{BUNDLED_FONT_FAMILY, TextRasterizer};

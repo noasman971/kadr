@@ -1,7 +1,7 @@
 //! What to draw: layers, their placement on the canvas, and the geometry shared
 //! by the CPU and GPU renderers.
 
-use kadr_core::clip::{AnimatableProperty, Clip, CropInsets};
+use kadr_core::clip::{AnimatableProperty, Clip, ClipContent, CropInsets};
 use kadr_core::color::Color;
 use kadr_core::media_asset::PictureSize;
 use kadr_core::time::TimeSpan;
@@ -16,6 +16,16 @@ pub struct CanvasDescription {
     pub background: Color,
 }
 
+/// How big a picture is drawn before the layer's own scale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayerSizing {
+    /// As large as possible while fitting entirely inside the canvas (videos, images).
+    #[default]
+    FitInsideCanvas,
+    /// One picture pixel per canvas pixel (texts, whose size is set in canvas pixels).
+    NativePixels,
+}
+
 /// Where and how one picture is drawn on the canvas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LayerPlacement {
@@ -23,7 +33,9 @@ pub struct LayerPlacement {
     pub offset_x_in_pixels: f32,
     /// Vertical offset of the picture's centre from the canvas centre; down is positive.
     pub offset_y_in_pixels: f32,
-    /// Size multiplier. At 1 the (cropped) picture fits entirely inside the canvas.
+    /// How big the picture is at scale 1.
+    pub sizing: LayerSizing,
+    /// Size multiplier, applied on top of `sizing`.
     pub scale_factor: f32,
     /// Clockwise rotation around the picture's centre.
     pub rotation_in_degrees: f32,
@@ -38,6 +50,7 @@ impl LayerPlacement {
     pub const FITTED: Self = Self {
         offset_x_in_pixels: 0.0,
         offset_y_in_pixels: 0.0,
+        sizing: LayerSizing::FitInsideCanvas,
         scale_factor: 1.0,
         rotation_in_degrees: 0.0,
         crop: CropInsets {
@@ -50,12 +63,18 @@ impl LayerPlacement {
     };
 
     /// The placement of a clip at `time_offset` from its start, with its
-    /// keyframe animations evaluated at that moment.
+    /// keyframe animations evaluated at that moment. Text clips are drawn at
+    /// their native size, everything else is fitted inside the canvas.
     pub fn of_clip_at(clip: &Clip, time_offset: TimeSpan) -> Self {
         let value_of = |property| clip.animated_property(property).value_at(time_offset);
+        let sizing = match clip.content {
+            ClipContent::Text(_) => LayerSizing::NativePixels,
+            ClipContent::Media(_) => LayerSizing::FitInsideCanvas,
+        };
         Self {
             offset_x_in_pixels: value_of(AnimatableProperty::PositionX),
             offset_y_in_pixels: value_of(AnimatableProperty::PositionY),
+            sizing,
             scale_factor: value_of(AnimatableProperty::Scale),
             rotation_in_degrees: value_of(AnimatableProperty::Rotation),
             crop: clip.transform.crop,
@@ -127,8 +146,13 @@ impl LayerGeometry {
             canvas_size.width_in_pixels as f32,
             canvas_size.height_in_pixels as f32,
         );
-        let fit_scale = (canvas_width / visible_width).min(canvas_height / visible_height);
-        let total_scale = fit_scale * placement.scale_factor;
+        let sizing_scale = match placement.sizing {
+            LayerSizing::FitInsideCanvas => {
+                (canvas_width / visible_width).min(canvas_height / visible_height)
+            }
+            LayerSizing::NativePixels => 1.0,
+        };
+        let total_scale = sizing_scale * placement.scale_factor;
         let rotation_in_radians = placement.rotation_in_degrees.to_radians();
         Some(Self {
             crop_left,
@@ -255,6 +279,21 @@ mod tests {
             geometry.texture_corners(400, 200),
             [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
         );
+    }
+
+    #[test]
+    fn native_pixels_keep_the_picture_size() {
+        let canvas = PictureSize {
+            width_in_pixels: 1920,
+            height_in_pixels: 1080,
+        };
+        let native = LayerPlacement {
+            sizing: LayerSizing::NativePixels,
+            ..LayerPlacement::FITTED
+        };
+        let geometry = LayerGeometry::new(canvas, 200, 80, &native).unwrap();
+        assert_eq!(geometry.canvas_corners()[0], (860.0, 500.0));
+        assert_eq!(geometry.canvas_corners()[3], (1060.0, 580.0));
     }
 
     #[test]
