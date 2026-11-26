@@ -84,12 +84,16 @@ export const backend = {
   getClipOverlay: (clipId: number, timeTicks: number) =>
     invoke<ClipOverlay | null>("get_clip_overlay", { clipId, timeTicks: Math.max(0, Math.round(timeTicks)) }),
 
-  /** Follows `region` (source pixels) through the clip; `onEvent` receives the progress, then the result. */
+  /**
+   * Follows `region` (source pixels) through the clip, for a new blur, or to correct
+   * blur `effectId`; `onEvent` receives the progress, then the result.
+   */
   startRegionTracking(
     clipId: number,
     timeTicks: number,
     region: SourceRegion,
     shape: BlurShapeChoice,
+    effectId: number | null,
     onEvent: (event: TrackingEvent) => void,
   ): Promise<{ clipId: number }> {
     const channel = new Channel<TrackingEvent>();
@@ -99,6 +103,7 @@ export const backend = {
       timeTicks: Math.max(0, Math.round(timeTicks)),
       region,
       shape,
+      effectId,
       onEvent: channel,
     });
   },

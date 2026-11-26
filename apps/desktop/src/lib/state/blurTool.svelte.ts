@@ -1,5 +1,7 @@
 // The blur tool (docs/ux.md, "Blurring a face"): drawing a box on the preview,
-// adjusting it, then following it through the clip in the background.
+// adjusting it, then following it through the clip in the background. The same
+// states correct an existing blur: its box at the playhead is dragged where the
+// face really is, and the tracking starts again from there.
 //
 //   off ── start ──► drawing ── box drawn ──► adjusting ── confirm ──► tracking
 //    ▲                  │  Escape                 │  Escape               │ finished,
@@ -13,7 +15,7 @@
 import { backend } from "../api/backend";
 import type { BlurShapeChoice, ClipOverlay, SourceRegion, TrackingEvent } from "../api/types";
 import { blurTargetClip } from "../blur/blurTarget";
-import { isLargeEnough } from "../blur/sourceMapping";
+import { isLargeEnough, movedRegion } from "../blur/sourceMapping";
 import { t } from "../i18n/i18n.svelte";
 import { snapToFrame } from "../time/ticks";
 import { editor } from "./editor.svelte";
@@ -36,6 +38,8 @@ class BlurTool {
   phase = $state<BlurToolPhase>("off");
   /** The clip being blurred. */
   clipId = $state<number | null>(null);
+  /** The blur being corrected, or `null` for a new blur. */
+  correctedEffectId = $state<number | null>(null);
   /** The box, in the source video's pixels, over the frame under the playhead. */
   region = $state<SourceRegion | null>(null);
   shape = $state<BlurShapeChoice>("ellipse");
@@ -89,17 +93,40 @@ class BlurTool {
     }
     playback.pause();
     this.clipId = clip.id;
+    this.correctedEffectId = null;
     editor.selectedClipIds = [clip.id];
     this.region = null;
     this.overlay = null;
     this.phase = "drawing";
   }
 
+  /** Starts correcting blur `effectId` of clip `clipId` from its box `region` at the playhead. */
+  startCorrection(clipId: number, effectId: number, region: SourceRegion, shape: BlurShapeChoice): void {
+    if (this.phase === "tracking") {
+      return;
+    }
+    playback.pause();
+    this.clipId = clipId;
+    this.correctedEffectId = effectId;
+    this.shape = shape;
+    editor.selectedClipIds = [clipId];
+    this.region = region;
+    this.phase = "adjusting";
+  }
+
+  /** Moves the box by (dx, dy) source pixels (arrow keys). */
+  nudge(dx: number, dy: number): void {
+    const { region, overlay } = this;
+    if (this.phase !== "adjusting" || !region || !overlay) {
+      return;
+    }
+    this.region = movedRegion(region, { x: dx, y: dy }, overlay.visibleSource);
+  }
+
   /** Leaves the tool without changing anything (not while tracking: see `cancelTracking`). */
   cancel(): void {
     if (this.isActive) {
-      this.phase = "off";
-      this.region = null;
+      this.finish();
     }
   }
 
@@ -121,7 +148,9 @@ class BlurTool {
     this.progress = { analysedFrameCount: 0, totalFrameCount: 0, elapsedSeconds: 0 };
     this.phase = "tracking";
     try {
-      await backend.startRegionTracking(clipId, timeTicks, region, this.shape, (event) => this.handleEvent(event));
+      await backend.startRegionTracking(clipId, timeTicks, region, this.shape, this.correctedEffectId, (event) =>
+        this.handleEvent(event),
+      );
     } catch (error) {
       // Refused before anything ran (box too small, outside the picture…): fix the box.
       this.phase = "adjusting";
@@ -146,10 +175,17 @@ class BlurTool {
         editor.selectedClipIds = [event.clipId];
         this.finish();
         const rangeCount = event.uncertainRangeCount + event.lostRangeCount;
+        const message = event.isCorrection
+          ? rangeCount === 0
+            ? t("blur.corrected")
+            : t("blur.correctedWithRanges", { count: rangeCount })
+          : rangeCount === 0
+            ? t("blur.done")
+            : t("blur.doneWithRanges", { count: rangeCount });
         toasts.show({
           tone: "success",
           group: TRACKING_TOAST_GROUP,
-          message: rangeCount === 0 ? t("blur.done") : t("blur.doneWithRanges", { count: rangeCount }),
+          message,
           action: { label: t("toast.undo"), run: () => void editor.undo() },
         });
         return;
@@ -171,6 +207,7 @@ class BlurTool {
   private finish(): void {
     this.phase = "off";
     this.region = null;
+    this.correctedEffectId = null;
   }
 }
 

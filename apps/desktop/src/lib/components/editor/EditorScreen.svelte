@@ -16,6 +16,7 @@
   import { preferences } from "../../state/preferences.svelte";
   import { toasts } from "../../state/toasts.svelte";
   import { backend } from "../../api/backend";
+  import { nextUnsureMoment } from "../../blur/unsureMoments";
   import { cutTimes } from "../../timeline/placement";
   import { snapToFrame, ticksPerFrame } from "../../time/ticks";
   import Icon from "../../ui/Icon.svelte";
@@ -93,6 +94,17 @@
     }
   }
 
+  /** Shift+B: the playhead goes to the next moment a blur's tracker was unsure about. */
+  function goToNextUnsureMoment(): void {
+    const moment = nextUnsureMoment(view, editor.playheadTicks);
+    if (!moment) {
+      toasts.show({ tone: "info", message: t("blur.nothingToCheck") });
+      return;
+    }
+    editor.selectedClipIds = [moment.clipId];
+    playback.seek(moment.middleTicks);
+  }
+
   /** ↑ / ↓: the playhead jumps to the previous or next cut of the edit. */
   function jumpToCut(direction: -1 | 1): void {
     const now = editor.playheadTicks;
@@ -142,12 +154,18 @@
     }
     const isCommand = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
-    // While a box is drawn for a blur, Enter follows it and Escape leaves the tool.
-    if (blurTool.isActive && (event.key === "Enter" || event.key === "Escape")) {
+    // While a box is drawn for a blur, Enter follows it, Escape leaves the tool
+    // and the arrows move the box (Shift: ten times more).
+    if (blurTool.isActive && (event.key === "Enter" || event.key === "Escape" || event.key.startsWith("Arrow"))) {
       if (event.key === "Enter") {
         void blurTool.confirm();
-      } else {
+      } else if (event.key === "Escape") {
         blurTool.cancel();
+      } else {
+        const step = event.shiftKey ? 20 : 2;
+        const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+        const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+        blurTool.nudge(dx, dy);
       }
       event.preventDefault();
       return;
@@ -203,6 +221,8 @@
       } else {
         blurTool.start();
       }
+    } else if (key === "b" && event.shiftKey) {
+      goToNextUnsureMoment();
     } else if (key === "n") {
       preferences.update({ isSnappingOn: !preferences.isSnappingOn });
     } else if (event.key === "Escape") {

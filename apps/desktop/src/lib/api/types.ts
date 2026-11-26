@@ -133,6 +133,7 @@ export type TrackingEvent =
       view: ProjectView;
       clipId: number;
       effectId: number;
+      isCorrection: boolean;
       uncertainRangeCount: number;
       lostRangeCount: number;
     }

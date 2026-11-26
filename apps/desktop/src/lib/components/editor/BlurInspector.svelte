@@ -7,7 +7,10 @@
 <script lang="ts">
   import type { BlurSettings, BlurStyleChoice, ClipView, TrackedBlurView } from "../../api/types";
   import { t } from "../../i18n/i18n.svelte";
+  import { backend } from "../../api/backend";
+  import { nextUnsureMoment } from "../../blur/unsureMoments";
   import { blurTool } from "../../state/blurTool.svelte";
+  import { playback } from "../../state/playback.svelte";
   import { editor } from "../../state/editor.svelte";
   import Button from "../../ui/Button.svelte";
   import Icon from "../../ui/Icon.svelte";
@@ -59,6 +62,30 @@
   function rangeCountOf(blur: TrackedBlurView): number {
     return blur.unsureRanges.length;
   }
+
+  /** Puts the playhead in the middle of this clip's next moment to check. */
+  function goToNextMoment(): void {
+    const view = editor.view;
+    const moment = view ? nextUnsureMoment(view, editor.playheadTicks, clip.id) : null;
+    if (moment) {
+      playback.seek(moment.middleTicks);
+    }
+  }
+
+  const isPlayheadInClip = $derived(
+    editor.playheadTicks >= clip.startTicks && editor.playheadTicks < clip.startTicks + clip.durationTicks,
+  );
+
+  /** Starts correcting `blur` from its box under the playhead (the keyboard way to drag it). */
+  async function correctHere(blur: TrackedBlurView): Promise<void> {
+    playback.pause();
+    const overlay = await backend.getClipOverlay(clip.id, editor.playheadTicks).catch(() => null);
+    const box = overlay?.blurBoxes.find((candidate) => candidate.effectId === blur.effectId);
+    if (overlay && box) {
+      blurTool.startCorrection(clip.id, blur.effectId, box.region, box.shape);
+      blurTool.overlay = overlay;
+    }
+  }
 </script>
 
 <section class="section">
@@ -98,8 +125,18 @@
       {#if rangeCountOf(blur) === 0}
         <p class="status sure"><Icon name="circleCheck" size={14} />{t("blur.allSure")}</p>
       {:else}
-        <p class="status unsure"><Icon name="alert" size={14} />{t("blur.rangesToCheck", { count: rangeCountOf(blur) })}</p>
+        <div class="status-row">
+          <p class="status unsure"><Icon name="alert" size={14} />{t("blur.rangesToCheck", { count: rangeCountOf(blur) })}</p>
+          <Button variant="ghost" title="{t('blur.nextMoment')} (Shift+B)" onclick={goToNextMoment}>{t("blur.nextMoment")}</Button>
+        </div>
       {/if}
+      <Button
+        disabled={!isPlayheadInClip || !blur.isEnabled || isToolBusy}
+        title={isPlayheadInClip ? t("blur.correctHereHint") : t("blur.playheadOutside")}
+        onclick={() => void correctHere(blur)}
+      >
+        {t("blur.correctHere")}
+      </Button>
 
       <div class="segmented" role="group" aria-label={t("blur.style")}>
         {#each STYLES as style (style.value)}
@@ -191,6 +228,12 @@
     gap: var(--space-1);
     margin: 0;
     font-size: var(--font-size-xs);
+  }
+  .status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
   }
   .status.sure {
     color: var(--color-success);
