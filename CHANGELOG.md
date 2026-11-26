@@ -28,6 +28,20 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   (`cargo bench -p kadr-vision`).
 - `docs/tracking-and-blur.md`, decision record 0007.
 
+### Added (phase 4b: blur analysis)
+
+- `kadr-engine`: `region_tracking`:
+  - `RegionTrackingRequest::for_clip` turns a selection on a clip into a request;
+  - `track_region` tracks it forwards and backwards from the selected frame. The
+    backward pass decodes in chunks. It reports progress and can be cancelled;
+  - the result is smoothed and stored as few samples as possible (within a pixel);
+  - `export_tracking_debug_video` draws the tracked box and its confidence.
+- `TrackedBlur::unsure_ranges` lists where the tracker was uncertain or lost.
+- `kadr-vision`: `TrackingError::RegionWithoutDetail` for a uniform region on a
+  textured background. A recovered region now counts as uncertain, and the
+  recovery search starts at exactly one region size.
+- `kadr-cli blur video.mp4 --at 2.5 --rect 420,180,160,200 -o out.mp4 [--debug]`.
+
 ## [0.4.0] — Phase 3: GPU rendering
 
 ### Added (phase 3a: GPU rendering)

@@ -24,8 +24,8 @@ app.
 
 An arrow means "depends on". Dependencies are declared in `Cargo.toml` only when the
 code starts using them (Cargo warns about unused ones and CI fails on warnings). Since
-phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` are real;
-the others arrive with their phase.
+phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` are real,
+and since phase 4 `kadr-engine → kadr-vision`; the others arrive with their phase.
 
 ```mermaid
 flowchart TD

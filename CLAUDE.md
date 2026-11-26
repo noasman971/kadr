@@ -24,12 +24,13 @@ It is the source of truth for scope, phases and rules.
 - **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
 - **Phase 4 (tracking): in progress.** 4a, the region tracker in `kadr-vision`
   (MOSSE, PSR, Lucas-Kanade with Median Flow size, NCC recovery, One Euro smoothing),
-  on branch `feature/phase-4a-region-tracker`. Next, 4b: the analysis in
-  `kadr-engine` (forwards and backwards from the selected frame, samples stored in the
-  `TrackedBlur`), `kadr-cli blur … --debug`, speed on a real 1080p video.
-- **Phases 5 and 6 run in parallel** (owner's request, 2026-11-26), each in its own
-  session and worktree: phase 5 the MCP server, phase 6 the desktop app. Versions are
-  still tagged in phase order, after the owner validates each phase.
+  merged (PR #7). 4b, the analysis in `kadr-engine` (`region_tracking`) and
+  `kadr-cli blur … --debug`, on branch `feature/phase-4b-blur-analysis`.
+- **Other phases run in parallel** (owner's requests, 2026-11-26), each in its own
+  session and worktree: phase 5 the MCP server, phase 6 the desktop app, phase 8 the
+  engine side of the features, phase 9 the Android groundwork of the engine. Phase 7
+  waits for phases 4 and 6; phase 10 (iOS) needs a Mac. Versions are still tagged in
+  phase order, after the owner validates each phase.
 
 ## Decisions taken with the owner
 
@@ -54,7 +55,8 @@ It is the source of truth for scope, phases and rules.
   a check that never runs. Tags can still be pushed.
 - Architecture decisions are recorded in [docs/decisions/](docs/decisions/). While
   phases run in parallel, record numbers are reserved to avoid clashes: phase 4 uses
-  0007–0009, phase 5 0010–0019, phase 6 0020–0029.
+  0007–0009, phase 5 0010–0019, phase 6 0020–0029, phase 8 0030–0039, phase 9
+  0040–0049.
 
 ## Commands
 
@@ -164,3 +166,7 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
   the script to the scratchpad and run it from there.
+- With several sessions building in parallel, a build can take over ten minutes
+  (dozens of `rustc` processes share the CPU): run long builds in the background.
+- Decoders are slow backwards: never call `frame_at` frame by frame in decreasing
+  order; read chunks forwards and process them in reverse (`region_tracking`).

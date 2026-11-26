@@ -238,8 +238,66 @@ real videos show the need; the rest of the pipeline would stay the same.
 - The vision code is optimised even in debug builds (`[profile.dev.package.kadr-vision]`
   in the workspace `Cargo.toml`), so `cargo test` stays quick.
 
-## In the engine and the command line
+## In the engine
 
-The analysis of a clip (decoding, forward and backward tracking, storing the samples
-in the project) and the `kadr-cli blur` command come in phase 4b and will be described
-here.
+`kadr_engine::region_tracking` runs the tracker on a clip:
+
+```rust
+let request = RegionTrackingRequest::for_clip(&project, clip_id, timeline_time, selection)?;
+let report = track_region(&backend, &request, &mut on_progress, &cancellation)?;
+let blur = report.tracked_blur_like(&TrackedBlur::with_default_style());
+session.execute(AddEffect::new(clip_id, EffectKind::TrackedBlur(blur)))?;
+```
+
+- `RegionTrackingRequest::for_clip` finds the clip's video file, the part of it the
+  clip shows, and the moment of the file shown at `timeline_time`. The selection is in
+  the file's pixels, origin at the top-left corner. Errors say what is wrong, with the
+  selection and the file's own sizes:
+  - an unknown clip (the error lists the existing ones);
+  - not a video on a video track (a video placed on an audio track only gives its
+    sound, so it is never drawn);
+  - not on screen at that time;
+  - a region outside the picture or too small (24 pixels in 1080p);
+  - a region with no detail of its own, such as a flat caption plate.
+- `track_region` decodes that part of the file and tracks **forwards** from the
+  selected frame to the end, then **backwards** to the start. Decoders are fast
+  forwards and slow backwards, so the backward pass reads chunks of 30 frames
+  forwards and tracks each chunk in reverse. Progress is reported after every frame;
+  `TrackingCancellation` stops it from another thread.
+- The track is smoothed, then turned into `RegionSample`s. A frame is dropped when the
+  straight line between the samples around it gives its region within one pixel
+  (the blur interpolates linearly between samples anyway). Frames where the
+  confidence changes, and the user's selection, are always kept. A steady motion
+  needs only a few samples; the report keeps every frame too (`frames`).
+- `report.unsure_ranges` (and `TrackedBlur::unsure_ranges` on a saved project) lists
+  the stretches where the tracker was uncertain or lost: what the timeline will
+  highlight and what Claude checks through MCP.
+- `export_tracking_debug_video` writes the analysed part of the video with the tracked
+  box drawn on every frame, blue for the selection, green, amber or red by
+  confidence, with its state and PSR. It writes to a temporary file and only
+  replaces the requested one when it is complete.
+
+The samples are stored in the project's `TrackedBlur`, so the analysis never runs
+twice for the same selection; exports only read them.
+
+## From the command line
+
+```powershell
+kadr-cli blur interview.mp4 --at 2.5 --rect 420,180,160,200 -o blurred.mp4 --debug
+```
+
+- `--at`: the moment of the selection, in seconds from the start of the video.
+- `--rect left,top,width,height`: the region at that moment, in the video's pixels.
+- `--style blur|pixelate|fill`: how the region is hidden (default: blur).
+- `--debug`: also writes `blurred.debug.mp4`, with the tracked box and the confidence.
+- `--save-project edit.kadr`: also saves the project with the tracked blur.
+- `--software-encoder`, `--fast`, `--cpu`: as for `render`.
+
+It prints how many frames were confident, uncertain or lost, the speed, and the
+ranges to check, by frame number and time ("check: frames 31 to 41, 1.034 s to
+1.400 s (lost)").
+
+- Outputs never replace the video being blurred, nor each other.
+- `--at` must be inside the video.
+- An odd last column or row is cropped (encoders need even sizes), so the rest of
+  the picture is not resampled.
