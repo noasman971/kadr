@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 kadr-core.workspace = true
-kadr-media.workspace = true
+kadr-media = { workspace = true, features = ["ffmpeg"] }
 kadr-render.workspace = true
 thiserror.workspace = true
 

@@ -11,8 +11,10 @@
 //! - [`MediaBackend::create_export_sink`]: write an MP4 file (H.264 + AAC), with a
 //!   hardware encoder when one is available.
 //!
-//! Pictures are [`VideoFrame`]s (8-bit RGBA); sound is [`AudioBuffer`]s (stereo,
-//! 32-bit float).
+//! Pictures are [`VideoFrame`]s: YUV 4:2:0 planes as videos store them, or RGBA
+//! for images with transparency. Colour conversions are explicit (BT.601 / BT.709,
+//! limited / full range) and exports are always BT.709. Sound is [`AudioBuffer`]s
+//! (stereo, 32-bit float).
 //!
 //! ## Rules for this crate
 //!
@@ -20,8 +22,8 @@
 //!   [`FfmpegBackend`] (feature `ffmpeg`, on by default); the Android backend will
 //!   use `MediaCodec` (phase 9).
 //! - Hardware encoding is used when available, with an automatic fallback to the
-//!   software encoder. Hardware *decoding* arrives with GPU rendering (phase 3),
-//!   where decoded pictures can stay on the GPU.
+//!   software encoder. Hardware *decoding* is not used yet: decoding on the CPU
+//!   costs about 1 ms per 1080p frame (see decision record 0006).
 //!
 //! See `docs/architecture.md`.
 
@@ -41,4 +43,4 @@ pub use backend::{
 pub use error::MediaError;
 #[cfg(feature = "ffmpeg")]
 pub use ffmpeg::FfmpegBackend;
-pub use video_frame::VideoFrame;
+pub use video_frame::{VideoFrame, YuvColorSpace, YuvMatrix, YuvPicture, YuvRange};

@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use image::Rgba;
+use image::{Rgba, RgbaImage};
 use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
 
 use crate::audio_buffer::{AudioBuffer, sample_index_at, span_of_sample_count};
@@ -31,20 +31,25 @@ pub fn frame_index_barcode(
     frame_index: u32,
 ) -> VideoFrame {
     let bar_width = (width_in_pixels / BARCODE_BIT_COUNT).max(1);
-    VideoFrame::from_fn(width_in_pixels, height_in_pixels, |x, _| {
-        let bit = (x / bar_width).min(BARCODE_BIT_COUNT - 1);
-        let level = if (frame_index >> bit) & 1 == 1 {
-            255
-        } else {
-            0
-        };
-        Rgba([level, level, level, 255])
-    })
+    VideoFrame::Rgba(RgbaImage::from_fn(
+        width_in_pixels,
+        height_in_pixels,
+        |x, _| {
+            let bit = (x / bar_width).min(BARCODE_BIT_COUNT - 1);
+            let level = if (frame_index >> bit) & 1 == 1 {
+                255
+            } else {
+                0
+            };
+            Rgba([level, level, level, 255])
+        },
+    ))
 }
 
 /// Reads back the frame number drawn by [`frame_index_barcode`], by averaging
 /// the middle of each bar.
 pub fn read_frame_index_barcode(frame: &VideoFrame) -> u32 {
+    let frame = frame.to_rgba();
     let bar_width = (frame.width() / BARCODE_BIT_COUNT).max(1);
     let (first_row, last_row) = (frame.height() / 4, frame.height() * 3 / 4);
     (0..BARCODE_BIT_COUNT)

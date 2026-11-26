@@ -22,7 +22,8 @@ publish = false
 # The planned dependencies between Kadr crates are described in docs/architecture.md.
 [workspace.dependencies]
 kadr-core = { path = "crates/kadr-core" }
-kadr-media = { path = "crates/kadr-media" }
+# FFmpeg is opt-in, so crates that only need the picture types stay portable.
+kadr-media = { path = "crates/kadr-media", default-features = false }
 kadr-render = { path = "crates/kadr-render" }
 kadr-engine = { path = "crates/kadr-engine" }
 
@@ -32,12 +33,15 @@ ctrlc = "3.5.3"
 ffmpeg-next = "9.1.0"
 # Only the pixel buffer types and basic operations: no image file codecs.
 image = { version = "0.25.10", default-features = false }
+pollster = "1.0.3"
 rayon = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+wgpu = "30.0.2"
 
 # Test-only dependencies.
+criterion = "0.8.2"
 insta = "1.49.0"
 tempfile = "3.27.0"
 

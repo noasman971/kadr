@@ -1,23 +1,33 @@
 //! # kadr-render — composing the image of a timeline
 //!
 //! Given the pictures visible at one moment and how each is placed, this crate
-//! produces the final image: it stacks the layers and applies their position,
-//! scale, rotation, crop and opacity.
+//! produces the finished frame: it stacks the layers and applies their position,
+//! scale, rotation, crop and opacity, then hands the encoder YUV 4:2:0 planes in
+//! BT.709.
 //!
-//! - [`composite_layers`] draws a list of [`VisualLayer`]s over a background;
+//! - [`create_renderer`] picks the [`GpuRenderer`] (wgpu) when a GPU works, the
+//!   [`CpuRenderer`] otherwise; both implement [`FrameRenderer`].
 //! - [`LayerPlacement::of_clip_at`] reads a clip's (possibly animated)
 //!   placement at a given moment.
+//! - A single video that already fills the canvas is passed through untouched.
 //!
 //! ## Rules for this crate
 //!
-//! - The same renderer is used for the live preview and for the export, so what
-//!   the user sees is what they get.
-//! - Phase 2 renders on the CPU ([`cpu_compositor`]). Phase 3 moves rendering to
-//!   the GPU through `wgpu` (Vulkan, DirectX 12, Metal, OpenGL ES for Android)
-//!   and adds text, transitions and blurs.
+//! - The same renderers serve the live preview and the export, so what the user
+//!   sees is what they get.
+//! - The CPU renderer is the reference: the GPU renderer must produce the same
+//!   picture within rounding (checked by tests).
+//! - Colour conversions use the coefficients of `kadr_media::YuvColorSpace`, on
+//!   both sides.
 //!
-//! See `docs/architecture.md`.
+//! See `docs/rendering.md`.
 
 pub mod cpu_compositor;
+pub mod gpu;
+pub mod layers;
+pub mod renderer;
 
-pub use cpu_compositor::{LayerPlacement, VisualLayer, composite_layers};
+pub use cpu_compositor::{CpuRenderer, composite_layers_to_rgba};
+pub use gpu::GpuRenderer;
+pub use layers::{CanvasDescription, LayerPlacement, VisualLayer};
+pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};

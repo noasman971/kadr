@@ -59,10 +59,11 @@ pub fn describe_export(report: &ExportReport, elapsed: Duration) -> String {
     let speed_compared_to_real_time =
         report.duration.as_seconds() / elapsed.as_secs_f64().max(0.001);
     let mut lines = vec![format!(
-        "Exported {}: {} frames, {}, encoder {}, in {:.1} s ({:.1}× real time)",
+        "Exported {}: {} frames, {}, rendered by {}, encoder {}, in {:.1} s ({:.1}× real time)",
         report.output_path.display(),
         report.frame_count,
         report.duration,
+        report.renderer_description,
         report.video_encoder_name,
         elapsed.as_secs_f64(),
         speed_compared_to_real_time
@@ -144,11 +145,12 @@ mod tests {
             frame_count: 150,
             duration: TimeSpan::from_whole_seconds(5),
             video_encoder_name: "libx264".to_string(),
+            renderer_description: "CPU".to_string(),
             warnings: vec!["text clip 4 was not drawn".to_string()],
         };
         let summary = describe_export(&report, Duration::from_secs(2));
         assert!(summary.starts_with(
-            "Exported out.mp4: 150 frames, 5.000 s, encoder libx264, in 2.0 s (2.5× real time)"
+            "Exported out.mp4: 150 frames, 5.000 s, rendered by CPU, encoder libx264, in 2.0 s (2.5× real time)"
         ));
         assert!(summary.ends_with("  note: text clip 4 was not drawn"));
     }

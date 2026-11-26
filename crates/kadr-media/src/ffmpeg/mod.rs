@@ -5,6 +5,7 @@
 
 mod audio_segment;
 mod mp4_sink;
+mod picture_conversion;
 mod probe;
 mod time_conversion;
 mod video_source;
@@ -39,8 +40,11 @@ impl FfmpegBackend {
     pub fn new() -> Result<Self, MediaError> {
         let initialization = FFMPEG_INITIALIZATION.get_or_init(|| {
             ffmpeg::init().map_err(|error| error.to_string())?;
-            // FFmpeg prints warnings on stderr by default; Kadr reports problems itself.
-            ffmpeg::log::set_level(ffmpeg::log::Level::Error);
+            // FFmpeg prints warnings and errors on stderr by default. Kadr reports
+            // every failure itself through `MediaError`, and some FFmpeg messages are
+            // expected (an encoder probing for hardware that is absent), so only
+            // fatal messages are let through.
+            ffmpeg::log::set_level(ffmpeg::log::Level::Fatal);
             Ok(())
         });
         match initialization {

@@ -14,7 +14,7 @@ use kadr_core::time::FrameRate;
 use crate::audio_buffer::{AudioBuffer, STEREO_CHANNEL_COUNT};
 use crate::backend::{EncodingSpeed, ExportSink, ExportSinkSettings, VideoEncoderPreference};
 use crate::error::MediaError;
-use crate::video_frame::VideoFrame;
+use crate::video_frame::{VideoFrame, YuvColorSpace, YuvPicture};
 
 /// Hardware encoders, tried in this order.
 const HARDWARE_VIDEO_ENCODERS: [&str; 4] =
@@ -31,8 +31,6 @@ const MINIMUM_VIDEO_BIT_RATE: usize = 1_000_000;
 const AUDIO_BIT_RATE: usize = 192_000;
 /// One keyframe every this many seconds, so the file can be cut and seeked easily.
 const SECONDS_BETWEEN_KEYFRAMES: u32 = 2;
-/// Bytes in one RGBA pixel.
-const BYTES_PER_RGBA_PIXEL: usize = 4;
 
 /// An MP4 file being written.
 pub(crate) struct Mp4ExportSink {
@@ -52,8 +50,6 @@ struct VideoTrackWriter {
     pixel_format: ffmpeg::format::Pixel,
     width: u32,
     height: u32,
-    rgba_staging_picture: ffmpeg::frame::Video,
-    rgba_to_encoder_converter: ffmpeg::software::scaling::Context,
     written_frame_count: i64,
 }
 
@@ -212,10 +208,6 @@ impl VideoTrackWriter {
         needs_global_header: bool,
     ) -> Result<Self, MediaError> {
         let mut tried_encoder_names = Vec::new();
-        // An encoder whose hardware is missing (no NVIDIA card, for example)
-        // complains on stderr. That is expected while probing, so FFmpeg is
-        // kept quiet meanwhile.
-        ffmpeg::log::set_level(ffmpeg::log::Level::Fatal);
         let mut working_encoder = None;
         for encoder_name in video_encoder_candidates(settings.video_encoder_preference) {
             let Some(codec) = ffmpeg::encoder::find_by_name(encoder_name) else {
@@ -229,7 +221,6 @@ impl VideoTrackWriter {
                 break;
             }
         }
-        ffmpeg::log::set_level(ffmpeg::log::Level::Error);
         match working_encoder {
             Some((codec, encoder_name, opened)) => {
                 Self::add_stream(output, settings, codec, encoder_name, opened)
@@ -257,17 +248,6 @@ impl VideoTrackWriter {
         let stream_index = stream.index();
 
         let (width, height) = (settings.width_in_pixels, settings.height_in_pixels);
-        let rgba_to_encoder_converter = ffmpeg::software::scaling::Context::get(
-            ffmpeg::format::Pixel::RGBA,
-            width,
-            height,
-            pixel_format,
-            width,
-            height,
-            ffmpeg::software::scaling::Flags::BILINEAR,
-        )
-        .map_err(|error| encoding_failure(output_path, "preparing the colour conversion", error))?;
-
         Ok(Self {
             encoder,
             encoder_name: encoder_name.to_string(),
@@ -277,17 +257,12 @@ impl VideoTrackWriter {
             pixel_format,
             width,
             height,
-            rgba_staging_picture: ffmpeg::frame::Video::new(
-                ffmpeg::format::Pixel::RGBA,
-                width,
-                height,
-            ),
-            rgba_to_encoder_converter,
             written_frame_count: 0,
         })
     }
 
-    /// Converts and encodes one frame, then writes the packets that are ready.
+    /// Encodes one frame (converted to BT.709 YUV 4:2:0 if it is not already),
+    /// then writes the packets that are ready.
     fn write_frame(
         &mut self,
         frame: &VideoFrame,
@@ -305,13 +280,11 @@ impl VideoTrackWriter {
                 ),
             });
         }
-        copy_image_into_rgba_picture(frame, &mut self.rgba_staging_picture);
+        let yuv_picture = frame.to_yuv420(YuvColorSpace::BT709_LIMITED);
         // A new picture each time: the encoder may still hold the previous one.
         let mut encoder_picture =
             ffmpeg::frame::Video::new(self.pixel_format, self.width, self.height);
-        self.rgba_to_encoder_converter
-            .run(&self.rgba_staging_picture, &mut encoder_picture)
-            .map_err(|error| encoding_failure(output_path, "converting colours", error))?;
+        fill_encoder_picture(&yuv_picture, &mut encoder_picture);
         encoder_picture.set_pts(Some(self.written_frame_count));
         self.written_frame_count += 1;
         self.encoder
@@ -377,6 +350,12 @@ fn open_video_encoder(
     let frames_per_keyframe = (settings.frame_rate.as_frames_per_second().round() as u32).max(1)
         * SECONDS_BETWEEN_KEYFRAMES;
     encoder.set_gop(frames_per_keyframe);
+    // Tell players exactly how to read the colours (HD standard), instead of
+    // letting them guess.
+    encoder.set_colorspace(ffmpeg::color::Space::BT709);
+    encoder.set_color_primaries(ffmpeg::color::Primaries::BT709);
+    encoder.set_color_transfer_characteristic(ffmpeg::color::TransferCharacteristic::BT709);
+    encoder.set_color_range(ffmpeg::color::Range::MPEG);
     if encoder_name != "libx264" {
         encoder.set_bit_rate(video_bit_rate(settings));
     }
@@ -389,14 +368,54 @@ fn open_video_encoder(
     Some((opened_encoder, pixel_format))
 }
 
-/// Copies a tightly packed RGBA image into an FFmpeg picture whose rows may be padded.
-fn copy_image_into_rgba_picture(image: &VideoFrame, picture: &mut ffmpeg::frame::Video) {
-    let row_length_in_bytes = image.width() as usize * BYTES_PER_RGBA_PIXEL;
-    let stride_in_bytes = picture.stride(0);
-    let plane = picture.data_mut(0);
-    for (row_index, image_row) in image.as_raw().chunks_exact(row_length_in_bytes).enumerate() {
-        let row_start = row_index * stride_in_bytes;
-        plane[row_start..row_start + row_length_in_bytes].copy_from_slice(image_row);
+/// Copies `rows` rows of `row_length` bytes into a plane whose rows are `stride` apart.
+fn copy_rows_into_plane(source: &[u8], row_length: usize, plane: &mut [u8], stride: usize) {
+    for (row_index, source_row) in source.chunks_exact(row_length).enumerate() {
+        let row_start = row_index * stride;
+        plane[row_start..row_start + row_length].copy_from_slice(source_row);
+    }
+}
+
+/// Copies a YUV 4:2:0 picture into the encoder's picture: three planes for
+/// YUV420P, or Y plus interleaved U/V for NV12 (used by hardware encoders).
+fn fill_encoder_picture(yuv_picture: &YuvPicture, encoder_picture: &mut ffmpeg::frame::Video) {
+    let width = yuv_picture.width() as usize;
+    let chroma_width = YuvPicture::chroma_width(yuv_picture.width()) as usize;
+    let luma_stride = encoder_picture.stride(0);
+    copy_rows_into_plane(
+        yuv_picture.y_plane(),
+        width,
+        encoder_picture.data_mut(0),
+        luma_stride,
+    );
+    if encoder_picture.format() == ffmpeg::format::Pixel::NV12 {
+        let interleaved_chroma: Vec<u8> = yuv_picture
+            .u_plane()
+            .iter()
+            .zip(yuv_picture.v_plane())
+            .flat_map(|(u, v)| [*u, *v])
+            .collect();
+        let chroma_stride = encoder_picture.stride(1);
+        copy_rows_into_plane(
+            &interleaved_chroma,
+            chroma_width * 2,
+            encoder_picture.data_mut(1),
+            chroma_stride,
+        );
+    } else {
+        let (u_stride, v_stride) = (encoder_picture.stride(1), encoder_picture.stride(2));
+        copy_rows_into_plane(
+            yuv_picture.u_plane(),
+            chroma_width,
+            encoder_picture.data_mut(1),
+            u_stride,
+        );
+        copy_rows_into_plane(
+            yuv_picture.v_plane(),
+            chroma_width,
+            encoder_picture.data_mut(2),
+            v_stride,
+        );
     }
 }
 

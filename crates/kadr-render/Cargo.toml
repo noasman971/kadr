@@ -11,7 +11,19 @@ publish.workspace = true
 [dependencies]
 image.workspace = true
 kadr-core.workspace = true
+kadr-media.workspace = true
+pollster.workspace = true
 rayon.workspace = true
+thiserror.workspace = true
+wgpu.workspace = true
+
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "render_frame"
+harness = false
 
 [lints]
 workspace = true

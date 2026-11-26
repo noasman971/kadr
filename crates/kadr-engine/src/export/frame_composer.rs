@@ -2,7 +2,7 @@
 //!
 //! For each visible video track, from bottom to top, the composer finds the clip
 //! under the playhead, asks that clip's video source for the right source
-//! frame, and hands every picture with its placement to the compositor.
+//! frame, and hands every picture with its placement to the renderer (GPU or CPU).
 //!
 //! Each clip gets its own video source, opened when the clip first appears and
 //! closed once it is over, so two clips of the same file never fight over one
@@ -18,7 +18,7 @@ use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
 use kadr_media::{MediaBackend, VideoFrame, VideoFrameSource};
-use kadr_render::{LayerPlacement, VisualLayer, composite_layers};
+use kadr_render::{CanvasDescription, FrameRenderer, LayerPlacement, VisualLayer};
 
 use super::ExportError;
 
@@ -26,16 +26,27 @@ use super::ExportError;
 pub(super) struct FrameComposer<'export> {
     project: &'export Project,
     backend: &'export dyn MediaBackend,
+    renderer: Box<dyn FrameRenderer>,
     open_sources: HashMap<ClipId, Box<dyn VideoFrameSource>>,
 }
 
 impl<'export> FrameComposer<'export> {
-    pub(super) fn new(project: &'export Project, backend: &'export dyn MediaBackend) -> Self {
+    pub(super) fn new(
+        project: &'export Project,
+        backend: &'export dyn MediaBackend,
+        renderer: Box<dyn FrameRenderer>,
+    ) -> Self {
         Self {
             project,
             backend,
+            renderer,
             open_sources: HashMap::new(),
         }
+    }
+
+    /// What renders the frames, for the export report.
+    pub(super) fn renderer_description(&self) -> String {
+        self.renderer.description()
     }
 
     /// The finished picture of the timeline at `timeline_time`.
@@ -73,11 +84,11 @@ impl<'export> FrameComposer<'export> {
             })
             .collect();
         let settings = self.project.settings();
-        Ok(composite_layers(
-            settings.canvas_size,
-            settings.background_color,
-            &layers,
-        ))
+        let canvas = CanvasDescription {
+            size: settings.canvas_size,
+            background: settings.background_color,
+        };
+        Ok(self.renderer.render_frame(&canvas, &layers)?)
     }
 
     /// The source picture a clip shows at `timeline_time`, or `None` if the clip

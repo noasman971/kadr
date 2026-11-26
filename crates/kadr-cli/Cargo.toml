@@ -17,7 +17,7 @@ clap.workspace = true
 ctrlc.workspace = true
 kadr-core.workspace = true
 kadr-engine.workspace = true
-kadr-media.workspace = true
+kadr-media = { workspace = true, features = ["ffmpeg"] }
 serde_json.workspace = true
 
 [lints]
