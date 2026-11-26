@@ -448,6 +448,9 @@
     >
       <Icon name="trash" />
     </IconButton>
+    <IconButton label={t("title.add")} shortcut="T" onclick={() => void editor.addTitle("title")}>
+      <Icon name="type" />
+    </IconButton>
     <span class="spacer"></span>
     <IconButton
       label={preferences.isSnappingOn ? t("timeline.snappingOn") : t("timeline.snappingOff")}

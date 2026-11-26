@@ -134,7 +134,42 @@ export type EditRequest =
   | { type: "removeClips"; clipIds: number[] }
   | { type: "setTrackMuted"; trackId: number; isMuted: boolean }
   | { type: "setTrackHidden"; trackId: number; isHidden: boolean }
-  | { type: "removeTrack"; trackId: number };
+  | { type: "removeTrack"; trackId: number }
+  /** An export preset of another shape changes the project first (one undo step). */
+  | { type: "setCanvasSize"; width: number; height: number }
+  /** Units: volume and scale are multipliers, opacity 0–1, positions pixels from the centre, rotation degrees. */
+  | { type: "setClipValue"; clipId: number; value: ClipValueName; amount: number }
+  | { type: "setClipCrop"; clipId: number; left: number; top: number; right: number; bottom: number }
+  | { type: "resetClipPicture"; clipId: number }
+  | { type: "setClipSpeed"; clipId: number; speed: number }
+  | { type: "setClipColor"; clipId: number; settings: ColorSettings }
+  | { type: "resetClipColor"; clipId: number }
+  | { type: "setClipText"; clipId: number; settings: TextSettings }
+  | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle };
+
+export type ClipValueName = "volume" | "opacity" | "positionX" | "positionY" | "scale" | "rotation";
+
+export interface ColorSettings {
+  /** Photographic stops. */
+  exposure: number;
+  /** Multiplier, 1 unchanged. */
+  contrast: number;
+  /** Multiplier, 1 unchanged. */
+  saturation: number;
+  /** −1 cooler to 1 warmer. */
+  temperature: number;
+}
+
+export interface TextSettings {
+  text: string;
+  fontFamily: string;
+  fontSize: number;
+  /** `#RRGGBB` or `#RRGGBBAA`. */
+  color: string;
+  alignment: TextAlignment;
+}
+
+export type TitleStyle = "title" | "subtitle" | "bigWord";
 
 export type EditNotice = {
   type: "formatAdopted";
@@ -179,7 +214,45 @@ export type ErrorCode =
   | "exportFailed"
   | "exportCancelled"
   | "exportAlreadyRunning"
+  | "exportFileExists"
+  | "exportOtherShape"
   | "internal";
+
+/** The size of an exported video (`export_job.rs`). */
+export type ExportSize = "project" | "youtube1080p" | "youtube4k" | "verticalReelsShorts" | "square1080";
+
+/** What the export dialog asks the back end for. */
+export interface ExportSettings {
+  filePath: string;
+  size: ExportSize;
+  quality: "high" | "fast";
+  usesHardwareEncoder: boolean;
+  replacesExistingFile: boolean;
+}
+
+/** What `start_export` answers at once. */
+export interface ExportStarted {
+  filePath: string;
+  width: number;
+  height: number;
+}
+
+/** What a running export reports. */
+export type ExportEvent =
+  | { type: "progress"; encodedFrameCount: number; totalFrameCount: number; elapsedSeconds: number }
+  | {
+      type: "finished";
+      filePath: string;
+      fileSizeInBytes: number;
+      durationSeconds: number;
+      frameCount: number;
+      elapsedSeconds: number;
+      videoEncoderName: string;
+      rendererDescription: string;
+      warnings: string[];
+    }
+  | { type: "failed"; details: string }
+  | { type: "cancelled" };
 
 /** What a failed command throws. */
 export interface CommandError {

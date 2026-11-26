@@ -12,6 +12,7 @@ import type {
   ImportFailure,
   ProjectFormatChoice,
   ProjectView,
+  TitleStyle,
 } from "../api/types";
 import { quoted, t, undoStepDisplayName } from "../i18n/i18n.svelte";
 import { snapToFrame, type FrameRate } from "../time/ticks";
@@ -37,6 +38,8 @@ class EditorState {
   selectedClipIds = $state<number[]>([]);
   pendingImports = $state<PendingImport[]>([]);
   importFailures = $state<ImportFailure[]>([]);
+  /** A title just added: the inspector focuses its words, then clears this. */
+  clipToFocusForText = $state<number | null>(null);
 
   frameRate: FrameRate = $derived({
     numerator: this.view?.settings.frameRateNumerator ?? 30,
@@ -101,6 +104,17 @@ class EditorState {
     } catch (error) {
       this.showError(error);
       return [];
+    }
+  }
+
+  /** Adds a title at the playhead (T, the toolbar, the Text tab), selected, its words focused. */
+  async addTitle(style: TitleStyle): Promise<void> {
+    const text = t(style === "subtitle" ? "title.subtitleText" : style === "bigWord" ? "title.bigWordText" : "title.titleText");
+    const startTicks = snapToFrame(this.playheadTicks, this.frameRate);
+    const createdClipIds = await this.edit({ type: "addTitle", startTicks, text, style });
+    if (createdClipIds.length > 0) {
+      this.selectedClipIds = createdClipIds;
+      this.clipToFocusForText = createdClipIds[0] ?? null;
     }
   }
 

@@ -39,6 +39,7 @@
       shortcuts: [
         { action: "shortcuts.split", keys: ["S"] },
         { action: "shortcuts.delete", keys: ["key.delete"] },
+        { action: "shortcuts.addTitle", keys: ["T"] },
         { action: "shortcuts.undo", keys: ["Ctrl", "Z"] },
         { action: "shortcuts.redo", keys: ["Ctrl", "Y"] },
         { action: "shortcuts.deselect", keys: ["key.escape"] },
@@ -57,6 +58,7 @@
       title: "shortcuts.project",
       shortcuts: [
         { action: "shortcuts.import", keys: ["Ctrl", "I"] },
+        { action: "shortcuts.export", keys: ["Ctrl", "E"] },
         { action: "shortcuts.save", keys: ["Ctrl", "S"] },
         { action: "shortcuts.list", keys: ["?"] },
       ],

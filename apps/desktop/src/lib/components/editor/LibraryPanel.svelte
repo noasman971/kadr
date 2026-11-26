@@ -3,7 +3,8 @@
   read, files that could not be read, and the drop zone of an empty project.
 -->
 <script lang="ts">
-  import type { MediaView, ProjectView } from "../../api/types";
+  import type { MediaView, ProjectView, TitleStyle } from "../../api/types";
+  import type { MessageKey } from "../../i18n/messages.en";
   import { t } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
   import Button from "../../ui/Button.svelte";
@@ -21,6 +22,12 @@
   let { view, onImport, onMediaPointerDown }: Props = $props();
 
   let activeTab = $state<"media" | "text">("media");
+
+  const TITLE_STYLES: Array<{ style: TitleStyle; label: MessageKey; sample: MessageKey }> = [
+    { style: "title", label: "title.style.title", sample: "title.titleText" },
+    { style: "subtitle", label: "title.style.subtitle", sample: "title.subtitleText" },
+    { style: "bigWord", label: "title.style.bigWord", sample: "title.bigWordText" },
+  ];
   let searchQuery = $state("");
 
   const visibleMedia = $derived(
@@ -56,7 +63,15 @@
 
   <div class="body">
     {#if activeTab === "text"}
-      <p class="hint">{t("library.textComingSoon")}</p>
+      <p class="hint">{t("title.styles")}</p>
+      <div class="title-styles">
+        {#each TITLE_STYLES as style (style.style)}
+          <button type="button" class="title-style {style.style}" onclick={() => void editor.addTitle(style.style)}>
+            <span class="title-sample">{t(style.sample)}</span>
+            <span class="title-name"><Icon name="plus" size={12} />{t(style.label)}</span>
+          </button>
+        {/each}
+      </div>
     {:else if isEmpty}
       <div class="dropzone">
         <span class="dropzone-icon"><Icon name="upload" size={32} /></span>
@@ -229,6 +244,53 @@
     to {
       transform: rotate(360deg);
     }
+  }
+  .title-styles {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .title-style {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-inset);
+    color: var(--color-text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .title-style:hover {
+    border-color: var(--color-accent);
+  }
+  .title-sample {
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: #000000;
+    color: #ffffff;
+    font-weight: var(--font-weight-semibold);
+  }
+  .title-style.title .title-sample {
+    font-size: var(--font-size-lg);
+  }
+  .title-style.subtitle .title-sample {
+    place-items: end center;
+    padding-bottom: 4px;
+    font-size: var(--font-size-xs);
+  }
+  .title-style.bigWord .title-sample {
+    font-size: 26px;
+  }
+  .title-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
   }
   .hint {
     margin: 0;
