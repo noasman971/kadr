@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 base64.workspace = true
 clap.workspace = true
+kadr-app-link.workspace = true
 kadr-engine.workspace = true
 kadr-tools.workspace = true
 rmcp.workspace = true

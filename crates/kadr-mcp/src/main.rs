@@ -72,7 +72,10 @@ fn serve_until_disconnected(arguments: ServerArguments) -> Result<(), String> {
     }
     let backend =
         FfmpegBackend::new().map_err(|error| format!("FFmpeg could not be started: {error}"))?;
-    let server = KadrMcpServer::new(KadrToolbox::new(allowed_folders, Arc::new(backend)));
+    let server = KadrMcpServer::with_app_link(
+        KadrToolbox::new(allowed_folders, Arc::new(backend)),
+        kadr_app_link::link_address(),
+    );
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
