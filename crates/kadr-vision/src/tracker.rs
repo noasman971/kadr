@@ -439,6 +439,8 @@ fn filter_window(center: Point, region: &Region) -> SquareWindow {
     SquareWindow {
         center,
         side_in_pixels: CONTEXT_FACTOR * region.longer_side(),
+        region_width_in_pixels: region.width,
+        region_height_in_pixels: region.height,
     }
 }
 
