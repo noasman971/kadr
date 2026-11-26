@@ -297,7 +297,8 @@
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    /* Wide enough for "Projet sans titre 12" and its date on one line each. */
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--space-3);
   }
   .recent-card {
@@ -342,9 +343,13 @@
   }
   .recent-meta strong {
     font-weight: var(--font-weight-medium);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    /* Long names wrap to two lines, so names that start alike stay apart. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
   .recent-meta span {
     font-size: var(--font-size-xs);

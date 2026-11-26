@@ -6,6 +6,10 @@ decision records [0020](decisions/0020-svelte-typescript-front-end.md),
 [0021](decisions/0021-desktop-app-layout.md) and
 [0022](decisions/0022-front-end-and-engine-communication.md).
 
+![The editor in the dark theme, in French](screenshots/desktop-editor-dark-fr.jpg)
+
+![The editor in the light theme, in English](screenshots/desktop-editor-light-en.jpg)
+
 ## Running it
 
 You need the Rust and FFmpeg setup of the [README](../README.md#setting-up-windows)
@@ -33,6 +37,31 @@ a change in Rust rebuilds and restarts the app.
 
 The Rust side is a workspace crate like the others: `cargo clippy`, `cargo test` and
 `cargo doc` at the root cover it.
+
+### Driving the running app from a script
+
+To check the app without clicking by hand, start it with the WebView's debugging port
+open, then talk to it with the Chrome DevTools Protocol (Node 22 has `WebSocket`
+built in):
+
+```powershell
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
+npm run tauri dev
+```
+
+`http://127.0.0.1:9222/json` lists the page; `Runtime.evaluate`, `Input.dispatchKeyEvent`,
+`Input.dispatchMouseEvent` and `Page.captureScreenshot` do the rest. Things learned
+doing it:
+
+- `window.__TAURI_INTERNALS__.invoke` is read-only: it cannot be replaced to fake an
+  answer. Every call goes through `fetch("http://ipc.localhost/<command>")`, which can
+  be wrapped, for example to answer `plugin:dialog|open` with chosen files instead of
+  opening the native dialog.
+- Ctrl+I without that opens the real dialog, which a script cannot close.
+- A file drop from the explorer can be imitated by emitting Tauri's own event:
+  `invoke("plugin:event|emit", { event: "tauri://drag-drop", payload: { paths, position } })`.
+- Real clicks (`Input.dispatchMouseEvent`) are better than `element.click()`: they
+  also show hover states and go through pointer events.
 
 ## The two halves
 

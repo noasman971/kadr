@@ -2,17 +2,51 @@
 //!
 //! Each tool is defined **once** here: its name, a description written for a
 //! language model (with explicit units and examples), the JSON schema of its
-//! parameters, and the function that turns a call into Kadr commands.
+//! parameters (generated from a Rust struct), and the function that turns a call
+//! into Kadr commands.
 //!
-//! Examples of tools: `get_timeline`, `get_frame`, `split_clip`, `add_text`,
-//! `blur_region`, `export`.
+//! ```text
+//! Claude ──► kadr-mcp (MCP over stdio) ──► KadrToolbox::call_tool("split_clip", {…})
+//!                                              │
+//!                                              ├─► kadr-core commands (one undo step)
+//!                                              └─► kadr-engine (pictures, export, files)
+//! ```
+//!
+//! - [`KadrToolbox`]: the open project, the allowed folders, the background
+//!   exports; [`KadrToolbox::call_tool`] runs a tool by name.
+//! - [`ToolDefinition`]: name, description and JSON schema of a tool, from
+//!   [`KadrToolbox::tool_definitions`].
+//! - [`ToolOutput`]: text and pictures returned to Claude.
+//! - [`AllowedFolders`]: the folders the tools may read and write in.
 //!
 //! ## Rules for this crate
 //!
 //! - Tools are independent of the transport: `kadr-mcp` exposes them over MCP,
-//!   and other transports can reuse them unchanged.
+//!   and the desktop app can reuse them unchanged.
 //! - One tool call is one undo group, shown in the history as "Claude: …".
 //! - Errors are written for humans and language models
-//!   ("clip 12 does not exist, existing clips: 3, 5, 8").
+//!   ("clip 12 does not exist; existing clips: 3, 5, 8").
+//! - Files are only read and written inside the allowed folders, never replaced
+//!   without `"overwrite": true`, and never deleted.
+//! - Times are seconds, sizes and positions pixels with the origin at the
+//!   top-left corner.
 //!
-//! Implemented in phase 5. See `docs/architecture.md`.
+//! See `docs/mcp-server.md` for the list of tools.
+
+mod catalog;
+mod export_tasks;
+mod file_access;
+mod output;
+mod pictures_for_claude;
+mod project_file_session;
+mod time_input;
+mod toolbox;
+mod tools;
+mod views;
+
+pub use catalog::{ToolDefinition, ToolEffect};
+pub use file_access::AllowedFolders;
+pub use output::{ToolContent, ToolError, ToolOutput};
+pub use pictures_for_claude::MAXIMUM_PICTURE_SIDE_IN_PIXELS;
+pub use project_file_session::CLAUDE_UNDO_LABEL_PREFIX;
+pub use toolbox::KadrToolbox;

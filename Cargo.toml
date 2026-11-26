@@ -26,7 +26,11 @@ kadr-core = { path = "crates/kadr-core" }
 kadr-media = { path = "crates/kadr-media", default-features = false }
 kadr-render = { path = "crates/kadr-render" }
 kadr-engine = { path = "crates/kadr-engine" }
+kadr-tools = { path = "crates/kadr-tools" }
+kadr-vision = { path = "crates/kadr-vision" }
 
+# Image content returned to Claude is base64 text inside MCP messages.
+base64 = "0.23.1"
 clap = { version = "4.6.10", features = ["derive"] }
 ctrlc = "3.5.3"
 # Desktop app (apps/desktop/src-tauri): Tauri 2 and the official plugins it uses.
@@ -34,6 +38,8 @@ tauri = { version = "2.12.7", features = [] }
 tauri-build = { version = "2.7.6", features = [] }
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-opener = "2.7.3"
+# Canonical paths without the Windows `\\?\` prefix, for messages people can read.
+dunce = "1.0.5"
 # Text layout and rasterisation; no fontconfig, so Linux needs no extra system library.
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
 # FFmpeg 7 or newer (see README.md, "FFmpeg development files").
@@ -42,10 +48,17 @@ ffmpeg-next = "9.1.0"
 image = { version = "0.25.10", default-features = false }
 pollster = "1.0.3"
 rayon = "1.12.0"
+# The official Rust SDK of the Model Context Protocol (see decision record 0010).
+rmcp = { version = "3.11.0", default-features = false, features = ["server", "transport-io"] }
 rustfft = "6.4.1"
+# JSON schemas of the tool parameters, generated from the Rust types.
+schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+tokio = "1.54.1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 wgpu = "30.0.2"
 
 # Test-only dependencies.

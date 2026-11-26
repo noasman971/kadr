@@ -24,6 +24,9 @@ export interface PendingImport {
   fileName: string;
 }
 
+/** Undo and redo notices replace each other instead of piling up. */
+const HISTORY_TOAST_GROUP = "history";
+
 function fileNameOf(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
@@ -107,7 +110,7 @@ class EditorState {
       return;
     }
     if (await this.runRequest(() => backend.undo())) {
-      toasts.show({ tone: "info", message: t("toast.undone", { step: undoStepDisplayName(step) }) });
+      toasts.show({ tone: "info", group: HISTORY_TOAST_GROUP, message: t("toast.undone", { step: undoStepDisplayName(step) }) });
     }
   }
 
@@ -117,7 +120,7 @@ class EditorState {
       return;
     }
     if (await this.runRequest(() => backend.redo())) {
-      toasts.show({ tone: "info", message: t("toast.redone", { step: undoStepDisplayName(step) }) });
+      toasts.show({ tone: "info", group: HISTORY_TOAST_GROUP, message: t("toast.redone", { step: undoStepDisplayName(step) }) });
     }
   }
 

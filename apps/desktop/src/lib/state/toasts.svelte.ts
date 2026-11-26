@@ -15,6 +15,8 @@ export interface Toast {
   message: string;
   details?: string;
   action?: ToastAction;
+  /** A new toast replaces a visible one of the same group (undo and redo, say). */
+  group?: string;
 }
 
 const MAXIMUM_VISIBLE_TOASTS = 3;
@@ -28,7 +30,8 @@ class Toasts {
 
   show(toast: Omit<Toast, "id">): void {
     const id = this.nextId++;
-    this.visible = [...this.visible, { ...toast, id }].slice(-MAXIMUM_VISIBLE_TOASTS);
+    const others = toast.group ? this.visible.filter((visible) => visible.group !== toast.group) : this.visible;
+    this.visible = [...others, { ...toast, id }].slice(-MAXIMUM_VISIBLE_TOASTS);
     const duration =
       toast.tone === "error"
         ? ERROR_TOAST_DURATION_IN_MILLISECONDS

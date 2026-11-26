@@ -35,6 +35,7 @@
   import Icon from "../../ui/Icon.svelte";
   import IconButton from "../../ui/IconButton.svelte";
   import TimelineClip from "./TimelineClip.svelte";
+  import { pointerOffsetX } from "../../ui/pointer";
   import TimelineRuler from "./TimelineRuler.svelte";
 
   interface Props {
@@ -69,6 +70,11 @@
       viewportWidth - headerWidth,
       ticksToPixels(view.durationTicks, pixelsPerSecond) + TRAILING_SPACE_IN_SECONDS * pixelsPerSecond,
     ),
+  );
+  // Ruler, one row per track, the new-track zone, then the filler. `repeat(0, …)` is invalid CSS and
+  // would drop the whole declaration, so an empty timeline lists no track rows.
+  const gridRows = $derived(
+    [`${RULER_HEIGHT_IN_PIXELS}px`, ...view.tracks.map(() => "auto"), `${NEW_TRACK_ZONE_HEIGHT_IN_PIXELS}px`, "1fr"].join(" "),
   );
   const playheadX = $derived(ticksToPixels(editor.playheadTicks, pixelsPerSecond));
   const selected = $derived(new Set(editor.selectedClipIds));
@@ -112,8 +118,7 @@
 
   /** The content's x coordinate (pixels from time 0) under a pointer. */
   function contentX(clientX: number): number {
-    const bounds = scroller?.getBoundingClientRect();
-    return bounds ? clientX - bounds.left - headerWidth + (scroller?.scrollLeft ?? 0) : 0;
+    return scroller ? pointerOffsetX(clientX, scroller) - headerWidth + scroller.scrollLeft : 0;
   }
 
   /** The track lane under a pointer: a track id, `null` for the new-track zone, `undefined` for neither. */
@@ -178,10 +183,10 @@
     if (!scroller) {
       return;
     }
-    const bounds = scroller.getBoundingClientRect();
-    if (clientX < bounds.left + headerWidth + AUTO_SCROLL_EDGE_IN_PIXELS) {
+    const pointerX = pointerOffsetX(clientX, scroller);
+    if (pointerX < headerWidth + AUTO_SCROLL_EDGE_IN_PIXELS) {
       scroller.scrollLeft -= AUTO_SCROLL_STEP_IN_PIXELS;
-    } else if (clientX > bounds.right - AUTO_SCROLL_EDGE_IN_PIXELS) {
+    } else if (pointerX > scroller.clientWidth - AUTO_SCROLL_EDGE_IN_PIXELS) {
       scroller.scrollLeft += AUTO_SCROLL_STEP_IN_PIXELS;
     }
   }
@@ -382,8 +387,8 @@
       return;
     }
     event.preventDefault();
-    const bounds = scroller.getBoundingClientRect();
-    zoomAround(pixelsPerSecond * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), event.clientX - bounds.left - headerWidth);
+    const anchorX = pointerOffsetX(event.clientX, scroller) - headerWidth;
+    zoomAround(pixelsPerSecond * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), anchorX);
   }
 
   // While playing, keep the playhead on screen by turning pages.
@@ -479,7 +484,7 @@
     <div
       class="grid"
       style:grid-template-columns="var(--track-header-width) {contentWidth}px"
-      style:grid-template-rows="{RULER_HEIGHT_IN_PIXELS}px repeat({view.tracks.length}, auto) {NEW_TRACK_ZONE_HEIGHT_IN_PIXELS}px 1fr"
+      style:grid-template-rows={gridRows}
     >
       <div class="corner tabular" bind:clientWidth={headerWidth}>{formatTimecode(editor.playheadTicks, editor.frameRate)}</div>
       <div class="ruler-cell">

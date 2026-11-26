@@ -13,6 +13,7 @@ image.workspace = true
 kadr-core.workspace = true
 kadr-media = { workspace = true, features = ["ffmpeg"] }
 kadr-render.workspace = true
+kadr-vision.workspace = true
 rayon.workspace = true
 thiserror.workspace = true
 

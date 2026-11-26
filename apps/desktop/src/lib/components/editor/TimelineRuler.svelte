@@ -7,6 +7,7 @@
     pixelsToTicks,
     rulerStepInSeconds,
   } from "../../timeline/timelineGeometry";
+  import { pointerOffsetX } from "../../ui/pointer";
 
   interface Props {
     pixelsPerSecond: number;
@@ -36,8 +37,8 @@
   let isDragging = false;
 
   function seekTo(event: PointerEvent): void {
-    const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    onSeek(Math.max(0, pixelsToTicks(event.clientX - bounds.left, pixelsPerSecond)));
+    const offsetX = pointerOffsetX(event.clientX, event.currentTarget as HTMLElement);
+    onSeek(Math.max(0, pixelsToTicks(offsetX, pixelsPerSecond)));
   }
 
   function startDrag(event: PointerEvent): void {

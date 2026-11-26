@@ -23,6 +23,12 @@ use serde::{Deserialize, Serialize};
 /// How long a still picture lasts when it is placed on the timeline.
 pub const STILL_IMAGE_DURATION: TimeSpan = TimeSpan::from_whole_seconds(5);
 
+/// Undo label of the step that placed the first video in an "Automatic" format
+/// project. Undoing it makes the format automatic again; redoing it does not.
+pub const ADD_FIRST_VIDEO_UNDO_LABEL: &str = "addFirstVideo";
+/// Undo label of the other steps that place a media file.
+const ADD_CLIP_UNDO_LABEL: &str = "addClip";
+
 /// The smallest and largest canvas sides the engine accepts (see `kadr_core::validation`).
 const MINIMUM_CANVAS_SIDE_IN_PIXELS: u32 = 16;
 const MAXIMUM_CANVAS_SIDE_IN_PIXELS: u32 = 8192;
@@ -135,7 +141,12 @@ fn add_media_at_end(
 ) -> Result<EditOutcome, EditError> {
     let description = media_description(session.project(), media_id)?;
     let should_adopt_format = *adopts_first_video_format && description.kind == MediaKind::Video;
-    let outcome = session.transaction("addClip", |transaction| {
+    let undo_label = if should_adopt_format {
+        ADD_FIRST_VIDEO_UNDO_LABEL
+    } else {
+        ADD_CLIP_UNDO_LABEL
+    };
+    let outcome = session.transaction(undo_label, |transaction| {
         let mut notices = Vec::new();
         if should_adopt_format
             && let Some(settings) = settings_adopted_from(transaction.project(), &description)
@@ -405,6 +416,7 @@ mod tests {
             }]
         );
         assert!(!adopts);
+        assert_eq!(session.next_undo_label(), Some(ADD_FIRST_VIDEO_UNDO_LABEL));
         let settings = session.project().settings();
         assert_eq!(settings.canvas_size.width_in_pixels, 1080);
         assert_eq!(settings.frame_rate, FrameRate::FPS_25);
