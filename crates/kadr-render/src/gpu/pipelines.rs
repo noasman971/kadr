@@ -1,7 +1,8 @@
 //! The GPU programs (pipelines) and the layout of what they read.
 
-/// Size of the layer uniforms: 4 corners + 3 conversion rows + opacity, 4 floats each.
-pub(crate) const LAYER_UNIFORM_SIZE_IN_BYTES: u64 = 8 * 16;
+/// Size of the layer uniforms, 4 floats each: 4 corners, 3 conversion rows,
+/// opacity, 4 colour adjustments and their count.
+pub(crate) const LAYER_UNIFORM_SIZE_IN_BYTES: u64 = 13 * 16;
 /// Size of the output conversion uniforms: 3 rows of 4 floats.
 pub(crate) const OUTPUT_UNIFORM_SIZE_IN_BYTES: u64 = 3 * 16;
 

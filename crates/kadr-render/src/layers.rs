@@ -3,6 +3,7 @@
 
 use kadr_core::clip::{AnimatableProperty, Clip, ClipContent, CropInsets};
 use kadr_core::color::Color;
+use kadr_core::effect::ColorAdjustment;
 use kadr_core::media_asset::PictureSize;
 use kadr_core::time::TimeSpan;
 use kadr_media::VideoFrame;
@@ -95,6 +96,9 @@ pub struct VisualLayer<'picture> {
     pub picture: &'picture VideoFrame,
     /// Where and how to draw it.
     pub placement: LayerPlacement,
+    /// Colour adjustments applied in order (at most
+    /// [`MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER`](crate::color_adjustment::MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER)).
+    pub color_adjustments: &'picture [ColorAdjustment],
 }
 
 /// The mapping between canvas pixels and source pixels for one layer.

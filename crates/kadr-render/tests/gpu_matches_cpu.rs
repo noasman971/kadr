@@ -10,6 +10,7 @@
 use image::{Rgba, RgbaImage};
 use kadr_core::clip::CropInsets;
 use kadr_core::color::Color;
+use kadr_core::effect::ColorAdjustment;
 use kadr_core::media_asset::PictureSize;
 use kadr_media::{VideoFrame, YuvColorSpace, YuvMatrix, YuvPicture, YuvRange};
 use kadr_render::{
@@ -138,6 +139,7 @@ fn a_scaled_video_matches() {
     let layers = [VisualLayer {
         picture: &video,
         placement: LayerPlacement::FITTED,
+        color_adjustments: &[],
     }];
     assert_gpu_matches_cpu("scaled video", &canvas(640, 360), &layers);
 }
@@ -152,6 +154,7 @@ fn a_standard_definition_full_range_video_matches() {
     let layers = [VisualLayer {
         picture: &video,
         placement: LayerPlacement::FITTED,
+        color_adjustments: &[],
     }];
     assert_gpu_matches_cpu("BT.601 full range video", &canvas(320, 240), &layers);
 }
@@ -174,6 +177,7 @@ fn a_rotated_cropped_semi_transparent_stack_matches() {
                 scale_factor: 0.9,
                 ..LayerPlacement::FITTED
             },
+            color_adjustments: &[],
         },
         VisualLayer {
             picture: &logo,
@@ -185,6 +189,7 @@ fn a_rotated_cropped_semi_transparent_stack_matches() {
                 opacity: 0.7,
                 ..LayerPlacement::FITTED
             },
+            color_adjustments: &[],
         },
     ];
     assert_gpu_matches_cpu("rotated stack", &canvas(400, 300), &layers);
@@ -215,4 +220,42 @@ fn an_empty_canvas_is_the_background_colour() {
                 .all(|(a, b)| a.abs_diff(*b) <= 1)
         );
     }
+}
+
+#[test]
+fn colour_adjusted_layers_match() {
+    let video = gradient_video_picture(320, 180, YuvColorSpace::BT709_LIMITED);
+    let logo = transparent_logo(64);
+    let warm_and_punchy = [ColorAdjustment {
+        exposure_in_stops: 0.4,
+        contrast_multiplier: 1.3,
+        saturation_multiplier: 1.5,
+        temperature_shift: 0.4,
+    }];
+    let black_and_white = [
+        ColorAdjustment {
+            saturation_multiplier: 0.0,
+            ..ColorAdjustment::NEUTRAL
+        },
+        ColorAdjustment {
+            exposure_in_stops: -0.5,
+            ..ColorAdjustment::NEUTRAL
+        },
+    ];
+    let layers = [
+        VisualLayer {
+            picture: &video,
+            placement: LayerPlacement::FITTED,
+            color_adjustments: &warm_and_punchy,
+        },
+        VisualLayer {
+            picture: &logo,
+            placement: LayerPlacement {
+                scale_factor: 0.4,
+                ..LayerPlacement::FITTED
+            },
+            color_adjustments: &black_and_white,
+        },
+    ];
+    assert_gpu_matches_cpu("colour adjustments", &canvas(320, 180), &layers);
 }

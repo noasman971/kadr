@@ -90,6 +90,44 @@ before the clip's own scale. Videos and images keep `FitInsideCanvas`.
 - The export rasterises each text clip once and reuses the picture while its words and
   style stay the same.
 
+## Effects
+
+### Colour adjustment
+
+Exposure, contrast, saturation and temperature, applied to each layer after its
+picture is sampled and before it is blended, with the same formula on both renderers
+(`color_adjustment.rs` and `adjust_color` in `layers.wgsl`), on colours from 0 to 1:
+
+1. exposure: multiply by 2^stops;
+2. contrast: stretch around mid-grey (0.5);
+3. saturation: move away from (or towards) the pixel's BT.709 brightness;
+4. temperature: add red and remove blue (×0.1 at +1), or the reverse;
+5. clamp to 0–1.
+
+A layer takes up to four adjustments, in order; the export report mentions any
+further ones it ignored.
+
+### Tracked blur
+
+A tracked blur hides an area of the **source picture**, before the picture is placed,
+so it follows the face whatever the clip's position, scale or rotation, and both
+renderers draw the same result.
+
+- The area at a given source time is interpolated between the two nearest
+  `RegionSample`s (the nearest one is kept before the first and after the last),
+  grown by the effect's margin — by half as much again where the tracker was uncertain
+  or lost the face: better to hide too much than to reveal it.
+- Shapes: rectangle, or the ellipse inside it. The edge ramps over
+  `edge_softness_in_pixels`, centred on the border.
+- Styles: **gaussian blur** (three box blurs in a row, about σ = radius / 2, the same
+  cost whatever the radius; pixels around the area are read so its edges blur
+  naturally), **pixelate** (blocks aligned on the area's corner, each replaced by its
+  average), **solid fill** (the colour converted into the picture's own colour space).
+- YUV pictures are processed plane by plane (the colour planes at half size), RGBA
+  pictures channel by channel with alpha untouched.
+- A tracked blur without any region yet is reported by the export (tracking itself
+  arrives in phase 4).
+
 ## GPU matches CPU
 
 `crates/kadr-render/tests/gpu_matches_cpu.rs` renders the same scenes on both and
@@ -140,5 +178,7 @@ within one table.
 - Hardware decoding is not used yet: decoding 1080p H.264 on the CPU takes about 1 ms
   per frame, so it is not the bottleneck. It becomes interesting for 4K HEVC and with
   zero-copy GPU interop (see decision record 0006).
+- Tracked blurs run on the CPU (on the hidden area only, plus one copy of the source
+  picture per frame); moving them to the GPU is possible if they ever cost too much.
 - Frames are rendered and read back one at a time; overlapping the next frame's upload
   with the current read-back is future work.

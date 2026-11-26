@@ -10,11 +10,12 @@ preview and the export.
 - A single video already at canvas size passes through untouched.
 - `TextRasterizer` draws text clips with `cosmic-text` and the bundled Inter font
   (`assets/fonts/`, SIL Open Font License 1.1).
+- Effects: colour adjustment (in both renderers) and `hide_regions` for tracked blurs
+  (gaussian, pixelate, solid fill; rectangle or ellipse with soft edges).
 - Benchmarks: `cargo bench -p kadr-render`.
 
 - **Depends on:** `kadr-core`, `kadr-media` (without FFmpeg), `wgpu`, `cosmic-text`, `image`, `rayon`.
 - **Used by:** `kadr-engine`.
-- **Status:** phase 3a (GPU compositing) and 3b (text). Colour, blur and pixelation
-  effects (3c) next.
+- **Status:** phase 3 complete: GPU compositing (3a), text (3b), effects (3c).
 
 See [docs/rendering.md](../../docs/rendering.md).

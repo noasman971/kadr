@@ -8,18 +8,26 @@
 //! closed once it is over, so two clips of the same file never fight over one
 //! decoder position. Text clips are rasterised once and kept while their words
 //! and style stay the same.
+//!
+//! Effects: tracked blurs hide their region in the source picture (at the clip's
+//! source time) before it is drawn; colour adjustments are handed to the renderer
+//! with the layer.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use kadr_core::clip::{Clip, ClipContent, TextContent};
+use kadr_core::effect::{ColorAdjustment, EffectKind};
 use kadr_core::ids::ClipId;
 use kadr_core::media_asset::MediaKind;
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
 use kadr_media::{MediaBackend, VideoFrame, VideoFrameSource};
-use kadr_render::{CanvasDescription, FrameRenderer, LayerPlacement, TextRasterizer, VisualLayer};
+use kadr_render::{
+    CanvasDescription, FrameRenderer, HiddenRegion, LayerPlacement, TextRasterizer, VisualLayer,
+    hide_regions,
+};
 
 use super::ExportError;
 
@@ -63,7 +71,8 @@ impl<'export> FrameComposer<'export> {
     ) -> Result<VideoFrame, ExportError> {
         self.close_sources_of_finished_clips(timeline_time);
 
-        let mut pictures_with_placements: Vec<(Arc<VideoFrame>, LayerPlacement)> = Vec::new();
+        let mut prepared_layers: Vec<(Arc<VideoFrame>, LayerPlacement, Vec<ColorAdjustment>)> =
+            Vec::new();
         let visible_tracks = self
             .project
             .timeline()
@@ -78,16 +87,20 @@ impl<'export> FrameComposer<'export> {
                 let time_in_clip = timeline_time
                     .span_since(clip.timeline_start)
                     .unwrap_or(TimeSpan::ZERO);
-                pictures_with_placements
-                    .push((picture, LayerPlacement::of_clip_at(clip, time_in_clip)));
+                prepared_layers.push((
+                    picture,
+                    LayerPlacement::of_clip_at(clip, time_in_clip),
+                    enabled_color_adjustments(clip),
+                ));
             }
         }
 
-        let layers: Vec<VisualLayer<'_>> = pictures_with_placements
+        let layers: Vec<VisualLayer<'_>> = prepared_layers
             .iter()
-            .map(|(picture, placement)| VisualLayer {
+            .map(|(picture, placement, color_adjustments)| VisualLayer {
                 picture: picture.as_ref(),
                 placement: *placement,
+                color_adjustments,
             })
             .collect();
         let settings = self.project.settings();
@@ -132,7 +145,12 @@ impl<'export> FrameComposer<'export> {
                     .open_video_source(&media_asset.description.file_path)?,
             ),
         };
-        Ok(Some(source.frame_at(source_time)?))
+        let picture = source.frame_at(source_time)?;
+        let hidden_regions = hidden_regions_of(clip, source_time);
+        if hidden_regions.is_empty() {
+            return Ok(Some(picture));
+        }
+        Ok(Some(Arc::new(hide_regions(&picture, &hidden_regions))))
     }
 
     /// The picture of a text clip, drawn again only if its words or style changed.
@@ -172,4 +190,37 @@ fn clip_under_playhead(track: &Track, timeline_time: Timestamp) -> Option<&Clip>
     candidate
         .contains_timeline_time(timeline_time)
         .then_some(candidate)
+}
+
+/// The clip's enabled colour adjustments, in order.
+fn enabled_color_adjustments(clip: &Clip) -> Vec<ColorAdjustment> {
+    clip.effects
+        .iter()
+        .filter(|effect| effect.is_enabled)
+        .filter_map(|effect| match &effect.kind {
+            EffectKind::ColorAdjustment(adjustment) => Some(*adjustment),
+            EffectKind::TrackedBlur(_) => None,
+        })
+        .collect()
+}
+
+/// The areas the clip's enabled tracked blurs hide at `source_time`.
+fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<HiddenRegion> {
+    clip.effects
+        .iter()
+        .filter(|effect| effect.is_enabled)
+        .filter_map(|effect| match &effect.kind {
+            EffectKind::TrackedBlur(tracked_blur) => {
+                tracked_blur
+                    .hidden_area_at(source_time)
+                    .map(|area| HiddenRegion {
+                        area,
+                        style: tracked_blur.style,
+                        shape: tracked_blur.shape,
+                        edge_softness_in_pixels: tracked_blur.edge_softness_in_pixels,
+                    })
+            }
+            EffectKind::ColorAdjustment(_) => None,
+        })
+        .collect()
 }

@@ -30,8 +30,10 @@ use resources::{
     floats_as_bytes,
 };
 
+use crate::color_adjustment::{MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, shader_values};
 use crate::layers::{CanvasDescription, LayerGeometry, VisualLayer};
 use crate::renderer::{FrameRenderer, RenderError, pass_through_frame};
+use kadr_core::effect::ColorAdjustment;
 
 /// Renders frames on the GPU.
 pub struct GpuRenderer {
@@ -135,7 +137,7 @@ impl GpuRenderer {
         while self.layer_slots.len() <= slot_index {
             self.layer_slots.push(LayerSlot::new(&self.device));
         }
-        let uniforms = layer_uniforms(canvas, &geometry, picture, opacity);
+        let uniforms = layer_uniforms(canvas, &geometry, picture, opacity, layer.color_adjustments);
         self.layer_slots[slot_index].upload_picture(&self.device, &self.queue, picture);
         let slot = &self.layer_slots[slot_index];
         self.queue
@@ -287,6 +289,7 @@ fn layer_uniforms(
     geometry: &LayerGeometry,
     picture: &VideoFrame,
     opacity: f32,
+    color_adjustments: &[ColorAdjustment],
 ) -> Vec<f32> {
     let (canvas_width, canvas_height) = (
         canvas.size.width_in_pixels as f32,
@@ -311,6 +314,17 @@ fn layer_uniforms(
     };
     uniforms.extend(yuv_to_rgb_rows.as_flattened());
     uniforms.extend([opacity, 0.0, 0.0, 0.0]);
+    let adjustment_count = color_adjustments
+        .len()
+        .min(MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER);
+    for slot in 0..MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER {
+        let values = color_adjustments
+            .get(slot)
+            .filter(|_| slot < adjustment_count)
+            .map_or([0.0; 4], shader_values);
+        uniforms.extend(values);
+    }
+    uniforms.extend([adjustment_count as f32, 0.0, 0.0, 0.0]);
     uniforms
 }
 

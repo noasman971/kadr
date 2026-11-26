@@ -18,6 +18,9 @@ your package manager.
 ## 2. Git workflow
 
 - **`main` always builds and passes its tests.** Do not work on it directly.
+  GitHub enforces it (branch protection, for administrators too): every change goes
+  through a pull request, the five CI checks must pass, review conversations must be
+  resolved, and `main` cannot be force-pushed or deleted.
 - **One branch per feature or fix**, created from an up-to-date `main`:
 
   | Prefix | For | Example |

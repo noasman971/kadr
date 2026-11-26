@@ -17,13 +17,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use kadr_core::effect::EffectKind;
 use kadr_core::project::Project;
 use kadr_core::time::TimeSpan;
 use kadr_media::audio_buffer::sample_index_at;
 use kadr_media::{
     EncodingSpeed, ExportSink, ExportSinkSettings, MediaBackend, MediaError, VideoEncoderPreference,
 };
-use kadr_render::{RenderError, RendererPreference, create_renderer};
+use kadr_render::{
+    MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, RenderError, RendererPreference, create_renderer,
+};
 
 use audio_mixer::mix_timeline_sound;
 use frame_composer::FrameComposer;
@@ -271,15 +274,27 @@ fn write_sound_range(
     ))
 }
 
-/// Lists, in plain words, what this version does not render yet.
+/// Lists, in plain words, what could not be rendered as asked.
 fn describe_unrendered_parts(project: &Project) -> Vec<String> {
     let mut warnings = Vec::new();
     for (_, clip) in project.timeline().all_clips() {
-        for effect in clip.effects.iter().filter(|effect| effect.is_enabled) {
+        let enabled_effects = clip.effects.iter().filter(|effect| effect.is_enabled);
+        let mut color_adjustment_count = 0;
+        for effect in enabled_effects {
+            match &effect.kind {
+                EffectKind::TrackedBlur(tracked_blur) if tracked_blur.region_samples.is_empty() => {
+                    warnings.push(format!(
+                        "the tracked blur (effect {}) of clip {} hides nothing yet: it has no tracked region",
+                        effect.id, clip.id
+                    ));
+                }
+                EffectKind::ColorAdjustment(_) => color_adjustment_count += 1,
+                EffectKind::TrackedBlur(_) => {}
+            }
+        }
+        if color_adjustment_count > MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER {
             warnings.push(format!(
-                "the {} (effect {}) of clip {} was not applied: effects arrive in phase 3",
-                effect.kind.display_name(),
-                effect.id,
+                "clip {} has {color_adjustment_count} colour adjustments; only the first {MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER} were applied",
                 clip.id
             ));
         }

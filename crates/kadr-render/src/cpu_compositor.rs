@@ -13,6 +13,7 @@ use image::{Rgba, RgbaImage};
 use kadr_media::{VideoFrame, YuvColorSpace, YuvPicture};
 use rayon::prelude::*;
 
+use crate::color_adjustment::adjust_color_in_sequence;
 use crate::layers::{CanvasDescription, LayerGeometry, VisualLayer};
 use crate::renderer::{FrameRenderer, RenderError, pass_through_frame};
 
@@ -129,6 +130,20 @@ fn sample_bilinear(
     sampled
 }
 
+/// Applies the layer's colour adjustments to a sampled colour (0–255 channels).
+fn adjusted(
+    sampled: [f32; 4],
+    color_adjustments: &[kadr_core::effect::ColorAdjustment],
+) -> [f32; 4] {
+    if color_adjustments.is_empty() {
+        return sampled;
+    }
+    let rgb = [sampled[0], sampled[1], sampled[2]].map(|channel| channel / FULL_CHANNEL);
+    let [red, green, blue] =
+        adjust_color_in_sequence(rgb, color_adjustments).map(|channel| channel * FULL_CHANNEL);
+    [red, green, blue, sampled[3]]
+}
+
 /// Blends a straight-alpha colour over an opaque canvas pixel.
 fn blend_over(destination: &mut [u8], source: [f32; 4], opacity: f32) {
     let coverage = (source[3] / FULL_CHANNEL) * opacity;
@@ -160,7 +175,7 @@ fn draw_layer(
         return;
     };
     if geometry.maps_pixels_one_to_one(canvas.size, picture.width(), picture.height(), placement) {
-        draw_one_to_one(canvas_pixels, picture, opacity);
+        draw_one_to_one(canvas_pixels, picture, opacity, layer.color_adjustments);
         return;
     }
     let visible = VisiblePixels::of(&geometry);
@@ -177,7 +192,10 @@ fn draw_layer(
                 if let Some((source_x, source_y)) =
                     geometry.source_point_for(column, row_index as u32)
                 {
-                    let sampled = sample_bilinear(picture, visible, source_x, source_y);
+                    let sampled = adjusted(
+                        sample_bilinear(picture, visible, source_x, source_y),
+                        layer.color_adjustments,
+                    );
                     let pixel_start = column as usize * BYTES_PER_PIXEL;
                     blend_over(
                         &mut row_bytes[pixel_start..pixel_start + BYTES_PER_PIXEL],
@@ -191,7 +209,12 @@ fn draw_layer(
 
 /// Fast path: the picture covers the canvas pixel for pixel. Opaque rows are
 /// copied in one go; others are blended pixel by pixel.
-fn draw_one_to_one(canvas_pixels: &mut RgbaImage, picture: &RgbaImage, opacity: f32) {
+fn draw_one_to_one(
+    canvas_pixels: &mut RgbaImage,
+    picture: &RgbaImage,
+    opacity: f32,
+    color_adjustments: &[kadr_core::effect::ColorAdjustment],
+) {
     let row_length = canvas_pixels.width() as usize * BYTES_PER_PIXEL;
     canvas_pixels
         .as_mut()
@@ -199,14 +222,20 @@ fn draw_one_to_one(canvas_pixels: &mut RgbaImage, picture: &RgbaImage, opacity: 
         .zip(picture.as_raw().par_chunks_exact(row_length))
         .for_each(|(destination_row, source_row)| {
             let (source_pixels, _) = source_row.as_chunks::<BYTES_PER_PIXEL>();
-            let is_opaque_row = opacity >= 1.0 && source_pixels.iter().all(|pixel| pixel[3] == 255);
+            let is_opaque_row = opacity >= 1.0
+                && color_adjustments.is_empty()
+                && source_pixels.iter().all(|pixel| pixel[3] == 255);
             if is_opaque_row {
                 destination_row.copy_from_slice(source_row);
                 return;
             }
             let (destination_pixels, _) = destination_row.as_chunks_mut::<BYTES_PER_PIXEL>();
             for (destination, source) in destination_pixels.iter_mut().zip(source_pixels) {
-                blend_over(destination, source.map(f32::from), opacity);
+                blend_over(
+                    destination,
+                    adjusted(source.map(f32::from), color_adjustments),
+                    opacity,
+                );
             }
         });
 }
@@ -249,7 +278,11 @@ mod tests {
     }
 
     fn layer(picture: &VideoFrame, placement: LayerPlacement) -> VisualLayer<'_> {
-        VisualLayer { picture, placement }
+        VisualLayer {
+            picture,
+            placement,
+            color_adjustments: &[],
+        }
     }
 
     #[test]

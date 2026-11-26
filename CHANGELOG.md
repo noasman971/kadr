@@ -32,6 +32,18 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   and images keep fitting inside the canvas.
 - Export tests drawing a title with the CPU and the GPU renderers.
 
+### Added (phase 3c: effects)
+
+- Colour adjustment (exposure, contrast, saturation, temperature) on the GPU and the
+  CPU with the same formula; up to four per layer, in order.
+- Tracked blur rendering: gaussian blur, pixelation or solid fill, in a rectangle or an
+  ellipse with soft edges, applied in the source picture's space on YUV or RGBA.
+- `TrackedBlur::region_at` and `hidden_area_at` in `kadr-core`: the area at any source
+  time, interpolated between samples, with a wider margin where tracking was unsure.
+- The export reports tracked blurs without regions and ignored colour adjustments.
+- Tests: region effects, colour formula, GPU/CPU parity with adjustments, exports of a
+  moving hidden area and of a black-and-white adjustment.
+
 ### Changed
 
 - Exports are BT.709 limited range and tagged as such in the MP4 (phase 2 exports were

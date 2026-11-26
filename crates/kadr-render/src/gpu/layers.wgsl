@@ -17,6 +17,11 @@ struct LayerUniforms {
     yuv_to_blue: vec4<f32>,
     // x: opacity of the layer, from 0 to 1.
     opacity: vec4<f32>,
+    // Colour adjustments, applied in order: exposure multiplier (2^stops),
+    // contrast, saturation, temperature. Same formula as color_adjustment.rs.
+    adjustments: array<vec4<f32>, 4>,
+    // x: how many adjustments are used.
+    adjustment_count: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> layer: LayerUniforms;
@@ -26,6 +31,26 @@ struct LayerUniforms {
 // The U and V planes of a YUV picture (placeholders for RGBA pictures).
 @group(0) @binding(3) var second_plane: texture_2d<f32>;
 @group(0) @binding(4) var third_plane: texture_2d<f32>;
+
+// Contribution of red, green and blue to brightness (BT.709).
+const BRIGHTNESS_WEIGHTS = vec3<f32>(0.2126, 0.7152, 0.0722);
+// Red added and blue removed at temperature +1.
+const TEMPERATURE_STRENGTH = 0.1;
+
+fn adjust_color(color: vec3<f32>) -> vec3<f32> {
+    var rgb = color;
+    let adjustment_count = u32(layer.adjustment_count.x);
+    for (var index = 0u; index < adjustment_count; index += 1u) {
+        let adjustment = layer.adjustments[index];
+        rgb = rgb * adjustment.x;
+        rgb = (rgb - vec3<f32>(0.5)) * adjustment.y + vec3<f32>(0.5);
+        let brightness = dot(rgb, BRIGHTNESS_WEIGHTS);
+        rgb = vec3<f32>(brightness) + (rgb - vec3<f32>(brightness)) * adjustment.z;
+        let shift = TEMPERATURE_STRENGTH * adjustment.w;
+        rgb = clamp(rgb + vec3<f32>(shift, 0.0, -shift), vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    return rgb;
+}
 
 struct LayerVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -45,7 +70,7 @@ fn layer_vertex(@builtin(vertex_index) corner_index: u32) -> LayerVertexOutput {
 @fragment
 fn rgba_layer_fragment(input: LayerVertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(first_plane, picture_sampler, input.texture_coordinates);
-    return vec4<f32>(color.rgb, color.a * layer.opacity.x);
+    return vec4<f32>(adjust_color(color.rgb), color.a * layer.opacity.x);
 }
 
 @fragment
@@ -60,5 +85,5 @@ fn yuv_layer_fragment(input: LayerVertexOutput) -> @location(0) vec4<f32> {
         dot(layer.yuv_to_green.xyz, yuv) + layer.yuv_to_green.w,
         dot(layer.yuv_to_blue.xyz, yuv) + layer.yuv_to_blue.w,
     );
-    return vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)), layer.opacity.x);
+    return vec4<f32>(adjust_color(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0))), layer.opacity.x);
 }
