@@ -3,12 +3,18 @@
 //! This crate describes **what a video project is**, independently of how it is
 //! decoded, rendered or displayed:
 //!
-//! - the project settings (resolution, frame rate, audio format, background colour);
-//! - the imported media assets;
-//! - the timeline, its video and audio tracks, and the clips placed on them;
-//! - the effects applied to clips (text, colour, transitions, tracked blur…) and
-//!   their keyframes;
-//! - the **commands** that modify a project, with undo and redo.
+//! - [`time`]: exact time in integer ticks, frame rates;
+//! - [`project`]: the project settings, its media and its timeline;
+//! - [`media_asset`]: the imported video, audio and image files;
+//! - [`timeline`]: tracks stacked from bottom to top;
+//! - [`clip`]: media or text placed on a track, with volume, opacity, position…;
+//! - [`animation`]: keyframes that animate clip properties;
+//! - [`effect`]: colour adjustment and tracked blur;
+//! - [`commands`]: every change, as a reversible command;
+//! - [`history`]: the [`EditSession`](history::EditSession) applying commands
+//!   with undo and redo;
+//! - [`validation`]: the rules a project always respects;
+//! - [`project_file`]: the versioned JSON `.kadr` file format.
 //!
 //! ## Rules for this crate
 //!
@@ -16,6 +22,21 @@
 //!   Everything here must compile for Windows, macOS, Linux and Android unchanged.
 //! - Every change to a project goes through a command that can be undone,
 //!   whether it comes from the mouse, the keyboard or Claude through MCP.
-//! - Timeline positions use exact integer or rational time, never `f64`.
+//! - Timeline positions use exact integer time, never `f64`.
 //!
-//! The data model is implemented in phase 1. See `docs/architecture.md`.
+//! See `docs/data-model.md` for a guided tour.
+
+pub mod animation;
+pub mod clip;
+pub mod color;
+pub mod commands;
+pub mod effect;
+pub mod error;
+pub mod history;
+pub mod ids;
+pub mod media_asset;
+pub mod project;
+pub mod project_file;
+pub mod time;
+pub mod timeline;
+pub mod validation;

@@ -11,6 +11,9 @@ publish.workspace = true
 # kadr-core must stay free of any video, GPU, UI or platform dependency:
 # it is shared by the desktop app, the MCP server and the Android app.
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
