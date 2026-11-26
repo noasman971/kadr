@@ -102,6 +102,22 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   Undo notice); previous and next cut (↑ / ↓); hide, mute and remove tracks.
 - Every gesture is one undo step whose name appears in the undo button and notices.
 
+### Added (phase 6d: inspector, titles and export)
+
+- Inspector for the selected clip: picture (position, scale, rotation, opacity,
+  crop), sound (volume), speed (0.5× to 2× or any value), colour (exposure, contrast,
+  saturation, temperature) and text (words, font, size, colour, alignment, length),
+  each with a Reset; number fields take typing, arrow keys and dragging.
+- Titles: T, the timeline's button or three ready-made styles in the Text tab, on a
+  Titles track.
+- Export dialog (Ctrl+E): presets (project format, YouTube 1080p and 4K, TikTok ·
+  Reels · Shorts, square), file name and folder, quality, encoder, estimated size;
+  progress with time left, cancel, *Keep editing* with a progress pill; the finished
+  file with *Show in folder* and *Play the video*, or a clear error with *Try again*.
+- `kadr_engine::export_presets`: the export sizes and the scaling of a project to
+  another size, shared by Claude's tools and the app, and `refit_clips_to_canvas`,
+  which keeps titles in place when the canvas changes shape.
+
 ### Changed
 
 - Build scripts and procedural macros are compiled with optimisations, so `bindgen`

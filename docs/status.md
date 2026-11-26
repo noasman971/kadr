@@ -55,7 +55,7 @@ which is more detailed and is the reference for its phase.
 | 0–3 | Done, validated, tagged `v0.1.0`–`v0.4.0` | `main` | — |
 | 4. Tracking and blur | 4a merged (#7). 4b in draft (#8): works on synthetic videos, **drifts on a real one** | `feature/phase-4b-blur-analysis`, [#8](https://github.com/noasman971/kadr/pull/8) | Find and fix the drift |
 | 5. MCP server | Draft (#9): 34 of 35 tools tested | `feature/phase-5-mcp-server`, [#9](https://github.com/noasman971/kadr/pull/9) | Run the tests after the merge of `main`, then merge |
-| 6. Desktop app | 6a (#6) and 6b (#10) merged. 6c in PR #14, tried by hand | `feature/phase-6c-timeline-editing`, [#14](https://github.com/noasman971/kadr/pull/14) | Merge 6c, then 6d (inspector, titles, export) |
+| 6. Desktop app | 6a (#6), 6b (#10) and 6c (#14) merged. 6d in its own PR, tried by hand | `feature/phase-6d-inspector-export` | Merge 6d, then the owner's edit-and-export test |
 | 7. Blur and Claude in the app | Waits for phases 4 and 6 | — | — |
 | 8. Features, engine side | **Paused** by the owner. 8a in draft (#11) | `feature/phase-8a-transitions-text-animations`, [#11](https://github.com/noasman971/kadr/pull/11) | Owner: resume or not |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
@@ -114,13 +114,16 @@ Versions are tagged in phase order, each only after the owner validates the phas
   - 6b (engine preview API, app skeleton), tried by hand with screenshots and
     merged (#10).
   - 6c (editing on the timeline: drag from the library, move, trim, split, delete,
-    snapping, tracks), tried by hand, in PR #14.
-- **Next:** merge #14, then 6d: inspector, titles, export dialog. Then the owner's
-  real edit-and-export test, and the phase 6 validation.
+    snapping, tracks), tried by hand and merged (#14).
+  - 6d (inspector, titles, export dialog with presets and progress), tried by hand,
+    in its own pull request.
+- **Next:** merge 6d, then the owner's real edit-and-export test, and the phase 6
+  validation (no tag before it).
 - **First step on a new computer**, from `apps/desktop`: `npm ci`, then
   `npm run tauri dev`.
 - **Resume with:** *"Resume phase 6 of Kadr: read CLAUDE.md, docs/status.md and the
-  'Status for resuming' section of PR #14, then continue with its next step."*
+  'Status for resuming' section of the phase 6d pull request, then continue with
+  its next step."*
 
 ## Phase 8: features, engine side (paused)
 

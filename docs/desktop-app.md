@@ -190,6 +190,55 @@ request when it ends, so one gesture is one undo step:
 
 ![Trimming a clip: its length, and the frame at the edge in the preview](screenshots/desktop-timeline-trim.jpg)
 
+## Inspector and titles
+
+The inspector shows the project when nothing is selected, and the settings of the
+clip when one is (`ClipInspector.svelte`): picture, sound, speed, colour and text, only
+where they apply. Each change sends one request (`editing/clip_settings.rs`), so one
+undo step:
+
+- `NumberField` takes typing, ↑ / ↓ (Shift for steps ten times bigger) and dragging
+  its label sideways; the value is sent when the gesture ends. A value animated with
+  keyframes shows *Animated (n keyframes)* and is not editable yet (phase 8).
+- The colour adjustment is an effect added on the first change, replaced afterwards,
+  and removed by *Reset*.
+- A speed change keeps the clip's start; a clip that would then overlap the next one
+  is refused by the engine.
+
+Titles (`editing/titles.rs`) are text clips added at the playhead, 3 s long, on the
+first *Titles* track free at that time (a new one on top otherwise), in one of three
+styles sized from the canvas height. The inspector then focuses their words.
+
+![The inspector of a video clip](screenshots/desktop-inspector.jpg)
+
+![Titles from the Text tab](screenshots/desktop-titles.jpg)
+
+## Export
+
+The dialog (`components/export/ExportDialog.svelte`) gathers the settings; the export
+itself is `state/exportJob.svelte.ts` on the front end and `export_job.rs` on the back
+end:
+
+- **Sizes.** The presets come from `kadr_engine::export_presets`, shared with Claude's
+  tools. A preset of the project's shape exports a scaled copy of the project; one of
+  another shape first changes the project's format as an undoable step
+  (`setCanvasSize`), which also refits titles (`refit_clips_to_canvas`).
+- **Running.** `start_export` takes a snapshot of the project, so editing during the
+  export changes nothing in the file, and runs the engine's `export_project` on its
+  own thread. Progress (a few times a second) and the result come back through a
+  Tauri channel. One export at a time.
+- **Files.** An existing file is replaced only after the user agrees
+  (`exportFileExists`, then a confirmation). The engine writes to a temporary file
+  and renames it at the end, so a failed or cancelled export never leaves a broken
+  file. Only files exported during the session can be shown in the explorer or
+  played from the app (`reveal_exported_file`, `open_exported_file`).
+- **Keep editing** folds the dialog into a progress pill in the top bar; when the
+  export ends, a notice says so.
+
+![The export settings](screenshots/desktop-export-settings.jpg)
+
+![An export finished](screenshots/desktop-export-done.jpg)
+
 ## Adding an edit
 
 1. Add a variant to `EditRequest` in `editing.rs`, with a test, and a branch in
