@@ -3,16 +3,24 @@
 //! The engine ties the other crates together. User interfaces (desktop app,
 //! Android app, command line, MCP server) only talk to the engine:
 //!
-//! - open, save and auto-save projects;
-//! - apply commands and expose undo / redo;
-//! - provide preview frames for the player;
-//! - run long tasks (export, face tracking, proxy generation) in the background,
-//!   with progress reporting and cancellation.
+//! - [`project_files`]: save and open `.kadr` files (atomically);
+//! - [`export`]: render a project to an MP4 file, with progress and cancellation;
+//! - [`quick_assembly`]: build a simple project from a list of files.
 //!
 //! ## Rules for this crate
 //!
 //! - No user interface code and no dependency on Tauri: the engine is shared
 //!   between desktop and mobile.
-//! - Long tasks never block the caller's thread.
+//! - Media access goes through a [`kadr_media::MediaBackend`], never directly
+//!   through FFmpeg, so the Android backend can replace it.
+//! - Long tasks report progress and can be cancelled from another thread.
 //!
-//! Grows from phase 2 onwards. See `docs/architecture.md`.
+//! See `docs/architecture.md`.
+
+pub mod export;
+pub mod project_files;
+pub mod quick_assembly;
+
+pub use export::{
+    ExportCancellation, ExportError, ExportProgress, ExportReport, ExportRequest, export_project,
+};

@@ -1,11 +1,15 @@
 # kadr-engine
 
-The single public API used by every user interface: projects, commands and
-undo/redo, preview frames, and background tasks (export, tracking) with progress
-and cancellation.
+The single public API used by every user interface:
 
-- **Will depend on:** `kadr-core`, `kadr-media`, `kadr-render`, `kadr-vision`.
-- **Used by:** `kadr-tools`, `kadr-cli`, the desktop app, the Android app.
-- **Status:** empty skeleton (phase 0). Grows from phase 2.
+- `project_files`: save (atomically) and open `.kadr` files;
+- `export`: render a project to MP4, with progress and cancellation; a failed or
+  cancelled export never leaves a broken file;
+- `quick_assembly`: build a project placing files end to end.
 
-See [docs/architecture.md](../../docs/architecture.md).
+- **Depends on:** `kadr-core`, `kadr-media`, `kadr-render`.
+- **Used by:** `kadr-cli`; later `kadr-tools`, the desktop app and the Android app.
+- **Status:** phase 2. Preview frames and background task management grow with the
+  desktop app (phase 6).
+
+See [docs/media-and-export.md](../../docs/media-and-export.md).
