@@ -18,8 +18,10 @@ It is the source of truth for scope, phases and rules.
 
 ## Current state
 
-- **Phase 0 (foundations): done**, waiting for the owner's validation.
-- **Next: phase 1** — data model in `kadr-core`.
+- **Phase 0 (foundations): done and validated**, tagged `v0.1.0`.
+- **Phase 1 (data model): done** on branch `feature/phase-1-data-model`, merged through
+  pull request #1. Tag `v0.2.0` once the owner validates the phase.
+- **Next: phase 2** — decoding, encoding and export from the command line.
 
 ## Decisions taken with the owner
 
@@ -27,9 +29,14 @@ It is the source of truth for scope, phases and rules.
 - Language: **everything in English** (code, comments, docs, commit messages). The
   specification file stays in French.
 - Git: own repository in this folder, public GitHub repository `noasman971/kadr`.
-- Phase 0 was committed directly on `main` at the owner's request. From phase 1 on,
-  follow the branch / pull request workflow of [docs/contributing.md](docs/contributing.md)
-  unless the owner says otherwise. **Never merge a pull request yourself.**
+- Phase 0 was committed directly on `main` at the owner's request. Since phase 1, each
+  phase goes on its own branch with a pull request (see
+  [docs/contributing.md](docs/contributing.md)).
+- **Merging (owner's instruction, 2026-11-26):** Claude merges the pull requests it
+  opened while working with the owner, once CI is green and there is no conflict.
+  Never merge pull requests from other contributors. Merging does not replace phase
+  validation: at the end of a phase, still stop and wait for the owner's OK before
+  tagging the version and starting the next phase.
 - Architecture decisions are recorded in [docs/decisions/](docs/decisions/).
 
 ## Commands
@@ -49,7 +56,8 @@ updated, CHANGELOG updated, summary to the owner, **stop and wait for validation
 
 ## Architecture in one paragraph
 
-`kadr-core` (data model, commands, undo) has no dependency. `kadr-media` (FFmpeg /
+`kadr-core` (data model, commands, undo, validation, `.kadr` file) has no Kadr
+dependency; read [docs/data-model.md](docs/data-model.md) before changing it. `kadr-media` (FFmpeg /
 MediaCodec), `kadr-render` (wgpu) and `kadr-vision` (classic tracking) do the heavy
 work. `kadr-engine` is the only API interfaces use. `kadr-tools` defines the tools
 Claude can call; `kadr-mcp` serves them over stdio. `kadr-cli` is for testing. The
@@ -81,3 +89,14 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   headers or `.lib` files. Phase 2 needs a *shared* build with `include/` and `lib/`,
   and must check which FFmpeg versions the `ffmpeg-next` crate supports.
 - MCP over stdio: **never print to stdout** in `kadr-mcp` except protocol messages.
+- `kadr-core` invariants: every command's `apply` must check everything **before** the
+  first mutation, and `revert` must restore the project exactly (including the
+  `IdAllocator`). The helper `commands::test_support::apply_and_check_revert` checks
+  apply → revert → redo for any command: use it in every new command test.
+- New validation rules go in `validation.rs` only, never scattered in commands.
+- Snapshot tests (`insta`): after an intended change of the file format, regenerate with
+  `$env:INSTA_UPDATE='always'; cargo test -p kadr-core` (PowerShell), then **review the
+  `.snap` diff** before committing. In CI, a stale snapshot fails the build.
+- Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
+  files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
+  with a comment explaining why.

@@ -49,7 +49,9 @@ your package manager.
 - **Push often**: at least when a feature is done and at the end of every work session.
 - **Pull request** to `main` when the feature is done: what changes, why, how to test,
   screenshots (dark and light theme) for anything visible. CI must be green.
-  **Only the project owner merges.**
+  Pull requests opened by the owner or by Claude working with the owner are merged
+  as soon as CI is green; pull requests from other contributors are merged by the
+  owner after review.
 - Each validated phase gets a version tag (`v0.1.0`, `v0.2.0`…) and a
   [CHANGELOG.md](../CHANGELOG.md) entry.
 
@@ -120,6 +122,14 @@ abbreviations.
   crate's `tests/` folder.
 - Test names describe the behaviour: `split_clip_at_time_keeps_total_duration`.
 - Media tests use the generated fixtures (see [tests/fixtures/README.md](../tests/fixtures/README.md)).
+- Every new command is tested with `commands::test_support::apply_and_check_revert`,
+  which checks that apply, revert and redo give identical projects.
+- Snapshot tests use `insta`. After an intended change, regenerate the snapshots and
+  review the diff before committing:
+
+  ```powershell
+  $env:INSTA_UPDATE='always'; cargo test -p kadr-core
+  ```
 - Performance claims are backed by `criterion` benchmarks, with numbers in the pull
   request.
 

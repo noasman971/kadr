@@ -21,6 +21,12 @@ publish = false
 # Cargo warns about declared but unused dependencies, and warnings fail the CI.
 # The planned dependencies between Kadr crates are described in docs/architecture.md.
 [workspace.dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+
+# Test-only dependencies.
+insta = "1.49.0"
 
 [workspace.lints.rust]
 # Every public item must be documented: someone new to the project should
