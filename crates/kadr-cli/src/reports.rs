@@ -4,9 +4,11 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
+use kadr_core::effect::TrackingConfidence;
 use kadr_core::media_asset::{MediaAssetDescription, MediaKind};
 use kadr_core::project::Project;
-use kadr_engine::{ExportProgress, ExportReport};
+use kadr_core::time::{FrameRate, TICKS_PER_SECOND, Timestamp};
+use kadr_engine::{ExportProgress, ExportReport, RegionTrackingReport, TrackingProgress};
 
 /// Describes a probed media file, one property per line.
 pub fn describe_media(description: &MediaAssetDescription) -> String {
@@ -77,6 +79,54 @@ pub fn describe_export(report: &ExportReport, elapsed: Duration) -> String {
     lines.join("\n")
 }
 
+/// The summary printed after tracking a region.
+pub fn describe_tracking(
+    report: &RegionTrackingReport,
+    elapsed: Duration,
+    frame_rate: FrameRate,
+) -> String {
+    let frame_count = report.frames.len();
+    let seconds = elapsed.as_secs_f64().max(0.001);
+    let video_seconds = frame_count as f64 / frame_rate.as_frames_per_second();
+    let (confident, uncertain, lost) = report.confidence_counts();
+    let mut lines = vec![format!(
+        "Tracked {frame_count} frames in {seconds:.1} s ({:.0} frames/s, {:.1}× real time): \
+         {confident} confident, {uncertain} uncertain, {lost} lost; {} samples kept",
+        frame_count as f64 / seconds,
+        video_seconds / seconds,
+        report.region_samples.len()
+    )];
+    lines.extend(report.unsure_ranges.iter().map(|range| {
+        let confidence = match range.confidence {
+            TrackingConfidence::Lost => "lost",
+            _ => "uncertain",
+        };
+        let first_frame = frame_rate.frame_index_at(range.first_source_time);
+        let last_frame = frame_rate.frame_index_at(range.last_source_time);
+        // From the start of the first unsure frame to the end of the last one.
+        let end = frame_rate.timestamp_of_frame(last_frame + 1);
+        let frames = if first_frame == last_frame {
+            format!("frame {first_frame}")
+        } else {
+            format!("frames {first_frame} to {last_frame}")
+        };
+        format!(
+            "  check: {frames}, {} to {} ({confidence})",
+            seconds_rounded_up(range.first_source_time),
+            seconds_rounded_up(end)
+        )
+    }));
+    lines.join("\n")
+}
+
+/// `1.034 s`: rounded **up** to the millisecond, so that the printed time is
+/// inside the frame that starts at `time` (frames last more than a millisecond).
+fn seconds_rounded_up(time: Timestamp) -> String {
+    const TICKS_PER_MILLISECOND: u64 = TICKS_PER_SECOND / 1_000;
+    let milliseconds = time.ticks().div_ceil(TICKS_PER_MILLISECOND);
+    format!("{}.{:03} s", milliseconds / 1_000, milliseconds % 1_000)
+}
+
 /// A progress line on the error output, rewritten in place when the
 /// percentage changes.
 #[derive(Debug, Default)]
@@ -85,17 +135,33 @@ pub struct ProgressLine {
 }
 
 impl ProgressLine {
-    /// Shows the new progress if the percentage changed.
+    /// Shows the export's progress if the percentage changed.
     pub fn update(&mut self, progress: ExportProgress) {
-        let percentage = (progress.fraction() * 100.0).floor() as u64;
+        self.show(
+            "Exporting",
+            progress.fraction(),
+            progress.encoded_frame_count,
+            progress.total_frame_count,
+        );
+    }
+
+    /// Shows the progress of a tracking task, named `action`.
+    pub fn update_tracking(&mut self, action: &str, progress: TrackingProgress) {
+        self.show(
+            action,
+            progress.fraction(),
+            progress.analysed_frame_count,
+            progress.total_frame_count,
+        );
+    }
+
+    fn show(&mut self, action: &str, fraction: f64, done_frame_count: u64, total_frame_count: u64) {
+        let percentage = (fraction * 100.0).floor() as u64;
         if self.last_shown_percentage == Some(percentage) {
             return;
         }
         self.last_shown_percentage = Some(percentage);
-        eprint!(
-            "\rExporting {percentage:>3}% ({}/{} frames)",
-            progress.encoded_frame_count, progress.total_frame_count
-        );
+        eprint!("\r{action} {percentage:>3}% ({done_frame_count}/{total_frame_count} frames)");
         // The line is redrawn in place; a failed flush only delays the display.
         let _ = std::io::stderr().flush();
     }
@@ -111,6 +177,16 @@ impl ProgressLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn printed_times_stay_inside_their_frame() {
+        // Frame 31 at 30 fps starts at 1.0333… s: "1.034 s", not "1.033 s".
+        let start = FrameRate::FPS_30.timestamp_of_frame(31);
+        assert_eq!(seconds_rounded_up(start), "1.034 s");
+        let printed = Timestamp::from_seconds(1.034).unwrap();
+        assert_eq!(FrameRate::FPS_30.frame_index_at(printed), 31);
+        assert_eq!(seconds_rounded_up(Timestamp::ZERO), "0.000 s");
+    }
     use kadr_core::media_asset::{AudioFormat, PictureSize};
     use kadr_core::time::{FrameRate, TimeSpan};
     use std::path::PathBuf;
