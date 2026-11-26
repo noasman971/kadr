@@ -1,22 +1,51 @@
 //! # kadr-vision — classic computer vision, without AI
 //!
 //! This crate contains the deterministic algorithms behind Kadr's analysis
-//! features:
+//! features. Today: **region tracking** for the face blur. The user draws a box
+//! around a face (or a licence plate, a screen…) and [`RegionTracker`] follows it
+//! frame after frame:
 //!
-//! - **region tracking** for the face blur: the user draws a box around a face,
-//!   and a correlation-filter tracker (MOSSE, then KCF) follows it frame after
-//!   frame, with scale estimation, a confidence score (peak-to-sidelobe ratio),
-//!   recovery by template matching, Lucas-Kanade optical flow for fast motion and
-//!   temporal smoothing;
-//! - **silence detection** on audio samples.
+//! - a MOSSE correlation filter finds the region in each frame
+//!   (`correlation_filter.rs` explains it step by step);
+//! - Lucas-Kanade optical flow on points of the region predicts fast motions and
+//!   measures how much the region grows or shrinks when it comes closer or moves
+//!   away (Median Flow);
+//! - the peak-to-sidelobe ratio says how sure each answer is: confident,
+//!   uncertain or lost;
+//! - a lost region is searched again by normalised cross-correlation with its
+//!   memorised appearance;
+//! - [`smooth_track`] steadies the result without lag (One Euro filter, forward
+//!   and backward).
+//!
+//! `docs/tracking-and-blur.md` explains the whole pipeline, its settings and its
+//! limits.
 //!
 //! ## Rules for this crate
 //!
 //! - **No neural network, no pre-trained model, no model file.** Every algorithm
-//!   is classic, explainable, and documented step by step with a reference to
-//!   its original paper.
-//! - Algorithms work on plain buffers (grey-level images, audio samples) so they
-//!   can be tested on synthetic data.
+//!   is classic, explainable, and documented step by step with a reference to its
+//!   original paper.
+//! - Algorithms work on plain buffers (grey-level images) and depend on no other
+//!   Kadr crate, so they can be tested on synthetic data ([`synthetic_scenes`]).
 //!
-//! Implemented in phase 4. See `docs/architecture.md` and
-//! `docs/decisions/0003-face-blur-by-classic-tracking.md`.
+//! See also `docs/decisions/0003-face-blur-by-classic-tracking.md`.
+
+mod correlation_filter;
+mod fourier;
+mod geometry;
+mod grey_image;
+mod optical_flow;
+mod smoothing;
+pub mod synthetic_scenes;
+mod template_matching;
+mod tracker;
+
+pub use geometry::{Point, Region};
+pub use grey_image::GreyImage;
+pub use smoothing::smooth_track;
+pub use tracker::{
+    CONFIDENT_PEAK_TO_SIDELOBE_RATIO, LOST_PEAK_TO_SIDELOBE_RATIO,
+    MAXIMUM_UNCERTAIN_FRAMES_IN_A_ROW, MINIMUM_REGION_SIDE_IN_PIXELS, RegionTracker,
+    TRACKING_IMAGE_MAXIMUM_WIDTH_IN_PIXELS, TrackedRegion, TrackingError, TrackingState,
+    shrink_factor_for_tracking,
+};

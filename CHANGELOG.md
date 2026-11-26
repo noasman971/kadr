@@ -8,6 +8,61 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+### Added (phase 4a: region tracker)
+
+- `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
+  AI:
+  - a MOSSE correlation filter finds its position;
+  - the peak-to-sidelobe ratio rates each frame as confident, uncertain or lost;
+  - pyramidal Lucas-Kanade optical flow predicts fast motion and measures changes of
+    size (Median Flow);
+  - normalised cross-correlation with the memorised appearance finds a lost region
+    again.
+- `smooth_track`: One Euro smoothing, forwards and backwards, so the blur neither
+  shakes nor lags.
+- `GreyImage`: brightness images built straight from a video's Y plane, optionally
+  shrunk to about 640 pixels wide (`shrink_factor_for_tracking`).
+- `synthetic_scenes`: textured scenes with a known truth, for tests and benchmarks.
+- Tracking scenarios (motion, acceleration, coming closer, moving away, camera pan,
+  occlusion, leaving the frame, backwards) and `criterion` benchmarks
+  (`cargo bench -p kadr-vision`).
+- `docs/tracking-and-blur.md`, decision record 0007.
+
+### Added (phase 6a: desktop app design)
+
+- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
+  notifications, keyboard shortcuts, languages and accessibility.
+- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
+  light themes, with measured WCAG contrast, and the component list.
+- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
+  both languages.
+- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
+  repository) and 0022 (how the front end and the engine talk).
+
+### Added (phase 6b: desktop app skeleton)
+
+- `kadr-engine`: `preview` (the export's frame composition at any time, shrunk to a
+  panel's size), `timeline_sound` (any range of the timeline's sound, mixed exactly
+  like the export, decoded clips kept), `media_overview` (thumbnails with decoders kept
+  open, waveform peaks) and `picture_scaling` (box-filter shrinking). Export behaviour
+  is unchanged; its frame composer now takes the project per frame.
+- `apps/desktop`: the Tauri 2 desktop app. Rust back end (crate `kadr-desktop`) owning
+  the project, saved after every change, with preview and thumbnail threads; Svelte 5
+  front end in French and English, dark and light themes, interface size setting.
+- Home screen (new project with its format, open, recent projects), media import by
+  drag and drop or dialog with reading and error tiles, + to add at the end of the
+  timeline, automatic format from the first video, preview drawn with WebGL, playback
+  with sound (Space, J/K/L, frame and second steps), timeline with zoom, undo and redo.
+- CI: WebKitGTK on Linux for the desktop crate, and a job checking, testing and
+  building the front end.
+
+### Changed
+
+- Build scripts and procedural macros are compiled with optimisations, so `bindgen`
+  no longer overflows the stack of Windows build scripts.
+
+## [0.4.0] — Phase 3: GPU rendering
+
 ### Added (phase 3a: GPU rendering)
 
 - `VideoFrame` is now `Rgba` or `Yuv420`: decoders hand over their YUV planes and the
@@ -43,17 +98,6 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - The export reports tracked blurs without regions and ignored colour adjustments.
 - Tests: region effects, colour formula, GPU/CPU parity with adjustments, exports of a
   moving hidden area and of a black-and-white adjustment.
-
-### Added (phase 6a: desktop app design)
-
-- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
-  notifications, keyboard shortcuts, languages and accessibility.
-- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
-  light themes, with measured WCAG contrast, and the component list.
-- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
-  both languages.
-- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
-  repository) and 0022 (how the front end and the engine talk).
 
 ### Changed
 

@@ -35,6 +35,7 @@ run while compiling (procedural macros) and are not part of the program.
 | `ctrlc` | Clean cancellation with Ctrl+C in `kadr-cli` | MIT OR Apache-2.0 |
 | `wgpu`, `naga` and their dependencies (`ash`, `glow`, `gpu-allocator`, `half`…) | GPU rendering | MIT OR Apache-2.0 (some also Zlib, BSD, ISC, Apache-2.0 only) |
 | `pollster` | Waiting for GPU operations | MIT OR Apache-2.0 |
+| `rustfft` (+ `num-complex`, `num-traits`, `num-integer`, `primal-check`, `strength_reduce`, `transpose`) | Fourier transforms of the region tracker | MIT OR Apache-2.0 |
 | `cosmic-text` and its dependencies (`swash`, `harfrust`, `skrifa`, `fontdb`, `ttf-parser`, `unicode-*`…) | Text layout and rasterisation | MIT OR Apache-2.0 / MIT / Apache-2.0 / Zlib; `self_cell` is used under Apache-2.0 |
 | `tauri`, `tauri-build`, `tauri-plugin-dialog`, `tauri-plugin-opener` and their dependencies (`wry`, `tao`, `webview2-com`, `windows`, `gtk`/`webkit2gtk` on Linux, `objc2` on macOS, `tokio`, `serde_with`…) | The desktop app's window, webview, commands and file dialogs | MIT OR Apache-2.0 (a few dependencies MIT, Apache-2.0, BSD-3-Clause, Zlib or Unicode-3.0) |
 

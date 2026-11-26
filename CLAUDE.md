@@ -21,11 +21,20 @@ It is the source of truth for scope, phases and rules.
 - **Phase 0 (foundations): done and validated**, tagged `v0.1.0`.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
-- **Phase 3 (GPU rendering): done**, in three pull requests: 3a GPU compositing and
-  YUV colour pipeline (PR #3), 3b text with the bundled Inter font (PR #4; the owner
-  chose to bundle it), 3c colour adjustment and tracked blur rendering (branch
-  `feature/phase-3c-effects`). Tag `v0.4.0` once the owner validates the phase.
-- **Next: phase 4** — face tracking (MOSSE/KCF) filling the tracked blurs.
+- **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
+- **Phase 4 (tracking): in progress.** 4a, the region tracker in `kadr-vision`
+  (MOSSE, PSR, Lucas-Kanade with Median Flow size, NCC recovery, One Euro smoothing),
+  on branch `feature/phase-4a-region-tracker`. Next, 4b: the analysis in
+  `kadr-engine` (forwards and backwards from the selected frame, samples stored in the
+  `TrackedBlur`), `kadr-cli blur … --debug`, speed on a real 1080p video.
+- **Phases 5 and 6 run in parallel** (owner's request, 2026-11-26), each in its own
+  session and worktree: phase 5 the MCP server, phase 6 the desktop app. Versions are
+  still tagged in phase order, after the owner validates each phase.
+- **Phase 6 (desktop app): in progress.** 6a, flows, design system, mockups and
+  ADRs 0020–0022, merged (PR #6, validated by the owner). 6b, engine preview API and
+  the app skeleton (home, import, preview, playback). Next: 6c timeline editing
+  (drag, trim, split, delete, snapping, thumbnails, waveforms), 6d inspector, titles
+  and export; then the owner's edit-and-export test.
 
 ## Decisions taken with the owner
 
@@ -48,7 +57,9 @@ It is the source of truth for scope, phases and rules.
   to `main` are refused. If a CI job is renamed, update the required checks too
   (`gh api repos/noasman971/kadr/branches/main/protection`), or every PR will wait for
   a check that never runs. Tags can still be pushed.
-- Architecture decisions are recorded in [docs/decisions/](docs/decisions/).
+- Architecture decisions are recorded in [docs/decisions/](docs/decisions/). While
+  phases run in parallel, record numbers are reserved to avoid clashes: phase 4 uses
+  0007–0009, phase 5 0010–0019, phase 6 0020–0029.
 
 ## Commands
 
@@ -60,6 +71,15 @@ cargo fmt --all --check
 cargo doc --workspace --no-deps
 powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1
 powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
+```
+
+Desktop app, from `apps/desktop/` (Node.js 20.19+):
+
+```powershell
+npm ci
+npm run tauri dev
+npm run check
+npm test
 ```
 
 End-of-phase checklist: build without warnings, clippy, fmt, tests, `cargo doc`, docs
@@ -74,7 +94,10 @@ and the `VideoFrame` (YUV or RGBA) and colour-space types; `kadr-render` turns l
 into BT.709 YUV frames on the GPU (`wgpu`) or the CPU (reference); `kadr-vision`
 (classic tracking) will do the face blur. `kadr-engine` is the only API interfaces use. `kadr-tools` defines the tools
 Claude can call; `kadr-mcp` serves them over stdio. `kadr-cli` is for testing. The
-desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/architecture.md).
+desktop app `apps/desktop` (Tauri 2) has a Svelte front end and a Rust back end, the
+crate `kadr-desktop`, which owns the project and answers with project views, frames
+and sound ([docs/desktop-app.md](docs/desktop-app.md)). Details:
+[docs/architecture.md](docs/architecture.md).
 
 ## Conventions (short version — full version in docs/contributing.md)
 
@@ -145,3 +168,34 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
   files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
   with a comment explaining why.
+- Tracking, size: MOSSE tried at several scales drifts (it learns the slightly wrong
+  size every frame), and DSST on grey levels cannot see a zoom at all. The size comes
+  from the optical flow points (Median Flow): see decision 0007 before changing it.
+- Tracking, optical flow: on coarse pyramid levels a 15 × 15 window is larger than the
+  region and follows the background. The coarsest level is limited by the region's
+  size, and the search starts from the previous frame's motion.
+- Halving an image by averaging 2 × 2 blocks aliases badly; the pyramid blurs with
+  weights 1, 3, 3, 1 first.
+- `rustfft`'s inverse transform is not normalised (results are N times larger).
+- `cargo doc` runs with `-D warnings` in CI: public docs must not link to private
+  modules (`[crate::optical_flow]`); name the file in backticks instead.
+- Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
+  the script to the scratchpad and run it from there.
+- Since the desktop crate joined the workspace, its procedural macros enable more of
+  `syn`, and a debug `bindgen` overflowed the 1 MB stack of Windows build scripts
+  (`ffmpeg-sys-next`, `STATUS_STACK_OVERFLOW`). Build scripts are now compiled with
+  `opt-level = 3` (`[profile.*.build-override]` in `Cargo.toml`): keep it.
+- Tauri: synchronous commands run on the main thread and freeze the window; every
+  command is `async`, and heavy work goes to `spawn_blocking` or a worker thread.
+  Large data (frames, sound) is answered as `tauri::ipc::Response` bytes, never JSON.
+- Tauri's file drop (`dragDropEnabled`, needed to get dropped file paths) disables
+  HTML5 drag and drop inside the page on Windows: in-app drags (library → timeline,
+  clips) use pointer events.
+- `@lucide/svelte` (thousands of files) stalled `npm install` on a slow network; the
+  few icons used are copied into `apps/desktop/src/lib/ui/icons.ts`.
+- In Git Bash, `tasklist` can hang: use PowerShell's `Get-Process` to see running
+  `cargo`/`rustc`. Several sessions building at once slow every build down a lot.
+- `gh` sometimes fails with `Post "https://api.github.com/graphql": EOF`: retry; check
+  with `gh pr view` whether the action went through before repeating it.
+- Merging `origin/main` can put a CHANGELOG entry under the wrong version once a
+  phase is tagged: check where each entry lands after a merge.

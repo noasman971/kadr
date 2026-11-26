@@ -11,6 +11,15 @@ publish.workspace = true
 # kadr-vision works on plain image buffers and audio samples. It depends on no
 # other Kadr crate so that each algorithm can be tested on its own.
 [dependencies]
+rustfft.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "track_region"
+harness = false
 
 [lints]
 workspace = true
