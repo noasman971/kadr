@@ -8,8 +8,20 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
-# Dependencies are added when the crate starts using them (see docs/architecture.md).
+[features]
+# The FFmpeg backend, used on Windows, macOS and Linux. The Android build will
+# disable it and use a MediaCodec backend behind the same traits (phase 9).
+default = ["ffmpeg"]
+ffmpeg = ["dep:ffmpeg-next"]
+
 [dependencies]
+ffmpeg-next = { workspace = true, optional = true }
+image.workspace = true
+kadr-core.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

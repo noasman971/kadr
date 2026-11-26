@@ -27,18 +27,29 @@ run while compiling (procedural macros) and are not part of the program.
 | `thiserror-impl` *(build)* | Generates error code | MIT OR Apache-2.0 |
 | `proc-macro2`, `quote`, `syn` *(build)* | Procedural macro support | MIT OR Apache-2.0 |
 | `unicode-ident` *(build)* | Identifier rules for `syn` | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| `ffmpeg-next`, `ffmpeg-sys-next` | Rust bindings to FFmpeg | WTFPL |
+| `bindgen`, `clang-sys` and their dependencies *(build)* | Generate the FFmpeg bindings | BSD-3-Clause / Apache-2.0 and MIT |
+| `image` | RGBA picture buffers (no file codecs enabled) | MIT OR Apache-2.0 |
+| `rayon` (+ `crossbeam-*`, `either`) | Parallel rendering | MIT OR Apache-2.0 |
+| `clap` and its dependencies | Command-line arguments of `kadr-cli` | MIT OR Apache-2.0 |
+| `ctrlc` | Clean cancellation with Ctrl+C in `kadr-cli` | MIT OR Apache-2.0 |
 
 ## Rust crates used only by tests (not shipped)
 
 | Crate | Role | License |
 |---|---|---|
 | `insta` | Snapshot tests of the project file | Apache-2.0 |
+| `tempfile` | Temporary folders in tests | MIT OR Apache-2.0 |
 | `similar`, `console`, `tempfile` and their dependencies | Used by `insta` | Apache-2.0 / MIT / MIT OR Apache-2.0 |
 
 ## Native libraries
 
-None linked yet. FFmpeg arrives in phase 2: its exact build and license (LGPL or GPL
-depending on the enabled codecs) will be recorded here.
+| Library | Role | License |
+|---|---|---|
+| FFmpeg 7+ (`libavcodec`, `libavformat`, `libavfilter`, `libavutil`, `libswscale`, `libswresample`, `libavdevice`) | Decoding, encoding, filters | LGPL-2.1-or-later; **GPL** builds (with libx264), as used in development and CI, are GPL-2.0-or-later, compatible with Kadr's GPL-3.0-or-later |
+| libx264 (inside GPL FFmpeg builds) | Software H.264 encoder | GPL-2.0-or-later |
+
+FFmpeg is linked dynamically: users can replace the libraries with their own build.
 
 ## Models and data files
 

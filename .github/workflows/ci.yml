@@ -16,6 +16,8 @@ env:
   # Any warning (compiler, clippy or rustdoc) fails the build.
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
+  # Shared FFmpeg builds (headers + libraries) used on Windows and Linux.
+  FFMPEG_BUILDS_URL: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
 
 jobs:
   format:
@@ -37,6 +39,32 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+
+      # --- FFmpeg 9 development files, one way per system ---
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest "$env:FFMPEG_BUILDS_URL/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip" -OutFile $archive
+          Expand-Archive $archive -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+          $ffmpegDirectory = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName
+          "FFMPEG_DIR=$ffmpegDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "$ffmpegDirectory\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl --fail --location --silent --show-error "$FFMPEG_BUILDS_URL/ffmpeg-n9.0-latest-linux64-gpl-shared-9.0.tar.xz" --output "$RUNNER_TEMP/ffmpeg.tar.xz"
+          mkdir -p "$RUNNER_TEMP/ffmpeg"
+          tar --extract --file "$RUNNER_TEMP/ffmpeg.tar.xz" --directory "$RUNNER_TEMP/ffmpeg" --strip-components 1
+          echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg/lib" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/ffmpeg/bin" >> "$GITHUB_PATH"
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkgconf ffmpeg
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

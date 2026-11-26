@@ -376,6 +376,14 @@ impl FrameRate {
             / (u128::from(self.denominator) * u128::from(TICKS_PER_SECOND));
         u64::try_from(frames).unwrap_or(u64::MAX)
     }
+
+    /// How many frames are needed to show `duration`: every frame starting
+    /// before the end counts, so a partial last frame is included.
+    pub fn frame_count_covering(self, duration: TimeSpan) -> u64 {
+        let dividend = u128::from(duration.ticks()) * u128::from(self.numerator);
+        let divisor = u128::from(self.denominator) * u128::from(TICKS_PER_SECOND);
+        u64::try_from(dividend.div_ceil(divisor)).unwrap_or(u64::MAX)
+    }
 }
 
 impl fmt::Display for FrameRate {
@@ -397,6 +405,24 @@ impl fmt::Display for FrameRate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_count_includes_a_partial_last_frame() {
+        let frame_rate = FrameRate::FPS_25; // one frame = 40 ms
+        assert_eq!(frame_rate.frame_count_covering(TimeSpan::ZERO), 0);
+        assert_eq!(
+            frame_rate.frame_count_covering(TimeSpan::from_whole_seconds(2)),
+            50
+        );
+        assert_eq!(
+            frame_rate.frame_count_covering(TimeSpan::from_milliseconds(2_001)),
+            51
+        );
+        assert_eq!(
+            FrameRate::FPS_29_97.frame_count_covering(TimeSpan::from_whole_seconds(10)),
+            300
+        );
+    }
 
     #[test]
     fn common_frame_and_sample_durations_are_whole_numbers_of_ticks() {

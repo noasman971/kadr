@@ -23,8 +23,9 @@ app.
 ## Planned dependencies
 
 An arrow means "depends on". Dependencies are declared in `Cargo.toml` only when the
-code starts using them (Cargo warns about unused ones and CI fails on warnings), so in
-phase 0 the crates do not depend on each other yet.
+code starts using them (Cargo warns about unused ones and CI fails on warnings). Since
+phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` are real;
+the others arrive with their phase.
 
 ```mermaid
 flowchart TD
@@ -52,7 +53,9 @@ audio buffers, so each one can be tested alone on synthetic data.
 - Platform-specific media code (FFmpeg, MediaCodec) lives behind traits in `kadr-media`.
 - GPU code uses `wgpu`, which runs on Vulkan, DirectX 12, Metal and OpenGL ES.
 
-## How a frame travels (target design, from phase 2)
+## How a frame travels (phase 2: CPU; phase 3: GPU)
+
+Details, sync rules and measured performance: [media-and-export.md](media-and-export.md).
 
 ```mermaid
 flowchart LR

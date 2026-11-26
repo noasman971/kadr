@@ -12,8 +12,13 @@ publish.workspace = true
 name = "kadr-cli"
 path = "src/main.rs"
 
-# Dependencies are added when the crate starts using them (see docs/architecture.md).
 [dependencies]
+clap.workspace = true
+ctrlc.workspace = true
+kadr-core.workspace = true
+kadr-engine.workspace = true
+kadr-media.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -21,12 +21,25 @@ publish = false
 # Cargo warns about declared but unused dependencies, and warnings fail the CI.
 # The planned dependencies between Kadr crates are described in docs/architecture.md.
 [workspace.dependencies]
+kadr-core = { path = "crates/kadr-core" }
+kadr-media = { path = "crates/kadr-media" }
+kadr-render = { path = "crates/kadr-render" }
+kadr-engine = { path = "crates/kadr-engine" }
+
+clap = { version = "4.6.10", features = ["derive"] }
+ctrlc = "3.5.3"
+# FFmpeg 7 or newer (see README.md, "FFmpeg development files").
+ffmpeg-next = "9.1.0"
+# Only the pixel buffer types and basic operations: no image file codecs.
+image = { version = "0.25.10", default-features = false }
+rayon = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
 
 # Test-only dependencies.
 insta = "1.49.0"
+tempfile = "3.27.0"
 
 [workspace.lints.rust]
 # Every public item must be documented: someone new to the project should

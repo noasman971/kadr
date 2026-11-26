@@ -14,9 +14,10 @@ Claude conversation.**
 - **Desktop first, Android next.** Windows, macOS and Linux, then an Android app built
   on the same engine.
 
-> **Status: phase 1 — data model.** The project model, undo/redo and the `.kadr` file
-> format exist as a library. There is no video decoding or interface yet. See the
-> [roadmap](#roadmap).
+> **Status: phase 2 — media and export.** Kadr can read video, audio and image
+> files, build a project, and export it to MP4 from the command line. There is no
+> graphical interface yet. See the [roadmap](#roadmap) and
+> [Trying Kadr today](#trying-kadr-today).
 
 ---
 
@@ -25,9 +26,9 @@ Claude conversation.**
 | Phase | Content | Status |
 |---|---|---|
 | 0 | Foundations: workspace, CI, scripts, documentation | ✅ Done |
-| 1 | Data model: timeline, clips, effects, undo/redo, project file | 🔍 In review |
-| 2 | Decoding, encoding and export from the command line | ⏳ Next |
-| 3 | GPU rendering (`wgpu`) | |
+| 1 | Data model: timeline, clips, effects, undo/redo, project file | ✅ Done |
+| 2 | Decoding, encoding and export from the command line | 🔍 In review |
+| 3 | GPU rendering (`wgpu`) | ⏳ Next |
 | 4 | Face blur by classic region tracking | |
 | 5 | Local MCP server for Claude | |
 | 6 | Desktop app (Tauri 2) — MVP | |
@@ -70,17 +71,29 @@ You need, in this order:
    winget install Gyan.FFmpeg
    ```
 
-4. **LLVM** (needed from phase 2: `bindgen` uses `libclang` to compile the FFmpeg
-   bindings):
+4. **LLVM** (`bindgen` uses `libclang` to compile the FFmpeg bindings):
 
    ```powershell
    winget install LLVM.LLVM
    ```
 
-5. **FFmpeg development files** (needed from phase 2). The command-line FFmpeg above does
-   not contain the headers and libraries Rust links against. Phase 2 will pick the
-   exact FFmpeg version supported by the Rust bindings and document here how to install
-   a *shared* build and set `FFMPEG_DIR`.
+5. <a id="ffmpeg-development-files"></a>**FFmpeg development files.** The command-line
+   FFmpeg above does not contain the headers and libraries Rust links against. Kadr
+   needs a *shared* build of **FFmpeg 7 or newer** (FFmpeg 9 is used in CI). Install
+   one and point `FFMPEG_DIR` to it; winget also adds its `bin` folder (the DLLs) to
+   your `PATH`:
+
+   ```powershell
+   winget install BtbN.FFmpeg.GPL.Shared.9.0
+   ```
+
+   ```powershell
+   $folder = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL.Shared.9.0*\ffmpeg-*" -Directory | Select-Object -First 1).FullName; [Environment]::SetEnvironmentVariable('FFMPEG_DIR', $folder, 'User')
+   ```
+
+   Open a new terminal afterwards. On Linux, download the matching `linux64-gpl-shared`
+   build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases), set
+   `FFMPEG_DIR` and `LD_LIBRARY_PATH`; on macOS, `brew install pkgconf ffmpeg` is enough.
 
 6. **Node.js LTS** (needed from phase 6, for the desktop interface):
 
@@ -124,11 +137,39 @@ Generate the test videos (written to `tests/fixtures/generated/`, ignored by Git
 powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
 ```
 
-Try the command-line tool:
+---
+
+## Trying Kadr today
+
+Build the command-line tool once (optimised):
 
 ```powershell
-cargo run -p kadr-cli -- --help
+cargo build --release -p kadr-cli
 ```
+
+Describe a file:
+
+```powershell
+.\target\release\kadr-cli probe my-video.mp4
+```
+
+Put files end to end in a new project (videos and images on a video track, music on
+an audio track; `--format vertical` for TikTok / Reels / Shorts):
+
+```powershell
+.\target\release\kadr-cli assemble --output my-edit.kadr --format vertical clip1.mp4 clip2.mp4 music.mp3
+```
+
+Export it to MP4 (hardware encoder when available; `--software-encoder` to force
+libx264, `--fast` for quick previews, Ctrl+C to cancel cleanly):
+
+```powershell
+.\target\release\kadr-cli render my-edit.kadr my-edit.mp4
+```
+
+Current limits, lifted in the next phases: text clips and effects (colour, blur) are
+not drawn yet (phase 3), rendering runs on the CPU (phase 3 moves it to the GPU), and
+phone videos with a rotation flag are not rotated yet.
 
 ---
 
@@ -138,7 +179,7 @@ cargo run -p kadr-cli -- --help
 crates/
   kadr-core     data model: project, timeline, clips, effects, undo/redo
   kadr-media    decoding and encoding (FFmpeg on desktop, MediaCodec on Android)
-  kadr-render   GPU compositor shared by preview and export
+  kadr-render   compositor shared by preview and export (CPU now, GPU in phase 3)
   kadr-vision   classic computer vision: face tracking for blur, silence detection
   kadr-engine   single API used by every interface; background tasks
   kadr-tools    editing tools exposed to Claude
