@@ -8,6 +8,8 @@
 | [decisions/](decisions/) | Architecture decision records: why things are the way they are |
 | [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works |
 | [rendering.md](rendering.md) | YUV from end to end, colour spaces, the GPU and CPU renderers, how they are compared, benchmarks |
+| [ux.md](ux.md) | The desktop app's screens and flows, shortcuts, states, languages, accessibility ([mockups](mockups/index.html)) |
+| [design-system.md](design-system.md) | Interface tokens (colours, spacing, type, motion) and components |
 
 Documents added in later phases:
 
@@ -16,7 +18,7 @@ Documents added in later phases:
 | `gpu-rendering.md` — `wgpu` pipeline, shaders, adding an effect | 3 |
 | `tracking-and-blur.md` — the region tracker, its parameters and limits | 4 |
 | `mcp.md` — every MCP tool, Claude Desktop / Claude Code setup, example conversations | 5 |
-| `design-system.md` and `user-journeys.md` — interface tokens, components, user journeys | 6 |
+| `desktop-app.md` — how the desktop app is built: back end, front end, preview, playback | 6 |
 
 A feature is not finished until its documentation is up to date, in the same pull
 request as the code.
