@@ -8,8 +8,18 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
-# Dependencies are added when the crate starts using them (see docs/architecture.md).
 [dependencies]
+dunce.workspace = true
+# JPEG encoding of the pictures returned to Claude.
+image = { workspace = true, features = ["jpeg"] }
+kadr-core.workspace = true
+kadr-engine.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

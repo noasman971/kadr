@@ -10,7 +10,7 @@
 //! nor replaces a previous good export.
 
 mod audio_mixer;
-mod frame_composer;
+pub(crate) mod frame_composer;
 
 use std::fs;
 use std::path::{Path, PathBuf};

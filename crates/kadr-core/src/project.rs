@@ -120,7 +120,11 @@ impl Project {
     // ----- Lookups that explain what exists when something is missing -----
 
     /// The track with this identifier, or an error listing the existing tracks.
-    pub(crate) fn require_track(&self, track_id: TrackId) -> Result<&Track, EditError> {
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::TrackNotFound`] when no track has this identifier.
+    pub fn require_track(&self, track_id: TrackId) -> Result<&Track, EditError> {
         self.timeline
             .track(track_id)
             .ok_or_else(|| EditError::TrackNotFound {
@@ -130,7 +134,11 @@ impl Project {
     }
 
     /// The clip with this identifier and its track, or an error listing the existing clips.
-    pub(crate) fn require_clip(&self, clip_id: ClipId) -> Result<(&Track, &Clip), EditError> {
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::ClipNotFound`] when no clip has this identifier.
+    pub fn require_clip(&self, clip_id: ClipId) -> Result<(&Track, &Clip), EditError> {
         self.timeline
             .find_clip(clip_id)
             .ok_or_else(|| EditError::ClipNotFound {
@@ -140,7 +148,11 @@ impl Project {
     }
 
     /// The media file with this identifier, or an error listing the existing ones.
-    pub(crate) fn require_media_asset(
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::MediaAssetNotFound`] when no media file has this identifier.
+    pub fn require_media_asset(
         &self,
         media_asset_id: MediaAssetId,
     ) -> Result<&MediaAsset, EditError> {
