@@ -118,18 +118,17 @@ Write-CheckResult -ToolName 'ffmpeg (command line)' -IsPresent ([bool] $ffmpegVe
     -Details $(if ($ffmpegVersionLine) { $ffmpegVersionLine } else { 'used to generate the test videos' }) `
     -HowToInstall 'winget install Gyan.FFmpeg'
 
-# --- Needed in later phases -----------------------------------------------------
-
 $libclangDirectory = Find-LibclangDirectory
 Write-CheckResult -ToolName 'LLVM / libclang' -IsPresent ([bool] $libclangDirectory) `
-    -Details $(if ($libclangDirectory) { "libclang.dll found in $libclangDirectory" } else { 'used by bindgen to compile the FFmpeg bindings.' }) `
-    -HowToInstall 'winget install LLVM.LLVM' -NeededFromPhase 'phase 2'
+    -Details $(if ($libclangDirectory) { "libclang.dll found in $libclangDirectory" } else { 'used by bindgen to compile the FFmpeg bindings' }) `
+    -HowToInstall 'winget install LLVM.LLVM'
 
 $hasFfmpegDevelopmentFiles = Test-FfmpegDevelopmentFiles
 Write-CheckResult -ToolName 'FFmpeg headers + libs' -IsPresent $hasFfmpegDevelopmentFiles `
-    -Details $(if ($hasFfmpegDevelopmentFiles) { "FFMPEG_DIR = $env:FFMPEG_DIR" } else { 'set FFMPEG_DIR to a "shared" FFmpeg build containing include\ and lib\.' }) `
-    -HowToInstall 'see README.md, "FFmpeg development files" (the exact FFmpeg version is chosen in phase 2)' `
-    -NeededFromPhase 'phase 2'
+    -Details $(if ($hasFfmpegDevelopmentFiles) { "FFMPEG_DIR = $env:FFMPEG_DIR" } else { 'FFMPEG_DIR must point to a "shared" FFmpeg 7+ build containing include\ and lib\' }) `
+    -HowToInstall 'winget install BtbN.FFmpeg.GPL.Shared.9.0, then set FFMPEG_DIR (see README.md, "FFmpeg development files")'
+
+# --- Needed in later phases -----------------------------------------------------
 
 $nodeVersionLine = Get-CommandVersionLine -CommandName 'node'
 Write-CheckResult -ToolName 'Node.js' -IsPresent ([bool] $nodeVersionLine) `
