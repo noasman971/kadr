@@ -105,6 +105,28 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
 - Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
   repository) and 0022 (how the front end and the engine talk).
 
+### Added (phase 6b: desktop app skeleton)
+
+- `kadr-engine`: `preview` (the export's frame composition at any time, shrunk to a
+  panel's size), `timeline_sound` (any range of the timeline's sound, mixed exactly
+  like the export, decoded clips kept), `media_overview` (thumbnails with decoders kept
+  open, waveform peaks) and `picture_scaling` (box-filter shrinking). Export behaviour
+  is unchanged; its frame composer now takes the project per frame.
+- `apps/desktop`: the Tauri 2 desktop app. Rust back end (crate `kadr-desktop`) owning
+  the project, saved after every change, with preview and thumbnail threads; Svelte 5
+  front end in French and English, dark and light themes, interface size setting.
+- Home screen (new project with its format, open, recent projects), media import by
+  drag and drop or dialog with reading and error tiles, + to add at the end of the
+  timeline, automatic format from the first video, preview drawn with WebGL, playback
+  with sound (Space, J/K/L, frame and second steps), timeline with zoom, undo and redo.
+- CI: WebKitGTK on Linux for the desktop crate, and a job checking, testing and
+  building the front end.
+
+### Changed
+
+- Build scripts and procedural macros are compiled with optimisations, so `bindgen`
+  no longer overflows the stack of Windows build scripts.
+
 ## [0.4.0] — Phase 3: GPU rendering
 
 ### Added (phase 3a: GPU rendering)

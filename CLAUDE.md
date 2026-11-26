@@ -67,6 +67,15 @@ powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1
 powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
 ```
 
+Desktop app, from `apps/desktop/` (Node.js 20.19+):
+
+```powershell
+npm ci
+npm run tauri dev
+npm run check
+npm test
+```
+
 End-of-phase checklist: build without warnings, clippy, fmt, tests, `cargo doc`, docs
 updated, CHANGELOG updated, summary to the owner, **stop and wait for validation**.
 
@@ -81,7 +90,10 @@ into BT.709 YUV frames on the GPU (`wgpu`) or the CPU (reference); `kadr-vision`
 use (it re-exports the media backend types). `kadr-tools` defines the tools Claude can
 call (`KadrToolbox::call_tool`, no MCP dependency); `kadr-mcp` serves them over stdio
 with `rmcp`. Read [docs/mcp-server.md](docs/mcp-server.md) before changing a tool.
-`kadr-cli` is for testing. The desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/architecture.md).
+`kadr-cli` is for testing. The desktop app `apps/desktop` (Tauri 2) has a Svelte front
+end and a Rust back end, the crate `kadr-desktop`, which owns the project and answers
+with project views, frames and sound ([docs/desktop-app.md](docs/desktop-app.md)).
+Details: [docs/architecture.md](docs/architecture.md).
 
 ## Conventions (short version — full version in docs/contributing.md)
 
@@ -191,3 +203,30 @@ with `rmcp`. Read [docs/mcp-server.md](docs/mcp-server.md) before changing a too
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
   the script to the scratchpad and run it from there.
+- Since the desktop crate joined the workspace, its procedural macros enable more of
+  `syn`, and a debug `bindgen` overflowed the 1 MB stack of Windows build scripts
+  (`ffmpeg-sys-next`, `STATUS_STACK_OVERFLOW`). Build scripts are now compiled with
+  `opt-level = 3` (`[profile.*.build-override]` in `Cargo.toml`): keep it.
+- Tauri: synchronous commands run on the main thread and freeze the window; every
+  command is `async`, and heavy work goes to `spawn_blocking` or a worker thread.
+  Large data (frames, sound) is answered as `tauri::ipc::Response` bytes, never JSON.
+- Tauri's file drop (`dragDropEnabled`, needed to get dropped file paths) disables
+  HTML5 drag and drop inside the page on Windows: in-app drags (library → timeline,
+  clips) use pointer events.
+- `@lucide/svelte` (thousands of files) stalled `npm install` on a slow network; the
+  few icons used are copied into `apps/desktop/src/lib/ui/icons.ts`.
+- In Git Bash, `tasklist` can hang: use PowerShell's `Get-Process` to see running
+  `cargo`/`rustc`. Several sessions building at once slow every build down a lot.
+- `gh` sometimes fails with `Post "https://api.github.com/graphql": EOF`: retry; check
+  with `gh pr view` whether the action went through before repeating it.
+- Merging `origin/main` can put a CHANGELOG entry under the wrong version once a
+  phase is tagged: check where each entry lands after a merge.
+- Desktop app, interface size: the setting scales `body` with CSS `zoom`. Pointer
+  positions and `getBoundingClientRect()` are then zoomed, element sizes and
+  `scrollLeft` are not: turn pointer positions into timeline pixels with
+  `pointerOffsetX` (`src/lib/ui/pointer.ts`), or seeks land 1.5 times too far at 150 %.
+- CSS `repeat(0, …)` is invalid and drops the whole `grid-template-rows`: build the
+  track list in code (an empty timeline had a 70 px ruler).
+- Checking the running app from a script (DevTools port, faking the file dialog and
+  file drops): see docs/desktop-app.md, "Driving the running app from a script".
+  Computer use may be refused; the script route needs no permission.
