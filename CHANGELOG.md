@@ -181,6 +181,17 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
 - `kadr_engine::clip_geometry` and `kadr_render::SourceToCanvasMapping`: where a
   clip's source picture is on the canvas, for interfaces drawing on top of it.
 
+### Added (phase 7c: checking and correcting a blur in the app)
+
+- The moments a blur's tracker was unsure about are striped on the clip in the
+  timeline (amber uncertain, red lost, with ⚠ and a tooltip); a click goes there.
+  **Shift+B** and the inspector's *Next* go to the next one.
+- Correcting: drag a blur's box on the preview (or *Correct the box here*, then the
+  arrow keys) where the face is, then *Correct from here* (Enter): the tracking runs
+  again from that frame up to the neighbouring corrections or the selection, and keeps
+  the surer answer frame by frame. One undo step, announced with what is left to
+  check.
+
 ### Added (phase 8a: transitions and text animations)
 
 - `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`

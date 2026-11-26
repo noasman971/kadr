@@ -302,11 +302,30 @@ sequenceDiagram
   dashed and marked ⚠ when not. Boxes follow clip transforms, not the motion of
   phase 8's transitions.
 
+### Checking and correcting
+
+- The project view gives each blur's **unsure ranges in timeline ticks**
+  (`project_view.rs`: source times mapped through the clip's range and speed, each
+  range to the end of its last frame). The timeline draws them as striped bands
+  under the clip's name, amber (uncertain) or red (lost), with ⚠ and a tooltip;
+  clicking one puts the playhead in its middle. **Shift+B** and the inspector's
+  *Next* go to the next moment to check (`lib/blur/unsureMoments.ts`, round the
+  edit).
+- **Correcting** is the same tool with `correctedEffectId` set: dragging a blur's box
+  on the preview (or *Correct the box here* in the inspector, then the arrow keys,
+  Shift for bigger steps) puts the box where the face is, and *Correct from here*
+  (Enter) calls `start_region_tracking` with the blur's `effectId`. The back end
+  builds the request with `RegionTrackingRequest::for_correction` (only up to the
+  neighbouring anchors) and `blur_results.rs` merges the analysis into the blur **as
+  it is then** with `corrected_tracked_blur`, as the undo step `correctBlur`.
+
 | Drawing the box | Following it |
 |---|---|
 | ![The box drawn on the preview, with its handles and the Blur and follow bar](screenshots/desktop-blur-draw.jpg) | ![The analysis' progress with Stop](screenshots/desktop-blur-following.jpg) |
 | **A moment the tracker lost (dashed, ⚠) and the Blur section** | **Light theme** |
 | ![The inspector's Blur section next to a lost box](screenshots/desktop-blur-inspector.jpg) | ![The same in the light theme](screenshots/desktop-blur-light.jpg) |
+| **Correcting: the box dragged onto the target, the lost stretch striped on the clip** | **Corrected: the stretch is now only where the target was hidden** |
+| ![Correcting a lost box](screenshots/desktop-blur-correct.jpg) | ![After the correction](screenshots/desktop-blur-corrected.jpg) |
 
 ## Adding an edit
 
