@@ -67,7 +67,9 @@ jobs:
           echo "$RUNNER_TEMP/ffmpeg/bin" >> "$GITHUB_PATH"
           # No GPU on the runner: render with lavapipe, Mesa's software Vulkan,
           # and make the GPU tests fail instead of skipping if it does not work.
-          sudo apt-get update && sudo apt-get install --yes mesa-vulkan-drivers
+          # The desktop app (Tauri) needs the WebKitGTK webview's development files.
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
           echo "KADR_GPU_ADAPTER=software" >> "$GITHUB_ENV"
           echo "KADR_REQUIRE_GPU=1" >> "$GITHUB_ENV"
       - name: Install FFmpeg (macOS)
@@ -83,6 +85,24 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo doc --workspace --no-deps
+
+  desktop-front-end:
+    name: Desktop front end (types, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
 
   test-fixtures:
     name: Test video fixtures can be generated
