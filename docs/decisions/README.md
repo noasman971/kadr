@@ -13,6 +13,9 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0006](0006-gpu-rendering-yuv-end-to-end.md) | GPU rendering with `wgpu`, YUV from end to end, CPU as reference | Accepted |
 | [0007](0007-scale-from-point-tracking.md) | The tracked region's size comes from point tracking (Median Flow) | Accepted |
 | [0008](0008-anchor-tracking-to-the-selection.md) | A slow-learning filter, anchored to the selection's appearance | Accepted |
+| [0010](0010-mcp-server-with-rmcp.md) | The MCP server is built on `rmcp`, with tools defined in `kadr-tools` | Accepted |
+| [0011](0011-allowed-folders-as-server-arguments.md) | In file mode, the allowed folders are arguments of the server | Accepted |
+| [0012](0012-file-mode-saves-every-change.md) | File mode saves the project after every change | Accepted |
 | [0020](0020-svelte-typescript-front-end.md) | Svelte 5 and TypeScript for the desktop front end | Accepted |
 | [0021](0021-desktop-app-layout.md) | The desktop app in `apps/desktop/`, its Rust crate in the workspace | Accepted |
 | [0022](0022-front-end-and-engine-communication.md) | The back end owns the project; preview frames and sound rendered by the engine, sent as binary | Accepted |

@@ -61,6 +61,39 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
 - A confident frame that does not look like the selection at all is reported as
   uncertain, and the region is re-anchored where the selection is found again nearby.
 
+### Added (phase 5: MCP server, file mode)
+
+- `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
+  3.11, that Claude Desktop and Claude Code start with `--allowed-folder <folder>`
+  arguments. Nothing but the protocol is written to stdout; logs go to stderr.
+- `kadr-tools`: 35 tools defined once (name, description for a language model, JSON
+  schema generated with `schemars`, code), independent of MCP: project
+  (`create_project`, `open_project`, `save_project`, `get_project_info`,
+  `set_project_settings`, `undo`, `redo`), media (`find_media_files`, `probe_media`,
+  `import_media`, `list_media`), timeline (`get_timeline`, `get_clip`, `add_track`,
+  `remove_track`, `add_clip`, `remove_clip`, `move_clip`, `trim_clip`, `split_clip`),
+  clip properties (`set_clip_speed`, `set_clip_volume`, `set_transform`), content
+  (`add_text`, `edit_text`, `add_transition`, `remove_transitions`,
+  `add_color_adjustment`, `remove_effect`), pictures (`get_frame`,
+  `get_contact_sheet`), sound (`detect_silences`) and export (`export`,
+  `get_export_status`, `cancel_export`).
+- One tool call is one undo step labelled "Claude: …"; the project file is saved
+  after every change and never overwritten if another program changed it.
+- File access limited to the allowed folders (links and `..` resolved), no file
+  replaced without `"overwrite": true`, no file deleted.
+- Pictures for Claude are JPEG with the longest side at most 1024 pixels, with the
+  original size and the conversion factor stated.
+- Exports run in the background with a task id; presets for TikTok / Reels / Shorts,
+  YouTube 1080p and 4K, with automatic scaling when the shape matches.
+- `kadr-engine::still_frames`: single pictures of a file, a clip or the finished
+  timeline, and labelled contact sheets.
+- Silence detection: `kadr-vision::silence_detection` (RMS level per 10 ms window,
+  incremental), `kadr-engine::silence_analysis` (sound decoded piece by piece at
+  16 kHz), the `detect_silences` tool.
+- Integration tests driving the server through an MCP client, including the real
+  binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
+  README section "Editing with Claude".
+
 ### Added (phase 6a: desktop app design)
 
 - `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,

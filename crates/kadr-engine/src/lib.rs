@@ -7,7 +7,10 @@
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
 //! - [`quick_assembly`]: build a simple project from a list of files;
 //! - [`region_tracking`]: follow a selected region through a clip, forwards and
-//!   backwards, to fill a tracked blur (the face blur).
+//!   backwards, to fill a tracked blur (the face blur);
+//! - [`still_frames`]: single pictures of a file, a clip or the timeline, and
+//!   contact sheets of thumbnails;
+//! - [`silence_analysis`]: the silent parts of a file's sound.
 //!
 //! ## Rules for this crate
 //!
@@ -23,9 +26,14 @@ pub mod export;
 pub mod project_files;
 pub mod quick_assembly;
 pub mod region_tracking;
+pub mod silence_analysis;
+pub mod still_frames;
 
 pub use export::{
     ExportCancellation, ExportError, ExportProgress, ExportReport, ExportRequest, export_project,
+};
+pub use kadr_media::{
+    EncodingSpeed, FfmpegBackend, MediaBackend, MediaError, VideoEncoderPreference,
 };
 pub use kadr_render::RendererPreference;
 pub use region_tracking::{

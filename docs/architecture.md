@@ -24,8 +24,11 @@ app.
 
 An arrow means "depends on". Dependencies are declared in `Cargo.toml` only when the
 code starts using them (Cargo warns about unused ones and CI fails on warnings). Since
-phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` are real,
-and since phase 4 `kadr-engine → kadr-vision`; the others arrive with their phase.
+phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` are real;
+since phase 4, `kadr-engine → kadr-vision` (region tracking, and silence analysis
+since phase 5); since phase 5, `kadr-mcp → kadr-tools → kadr-engine / kadr-core`
+too (`kadr-mcp` also uses `kadr-engine` directly, for the FFmpeg backend the engine
+re-exports). The others arrive with their phase.
 
 ```mermaid
 flowchart TD
@@ -89,4 +92,5 @@ sequenceDiagram
 ```
 
 No request ever goes from Kadr to Anthropic. See
-[decisions/0004-claude-through-local-mcp-only.md](decisions/0004-claude-through-local-mcp-only.md).
+[decisions/0004-claude-through-local-mcp-only.md](decisions/0004-claude-through-local-mcp-only.md)
+and, for the tools and their rules, [mcp-server.md](mcp-server.md).
