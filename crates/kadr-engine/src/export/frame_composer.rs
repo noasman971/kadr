@@ -6,19 +6,20 @@
 //!
 //! Each clip gets its own video source, opened when the clip first appears and
 //! closed once it is over, so two clips of the same file never fight over one
-//! decoder position.
+//! decoder position. Text clips are rasterised once and kept while their words
+//! and style stay the same.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use kadr_core::clip::{Clip, ClipContent};
+use kadr_core::clip::{Clip, ClipContent, TextContent};
 use kadr_core::ids::ClipId;
 use kadr_core::media_asset::MediaKind;
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
 use kadr_media::{MediaBackend, VideoFrame, VideoFrameSource};
-use kadr_render::{CanvasDescription, FrameRenderer, LayerPlacement, VisualLayer};
+use kadr_render::{CanvasDescription, FrameRenderer, LayerPlacement, TextRasterizer, VisualLayer};
 
 use super::ExportError;
 
@@ -28,6 +29,10 @@ pub(super) struct FrameComposer<'export> {
     backend: &'export dyn MediaBackend,
     renderer: Box<dyn FrameRenderer>,
     open_sources: HashMap<ClipId, Box<dyn VideoFrameSource>>,
+    /// Created on the first text clip: loading fonts takes a moment.
+    text_rasterizer: Option<TextRasterizer>,
+    /// The picture of each text clip, with the content it was drawn from.
+    text_pictures: HashMap<ClipId, (TextContent, Arc<VideoFrame>)>,
 }
 
 impl<'export> FrameComposer<'export> {
@@ -41,6 +46,8 @@ impl<'export> FrameComposer<'export> {
             backend,
             renderer,
             open_sources: HashMap::new(),
+            text_rasterizer: None,
+            text_pictures: HashMap::new(),
         }
     }
 
@@ -92,14 +99,17 @@ impl<'export> FrameComposer<'export> {
     }
 
     /// The source picture a clip shows at `timeline_time`, or `None` if the clip
-    /// shows no picture (text clips are rendered from phase 3; sound has none).
+    /// shows no picture (sound only).
     fn source_picture_of(
         &mut self,
         clip: &Clip,
         timeline_time: Timestamp,
     ) -> Result<Option<Arc<VideoFrame>>, ExportError> {
-        let ClipContent::Media(segment) = &clip.content else {
-            return Ok(None);
+        let segment = match &clip.content {
+            ClipContent::Media(segment) => segment,
+            ClipContent::Text(text_content) => {
+                return Ok(Some(self.text_picture_of(clip.id, text_content)));
+            }
         };
         let Some(media_asset) = self.project.media_asset(segment.media_asset_id) else {
             return Ok(None);
@@ -123,6 +133,22 @@ impl<'export> FrameComposer<'export> {
             ),
         };
         Ok(Some(source.frame_at(source_time)?))
+    }
+
+    /// The picture of a text clip, drawn again only if its words or style changed.
+    fn text_picture_of(&mut self, clip_id: ClipId, text_content: &TextContent) -> Arc<VideoFrame> {
+        if let Some((drawn_content, picture)) = self.text_pictures.get(&clip_id)
+            && drawn_content == text_content
+        {
+            return Arc::clone(picture);
+        }
+        let rasterizer = self.text_rasterizer.get_or_insert_with(TextRasterizer::new);
+        let picture = Arc::new(VideoFrame::Rgba(
+            rasterizer.rasterize(&text_content.text, &text_content.style),
+        ));
+        self.text_pictures
+            .insert(clip_id, (text_content.clone(), Arc::clone(&picture)));
+        picture
     }
 
     /// Frees the decoders of clips that ended before `timeline_time`.

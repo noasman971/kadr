@@ -35,6 +35,7 @@ run while compiling (procedural macros) and are not part of the program.
 | `ctrlc` | Clean cancellation with Ctrl+C in `kadr-cli` | MIT OR Apache-2.0 |
 | `wgpu`, `naga` and their dependencies (`ash`, `glow`, `gpu-allocator`, `half`…) | GPU rendering | MIT OR Apache-2.0 (some also Zlib, BSD, ISC, Apache-2.0 only) |
 | `pollster` | Waiting for GPU operations | MIT OR Apache-2.0 |
+| `cosmic-text` and its dependencies (`swash`, `harfrust`, `skrifa`, `fontdb`, `ttf-parser`, `unicode-*`…) | Text layout and rasterisation | MIT OR Apache-2.0 / MIT / Apache-2.0 / Zlib; `self_cell` is used under Apache-2.0 |
 
 ## Rust crates used only by tests (not shipped)
 
@@ -53,6 +54,12 @@ run while compiling (procedural macros) and are not part of the program.
 | libx264 (inside GPL FFmpeg builds) | Software H.264 encoder | GPL-2.0-or-later |
 
 FFmpeg is linked dynamically: users can replace the libraries with their own build.
+
+## Fonts
+
+| Font | Role | License |
+|---|---|---|
+| Inter 4.1 (`InterVariable.ttf`), by The Inter Project Authors | Default text font, bundled in `crates/kadr-render/assets/fonts/` | SIL Open Font License 1.1 (full text next to the font, `Inter-LICENSE.txt`) |
 
 ## Models and data files
 

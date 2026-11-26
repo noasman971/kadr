@@ -22,8 +22,8 @@ It is the source of truth for scope, phases and rules.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
 - **Phase 3 (GPU rendering): in progress**, in three pull requests: 3a GPU compositing
-  and YUV colour pipeline (done, branch `feature/phase-3a-gpu-compositing`), 3b text
-  with the bundled Inter font (the owner chose to bundle it), 3c colour adjustment,
+  and YUV colour pipeline (merged, PR #3), 3b text with the bundled Inter font (the
+  owner chose to bundle it; branch `feature/phase-3b-text`), 3c colour adjustment,
   blur and pixelation effects. Tag `v0.4.0` when all three are merged and validated.
 
 ## Decisions taken with the owner
@@ -117,6 +117,10 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
 - GPU tests: `KADR_GPU_ADAPTER=software` forces WARP / lavapipe, `KADR_REQUIRE_GPU=1`
   turns "no GPU" into a failure. To check GPU vs CPU on a real export, compare both
   files with `ffmpeg -i a.mp4 -i b.mp4 -lavfi psnr -f null -` (47 dB today).
+- Inter 4's variable font declares the family **"Inter Variable"**, not "Inter": a
+  request for "Inter" silently fell back to Segoe UI until `text.rs` redirected it.
+  `TextRasterizer::has_font_family` and a test now guard it. Look at rendered text
+  (export a frame, extract it with ffmpeg) rather than trusting pixel counts alone.
 - Clippy 1.100 wants `as_chunks::<N>()` instead of `chunks_exact(N)` for constant sizes,
   and flags enum variants much larger than the others (box them).
 - MCP over stdio: **never print to stdout** in `kadr-mcp` except protocol messages.

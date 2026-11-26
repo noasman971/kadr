@@ -28,7 +28,7 @@ Claude conversation.**
 | 0 | Foundations: workspace, CI, scripts, documentation | ✅ Done |
 | 1 | Data model: timeline, clips, effects, undo/redo, project file | ✅ Done |
 | 2 | Decoding, encoding and export from the command line | ✅ Done |
-| 3 | GPU rendering (`wgpu`): compositing ✅, text, effects | 🚧 In progress |
+| 3 | GPU rendering (`wgpu`): compositing ✅, text ✅, effects | 🚧 In progress |
 | 4 | Face blur by classic region tracking | |
 | 5 | Local MCP server for Claude | |
 | 6 | Desktop app (Tauri 2) — MVP | |
@@ -168,9 +168,8 @@ previews, Ctrl+C to cancel cleanly):
 .\target\release\kadr-cli render my-edit.kadr my-edit.mp4
 ```
 
-Current limits, lifted in the next steps: text clips and effects (colour, blur) are
-not drawn yet (phase 3b and 3c), and phone videos with a rotation flag are not rotated
-yet.
+Current limits, lifted in the next steps: effects (colour, blur) are not drawn yet
+(phase 3c), and phone videos with a rotation flag are not rotated yet.
 
 ---
 

@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use kadr_core::clip::ClipContent;
 use kadr_core::project::Project;
 use kadr_core::time::TimeSpan;
 use kadr_media::audio_buffer::sample_index_at;
@@ -276,12 +275,6 @@ fn write_sound_range(
 fn describe_unrendered_parts(project: &Project) -> Vec<String> {
     let mut warnings = Vec::new();
     for (_, clip) in project.timeline().all_clips() {
-        if matches!(clip.content, ClipContent::Text(_)) {
-            warnings.push(format!(
-                "text clip {} was not drawn: text rendering arrives in phase 3",
-                clip.id
-            ));
-        }
         for effect in clip.effects.iter().filter(|effect| effect.is_enabled) {
             warnings.push(format!(
                 "the {} (effect {}) of clip {} was not applied: effects arrive in phase 3",
