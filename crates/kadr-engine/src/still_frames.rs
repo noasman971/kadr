@@ -212,14 +212,14 @@ pub fn timeline_pictures_at(
     renderer_preference: RendererPreference,
     timeline_times: &[Timestamp],
 ) -> Result<Vec<RgbaImage>, StillFrameError> {
-    let mut composer = FrameComposer::new(project, backend, create_renderer(renderer_preference)?);
+    let mut composer = FrameComposer::new(create_renderer(renderer_preference)?);
     let mut sorted_times: Vec<(usize, Timestamp)> =
         timeline_times.iter().copied().enumerate().collect();
     // The composer reads sources forward fastest; give the times in order.
     sorted_times.sort_by_key(|(_, time)| *time);
     let mut pictures: Vec<Option<RgbaImage>> = vec![None; timeline_times.len()];
     for (original_index, timeline_time) in sorted_times {
-        let frame = composer.compose_frame_at(timeline_time)?;
+        let frame = composer.compose_frame_at::<ExportError>(project, backend, timeline_time)?;
         pictures[original_index] = Some(frame.to_rgba().into_owned());
     }
     Ok(pictures.into_iter().flatten().collect())

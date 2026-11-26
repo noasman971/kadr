@@ -12,6 +12,8 @@
 node_modules/
 /apps/*/dist/
 /apps/*/src-tauri/target/
+# Schemas Tauri regenerates at every build
+/apps/*/src-tauri/gen/
 
 # Editors and operating systems
 .vscode/

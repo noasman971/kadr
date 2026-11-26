@@ -6,7 +6,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -33,6 +33,11 @@ kadr-vision = { path = "crates/kadr-vision" }
 base64 = "0.23.1"
 clap = { version = "4.6.10", features = ["derive"] }
 ctrlc = "3.5.3"
+# Desktop app (apps/desktop/src-tauri): Tauri 2 and the official plugins it uses.
+tauri = { version = "2.12.7", features = [] }
+tauri-build = { version = "2.7.6", features = [] }
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-opener = "2.7.3"
 # Canonical paths without the Windows `\\?\` prefix, for messages people can read.
 dunce = "1.0.5"
 # Text layout and rasterisation; no fontconfig, so Linux needs no extra system library.
@@ -91,3 +96,13 @@ opt-level = 3
 # Video processing is CPU heavy: optimise across crates in release builds.
 lto = "thin"
 codegen-units = 1
+
+# Build scripts and procedural macros are compiled with optimisations. Without them,
+# `bindgen` (which generates the FFmpeg bindings in `ffmpeg-sys-next`'s build script)
+# overflows the 1 MB main-thread stack Windows gives build scripts, since the desktop
+# app's procedural macros enable more of `syn`. Optimised, it also runs faster.
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.release.build-override]
+opt-level = 3

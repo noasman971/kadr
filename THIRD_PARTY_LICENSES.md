@@ -37,6 +37,7 @@ run while compiling (procedural macros) and are not part of the program.
 | `pollster` | Waiting for GPU operations | MIT OR Apache-2.0 |
 | `rustfft` (+ `num-complex`, `num-traits`, `num-integer`, `primal-check`, `strength_reduce`, `transpose`) | Fourier transforms of the region tracker | MIT OR Apache-2.0 |
 | `cosmic-text` and its dependencies (`swash`, `harfrust`, `skrifa`, `fontdb`, `ttf-parser`, `unicode-*`…) | Text layout and rasterisation | MIT OR Apache-2.0 / MIT / Apache-2.0 / Zlib; `self_cell` is used under Apache-2.0 |
+| `tauri`, `tauri-build`, `tauri-plugin-dialog`, `tauri-plugin-opener` and their dependencies (`wry`, `tao`, `webview2-com`, `windows`, `gtk`/`webkit2gtk` on Linux, `objc2` on macOS, `tokio`, `serde_with`…) | The desktop app's window, webview, commands and file dialogs | MIT OR Apache-2.0 (a few dependencies MIT, Apache-2.0, BSD-3-Clause, Zlib or Unicode-3.0) |
 | `rmcp` and its dependencies (`tokio`, `tokio-util`, `futures`, `pin-project-lite`, `uuid`, `chrono`, `pastey`…) | The MCP server (`kadr-mcp`) | Apache-2.0 (`rmcp`) / MIT / MIT OR Apache-2.0 |
 | `schemars` (+ `schemars_derive` *(build)*, `dyn-clone`, `ref-cast`) | JSON schemas of the tool parameters | MIT / MIT OR Apache-2.0 |
 | `tracing`, `tracing-subscriber` and their dependencies (`sharded-slab`, `thread_local`, `matchers`, `regex-automata`…) | Logs of `kadr-mcp`, on stderr | MIT / MIT OR Apache-2.0 |
@@ -52,6 +53,28 @@ run while compiling (procedural macros) and are not part of the program.
 | `tempfile` | Temporary folders in tests | MIT OR Apache-2.0 |
 | `criterion` and its dependencies | Benchmarks | Apache-2.0 OR MIT |
 | `similar`, `console`, `tempfile` and their dependencies | Used by `insta` | Apache-2.0 / MIT / MIT OR Apache-2.0 |
+
+## Front-end packages built into the desktop app
+
+Bundled into `apps/desktop/dist/` and shipped with the app. Exact versions are pinned
+in `apps/desktop/package-lock.json`; to list licenses: `npx license-checker --production`
+in `apps/desktop/`.
+
+| Package | Role | License |
+|---|---|---|
+| `svelte` | Interface components (compiled into the app) | MIT |
+| `@tauri-apps/api`, `@tauri-apps/plugin-dialog` | Calls to the Rust back end and file dialogs | MIT OR Apache-2.0 |
+| `@fontsource-variable/inter` | The Inter font for the interface | SIL Open Font License 1.1 (font), MIT (package) |
+| Lucide icons (shapes copied into `apps/desktop/src/lib/ui/icons.ts`) | Interface icons | ISC |
+
+## Front-end development tools (not shipped)
+
+| Package | Use | License |
+|---|---|---|
+| `vite`, `@sveltejs/vite-plugin-svelte` and their dependencies (`rolldown`, `lightningcss`, `postcss`…) | Building the front end | MIT (some dependencies MPL-2.0 or BSD) |
+| `typescript`, `svelte-check`, `@tsconfig/svelte` | Type checking | Apache-2.0 / MIT |
+| `vitest` | Front-end unit tests | MIT |
+| `@tauri-apps/cli` | Running and packaging the app | MIT OR Apache-2.0 |
 
 ## Native libraries
 
@@ -82,3 +105,5 @@ pre-trained model. See
 | GitHub Action `actions/checkout` | CI | MIT |
 | GitHub Action `dtolnay/rust-toolchain` | CI | MIT |
 | GitHub Action `Swatinem/rust-cache` | CI | LGPL-3.0 |
+| GitHub Action `actions/setup-node` | CI | MIT |
+| Microsoft Edge WebView2 (Windows), WebKitGTK (Linux), WKWebView (macOS) | The system webview the desktop app runs in; part of the system, not shipped by Kadr | Microsoft software license / LGPL-2.1 / Apple |

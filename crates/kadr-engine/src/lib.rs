@@ -6,6 +6,10 @@
 //! - [`project_files`]: save and open `.kadr` files (atomically);
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
 //! - [`quick_assembly`]: build a simple project from a list of files;
+//! - [`preview`]: pictures of the timeline at any time, at an interface's size;
+//! - [`timeline_sound`]: the mixed sound of any range of the timeline, for playback;
+//! - [`media_overview`]: thumbnails and waveforms of media files;
+//! - [`picture_scaling`]: shrinking pictures for display;
 //! - [`still_frames`]: single pictures of a file, a clip or the timeline, and
 //!   contact sheets of thumbnails;
 //! - [`silence_analysis`]: the silent parts of a file's sound.
@@ -21,10 +25,14 @@
 //! See `docs/architecture.md`.
 
 pub mod export;
+pub mod media_overview;
+pub mod picture_scaling;
+pub mod preview;
 pub mod project_files;
 pub mod quick_assembly;
 pub mod silence_analysis;
 pub mod still_frames;
+pub mod timeline_sound;
 
 pub use export::{
     ExportCancellation, ExportError, ExportProgress, ExportReport, ExportRequest, export_project,
