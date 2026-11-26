@@ -201,3 +201,12 @@ and sound ([docs/desktop-app.md](docs/desktop-app.md)). Details:
   with `gh pr view` whether the action went through before repeating it.
 - Merging `origin/main` can put a CHANGELOG entry under the wrong version once a
   phase is tagged: check where each entry lands after a merge.
+- Desktop app, interface size: the setting scales `body` with CSS `zoom`. Pointer
+  positions and `getBoundingClientRect()` are then zoomed, element sizes and
+  `scrollLeft` are not: turn pointer positions into timeline pixels with
+  `pointerOffsetX` (`src/lib/ui/pointer.ts`), or seeks land 1.5 times too far at 150 %.
+- CSS `repeat(0, …)` is invalid and drops the whole `grid-template-rows`: build the
+  track list in code (an empty timeline had a 70 px ruler).
+- Checking the running app from a script (DevTools port, faking the file dialog and
+  file drops): see docs/desktop-app.md, "Driving the running app from a script".
+  Computer use may be refused; the script route needs no permission.
