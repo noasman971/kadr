@@ -32,7 +32,7 @@ use kadr_render::{
 use super::ExportError;
 
 /// Renders timeline pictures for one export.
-pub(super) struct FrameComposer<'export> {
+pub(crate) struct FrameComposer<'export> {
     project: &'export Project,
     backend: &'export dyn MediaBackend,
     renderer: Box<dyn FrameRenderer>,
@@ -44,7 +44,7 @@ pub(super) struct FrameComposer<'export> {
 }
 
 impl<'export> FrameComposer<'export> {
-    pub(super) fn new(
+    pub(crate) fn new(
         project: &'export Project,
         backend: &'export dyn MediaBackend,
         renderer: Box<dyn FrameRenderer>,
@@ -60,12 +60,12 @@ impl<'export> FrameComposer<'export> {
     }
 
     /// What renders the frames, for the export report.
-    pub(super) fn renderer_description(&self) -> String {
+    pub(crate) fn renderer_description(&self) -> String {
         self.renderer.description()
     }
 
     /// The finished picture of the timeline at `timeline_time`.
-    pub(super) fn compose_frame_at(
+    pub(crate) fn compose_frame_at(
         &mut self,
         timeline_time: Timestamp,
     ) -> Result<VideoFrame, ExportError> {
@@ -205,7 +205,7 @@ fn enabled_color_adjustments(clip: &Clip) -> Vec<ColorAdjustment> {
 }
 
 /// The areas the clip's enabled tracked blurs hide at `source_time`.
-fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<HiddenRegion> {
+pub(crate) fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<HiddenRegion> {
     clip.effects
         .iter()
         .filter(|effect| effect.is_enabled)

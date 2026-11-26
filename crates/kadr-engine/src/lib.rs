@@ -5,7 +5,9 @@
 //!
 //! - [`project_files`]: save and open `.kadr` files (atomically);
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
-//! - [`quick_assembly`]: build a simple project from a list of files.
+//! - [`quick_assembly`]: build a simple project from a list of files;
+//! - [`still_frames`]: single pictures of a file, a clip or the timeline, and
+//!   contact sheets of thumbnails.
 //!
 //! ## Rules for this crate
 //!
@@ -20,8 +22,12 @@
 pub mod export;
 pub mod project_files;
 pub mod quick_assembly;
+pub mod still_frames;
 
 pub use export::{
     ExportCancellation, ExportError, ExportProgress, ExportReport, ExportRequest, export_project,
+};
+pub use kadr_media::{
+    EncodingSpeed, FfmpegBackend, MediaBackend, MediaError, VideoEncoderPreference,
 };
 pub use kadr_render::RendererPreference;
