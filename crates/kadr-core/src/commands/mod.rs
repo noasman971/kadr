@@ -15,6 +15,7 @@
 //! - `apply` may be called again after `revert` (that is what redo does).
 
 mod clip_commands;
+mod clip_part_commands;
 mod effect_commands;
 mod keyframe_commands;
 mod media_commands;
@@ -28,6 +29,7 @@ pub use clip_commands::{
     AddClip, ClipEdge, MoveClip, RemoveClip, SetClipCrop, SetClipPropertyValue, SetClipSpeed,
     SetClipText, SplitClip, TrimClip,
 };
+pub use clip_part_commands::RemoveClipParts;
 pub use effect_commands::{AddEffect, RemoveEffect, ReplaceEffect, SetEffectEnabled};
 pub use keyframe_commands::{RemoveKeyframe, SetKeyframe};
 pub use media_commands::{ImportMedia, RemoveMedia};

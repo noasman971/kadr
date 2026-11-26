@@ -271,6 +271,41 @@ impl fmt::Display for TimeSpan {
     }
 }
 
+/// A stretch of time from `start` (included) to `end` (excluded), never empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TimeRange {
+    start: Timestamp,
+    end: Timestamp,
+}
+
+impl TimeRange {
+    /// The range from `start` to `end`, or `None` unless `end` is after `start`.
+    pub fn new(start: Timestamp, end: Timestamp) -> Option<Self> {
+        (end > start).then_some(Self { start, end })
+    }
+
+    /// Where the range starts (included).
+    pub const fn start(self) -> Timestamp {
+        self.start
+    }
+
+    /// Where the range ends (excluded).
+    pub const fn end(self) -> Timestamp {
+        self.end
+    }
+
+    /// How long the range lasts (never zero).
+    pub fn duration(self) -> TimeSpan {
+        TimeSpan::from_ticks(self.end.ticks() - self.start.ticks())
+    }
+}
+
+impl fmt::Display for TimeRange {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} to {}", self.start, self.end)
+    }
+}
+
 /// A frame rate, as an exact fraction: `numerator` frames every `denominator` seconds.
 ///
 /// Integer rates use a denominator of 1 (`30/1`). NTSC rates use 1001
@@ -375,6 +410,22 @@ impl FrameRate {
         let frames = u128::from(timestamp.ticks()) * u128::from(self.numerator)
             / (u128::from(self.denominator) * u128::from(TICKS_PER_SECOND));
         u64::try_from(frames).unwrap_or(u64::MAX)
+    }
+
+    /// The start of the frame shown at `timestamp`: `timestamp` itself when a
+    /// frame starts there, the start of that frame otherwise.
+    pub fn frame_start_at_or_before(self, timestamp: Timestamp) -> Timestamp {
+        self.timestamp_of_frame(self.frame_index_at(timestamp))
+    }
+
+    /// The first frame start at or after `timestamp`.
+    pub fn frame_start_at_or_after(self, timestamp: Timestamp) -> Timestamp {
+        let frame_start = self.frame_start_at_or_before(timestamp);
+        if frame_start == timestamp {
+            frame_start
+        } else {
+            self.timestamp_of_frame(self.frame_index_at(timestamp).saturating_add(1))
+        }
     }
 
     /// How many frames are needed to show `duration`: every frame starting
@@ -557,6 +608,35 @@ mod tests {
             frame_rate.timestamp_of_frame(25),
             Timestamp::from_whole_seconds(1)
         );
+    }
+
+    #[test]
+    fn times_snap_to_the_frame_starts_around_them() {
+        let frame_rate = FrameRate::FPS_25; // one frame = 40 ms
+        let at = Timestamp::from_milliseconds;
+        assert_eq!(frame_rate.frame_start_at_or_before(at(79)), at(40));
+        assert_eq!(frame_rate.frame_start_at_or_after(at(41)), at(80));
+        assert_eq!(frame_rate.frame_start_at_or_before(at(80)), at(80));
+        assert_eq!(frame_rate.frame_start_at_or_after(at(80)), at(80));
+        // NTSC frames do not last a whole number of ticks: a frame start is still
+        // found again exactly.
+        let ntsc = FrameRate::FPS_29_97;
+        let third_frame = ntsc.timestamp_of_frame(3);
+        assert_eq!(ntsc.frame_start_at_or_after(third_frame), third_frame);
+        assert_eq!(
+            ntsc.frame_start_at_or_after(Timestamp::from_ticks(third_frame.ticks() + 1)),
+            ntsc.timestamp_of_frame(4)
+        );
+    }
+
+    #[test]
+    fn a_time_range_is_never_empty() {
+        let at = Timestamp::from_whole_seconds;
+        assert_eq!(TimeRange::new(at(2), at(2)), None);
+        assert_eq!(TimeRange::new(at(3), at(2)), None);
+        let range = TimeRange::new(at(2), at(5)).unwrap();
+        assert_eq!(range.duration(), TimeSpan::from_whole_seconds(3));
+        assert_eq!(range.to_string(), "2.000 s to 5.000 s");
     }
 
     #[test]
