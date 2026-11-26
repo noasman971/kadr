@@ -22,6 +22,16 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - `kadr-cli render --cpu`; the export report names the renderer.
 - `docs/rendering.md`, decision record 0006.
 
+### Added (phase 3b: text)
+
+- Text clips are drawn: `TextRasterizer` (`cosmic-text`) lays out and rasterises the
+  words, with left, centre or right alignment and line breaks.
+- The Inter font is bundled (SIL Open Font License 1.1); system fonts serve other
+  families and characters Inter lacks, such as emoji.
+- `LayerSizing::NativePixels`: texts are drawn at their size in canvas pixels, videos
+  and images keep fitting inside the canvas.
+- Export tests drawing a title with the CPU and the GPU renderers.
+
 ### Changed
 
 - Exports are BT.709 limited range and tagged as such in the MP4 (phase 2 exports were

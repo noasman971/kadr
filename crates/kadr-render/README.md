@@ -8,11 +8,13 @@ preview and the export.
   reference), both behind `FrameRenderer`; `create_renderer` picks the GPU when one
   works.
 - A single video already at canvas size passes through untouched.
+- `TextRasterizer` draws text clips with `cosmic-text` and the bundled Inter font
+  (`assets/fonts/`, SIL Open Font License 1.1).
 - Benchmarks: `cargo bench -p kadr-render`.
 
-- **Depends on:** `kadr-core`, `kadr-media` (without FFmpeg), `wgpu`, `image`, `rayon`.
+- **Depends on:** `kadr-core`, `kadr-media` (without FFmpeg), `wgpu`, `cosmic-text`, `image`, `rayon`.
 - **Used by:** `kadr-engine`.
-- **Status:** phase 3a (GPU compositing). Text (3b), colour, blur and pixelation
+- **Status:** phase 3a (GPU compositing) and 3b (text). Colour, blur and pixelation
   effects (3c) next.
 
 See [docs/rendering.md](../../docs/rendering.md).

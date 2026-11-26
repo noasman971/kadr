@@ -71,6 +71,25 @@ Inverse mapping: for each canvas pixel the layer may cover, find the source poin
 in parallel. YUV layers are converted to RGBA first and the result is converted to
 BT.709 YUV at the end. The CPU renderer is the **reference**: the GPU must match it.
 
+## Text
+
+Text clips are laid out and rasterised by `cosmic-text` into a transparent RGBA
+picture just large enough for the words (plus a margin for overhanging glyphs), then
+drawn like any other layer — but at their **native size**: one picture pixel per canvas
+pixel (`LayerSizing::NativePixels`), so a 64-pixel font is 64 pixels tall in the video,
+before the clip's own scale. Videos and images keep `FitInsideCanvas`.
+
+- **Inter is bundled** (`crates/kadr-render/assets/fonts/InterVariable.ttf`, SIL Open
+  Font License 1.1), so the default style looks the same on every machine. The variable
+  font names itself "Inter Variable"; styles asking for "Inter" are redirected to it.
+- **System fonts** are loaded too: they serve other families a user picks and the
+  characters Inter lacks (emoji, many scripts). An unknown family falls back to an
+  existing font instead of drawing nothing.
+- Line breaks start new lines; lines are not wrapped. Alignment (left, centre, right)
+  lines each line up within the widest one.
+- The export rasterises each text clip once and reuses the picture while its words and
+  style stay the same.
+
 ## GPU matches CPU
 
 `crates/kadr-render/tests/gpu_matches_cpu.rs` renders the same scenes on both and
