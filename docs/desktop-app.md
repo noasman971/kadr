@@ -186,6 +186,10 @@ request when it ends, so one gesture is one undo step:
 - Pointer positions go through `pointerOffsetX` (`src/lib/ui/pointer.ts`), because
   the interface size setting zooms the page.
 
+![A file dragged from the library: ghost, snapping guide and badge](screenshots/desktop-timeline-drop.jpg)
+
+![Trimming a clip: its length, and the frame at the edge in the preview](screenshots/desktop-timeline-trim.jpg)
+
 ## Adding an edit
 
 1. Add a variant to `EditRequest` in `editing.rs`, with a test, and a branch in
