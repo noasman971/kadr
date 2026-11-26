@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use support::TestServer;
 
 /// The tools section 5 of the specification asks for (blur_region and
-/// get_blur_status arrive with phase 4's tracking; detect_silences with phase 4a).
+/// get_blur_status arrive with phase 4b's tracking analysis).
 const REQUIRED_TOOLS: &[&str] = &[
     "find_media_files",
     "import_media",
@@ -22,6 +22,7 @@ const REQUIRED_TOOLS: &[&str] = &[
     "get_clip",
     "get_frame",
     "get_contact_sheet",
+    "detect_silences",
     "create_project",
     "open_project",
     "add_clip",
