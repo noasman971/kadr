@@ -242,6 +242,17 @@ Details: [docs/architecture.md](docs/architecture.md).
 - Checking the running app from a script (DevTools port, faking the file dialog and
   file drops): see docs/desktop-app.md, "Driving the running app from a script".
   Computer use may be refused; the script route needs no permission.
+- Svelte components that close while a field is focused: WebView2 fires `blur` (and
+  `change`, for an open colour picker) on the field **while it is being removed**, and
+  by then the component's props may already be `undefined` or another item's. Handlers
+  that commit on blur or change must not read props: `ClipInspector` keeps the clip's
+  id from its creation (`untrack`) and reads the clip's settings from `editor.view`;
+  `NumberField` compares the typed text with the value it had on focus, not with
+  `value`. Reproduce such bugs by dispatching the event from a patched
+  `Element.prototype.remove` in the page (DevTools port).
+- Editable number text must read back as the same number: `Intl` grouping turns 1200
+  into "1,200" in English, which parses as 1.2. Use `formatEditableNumber` /
+  `parseEditableNumber` (`src/lib/ui/numberText.ts`) for anything typed back.
 - Transitions (phase 8a, decision 0050) live on clip **edges** (`entry_transition`,
   `exit_transition`), never as separate objects: no command has to update them when
   clips move. The clip touching the edge is drawn underneath by
