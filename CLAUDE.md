@@ -248,6 +248,10 @@ Details: [docs/architecture.md](docs/architecture.md).
   track list in code (an empty timeline had a 70 px ruler).
 - Checking the running app from a script (DevTools port, faking the file dialog and
   file drops): see docs/desktop-app.md, "Driving the running app from a script".
+  When another session's app is running, start yours on other ports **and** with
+  its own `WEBVIEW2_USER_DATA_FOLDER`, or WebView2 fails with `0x8007139F`.
+- In scripts, `.picture` also matches the library's thumbnails: aim at the preview
+  through `svg.surface` (the blur overlay) or `section.preview`.
   Computer use may be refused; the script route needs no permission.
 - Svelte components that close while a field is focused: WebView2 fires `blur` (and
   `change`, for an open colour picker) on the field **while it is being removed**, and

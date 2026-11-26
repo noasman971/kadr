@@ -267,7 +267,7 @@
       </g>
     {/each}
 
-    {#if blurTool.isActive && blurTool.region}
+    {#if blurTool.phase !== "off" && blurTool.region}
       {@const region = blurTool.region}
       <g class="tool-box" class:too-small={!blurTool.isRegionLargeEnough}>
         {#if blurTool.shape === "ellipse"}
