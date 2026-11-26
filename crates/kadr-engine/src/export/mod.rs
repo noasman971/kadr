@@ -10,6 +10,7 @@
 //! nor replaces a previous good export.
 
 pub(crate) mod audio_mixer;
+mod clip_layers;
 pub(crate) mod frame_composer;
 
 use std::fs;

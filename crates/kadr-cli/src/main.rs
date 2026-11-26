@@ -5,12 +5,14 @@
 //! ```text
 //! kadr-cli probe video.mp4
 //! kadr-cli assemble --output edit.kadr --format vertical clip1.mp4 clip2.mp4 music.mp3
+//! kadr-cli assemble --output demo.kadr --transition fade --title "Hello" clip1.mp4 clip2.mp4
 //! kadr-cli render edit.kadr edit.mp4
 //! kadr-cli blur interview.mp4 --at 2.5 --rect 420,180,160,200 -o blurred.mp4 --debug
 //! ```
 
 mod arguments;
 mod blur;
+mod finishing_touches;
 mod reports;
 
 use std::error::Error;
@@ -19,14 +21,16 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::Parser;
-use kadr_core::project::ProjectSettings;
+use kadr_core::project::{Project, ProjectSettings};
+use kadr_core::text_animation::TextAnimation;
 use kadr_core::time::TimeSpan;
+use kadr_core::transition::Transition;
 use kadr_engine::project_files::{load_project_file, save_project_file};
 use kadr_engine::quick_assembly::assemble_project_from_files;
 use kadr_engine::{ExportCancellation, ExportRequest, RendererPreference, export_project};
 use kadr_media::{EncodingSpeed, FfmpegBackend, MediaBackend, VideoEncoderPreference};
 
-use arguments::{CanvasFormat, Command, CommandLine};
+use arguments::{CanvasFormat, Command, CommandLine, TitleAnimationChoice, TransitionChoice};
 
 fn main() -> ExitCode {
     let command_line = CommandLine::parse();
@@ -47,6 +51,12 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
             output,
             format,
             image_duration,
+            transition,
+            transition_seconds,
+            title,
+            title_seconds,
+            title_animation,
+            title_animation_seconds,
             files,
         } => {
             let image_duration = TimeSpan::from_seconds(image_duration)?;
@@ -55,6 +65,14 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
                 &files,
                 settings_for(format),
                 image_duration,
+            )?;
+            let project = add_finishing_touches(
+                project,
+                FinishingTouches {
+                    transition: transition.map(|choice| (choice, transition_seconds)),
+                    title: title.map(|text| (text, title_seconds)),
+                    title_animation: (title_animation, title_animation_seconds),
+                },
             )?;
             save_project_file(&project, &output)?;
             println!("{}", reports::describe_assembled_project(&output, &project));
@@ -103,6 +121,40 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
             },
         ),
     }
+}
+
+/// The optional `assemble` switches, with their durations in seconds.
+struct FinishingTouches {
+    transition: Option<(TransitionChoice, f64)>,
+    title: Option<(String, f64)>,
+    title_animation: (TitleAnimationChoice, f64),
+}
+
+fn add_finishing_touches(
+    mut project: Project,
+    touches: FinishingTouches,
+) -> Result<Project, Box<dyn Error>> {
+    if let Some((choice, duration_in_seconds)) = touches.transition {
+        let transition = Transition {
+            style: choice.style(),
+            duration: TimeSpan::from_seconds(duration_in_seconds)?,
+        };
+        project = finishing_touches::add_transitions_at_every_cut(project, transition)?;
+    }
+    if let Some((text, duration_in_seconds)) = touches.title {
+        let (animation_choice, animation_seconds) = touches.title_animation;
+        let animation = TextAnimation {
+            style: animation_choice.style(),
+            duration: TimeSpan::from_seconds(animation_seconds)?,
+        };
+        project = finishing_touches::add_animated_title(
+            project,
+            &text,
+            TimeSpan::from_seconds(duration_in_seconds)?,
+            animation,
+        )?;
+    }
+    Ok(project)
 }
 
 fn settings_for(format: CanvasFormat) -> ProjectSettings {
