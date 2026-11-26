@@ -4,6 +4,8 @@
   each with a Reset. Every finished change is one edit, so one undo step.
 -->
 <script lang="ts">
+  import { tick } from "svelte";
+
   import type { ClipValueName, ClipView, ColorSettings, EditRequest, TextAlignment } from "../../api/types";
   import { t, translations } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
@@ -51,12 +53,16 @@
     draftText = clip.text?.text ?? "";
   });
 
-  // A title just added asks for its words: focus the text field.
+  // A title just added asks for its words: focus the text field and select its
+  // placeholder words, once they are rendered, so typing replaces them.
   $effect(() => {
-    if (editor.clipToFocusForText === clip.id && textArea) {
-      textArea.focus();
-      textArea.select();
+    const field = textArea;
+    if (editor.clipToFocusForText === clip.id && field) {
       editor.clipToFocusForText = null;
+      void tick().then(() => {
+        field.focus();
+        field.select();
+      });
     }
   });
 

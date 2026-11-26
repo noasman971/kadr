@@ -85,6 +85,8 @@ class ExportJob {
       await backend.startExport(settings, (event) => this.handleEvent(event));
     } catch (error) {
       if (isCommandError(error) && error.code === "exportFileExists" && !settings.replacesExistingFile) {
+        // Nothing runs while the question is asked: the settings stay on screen.
+        this.phase = "setup";
         await this.askToReplace(settings);
         return;
       }
@@ -130,6 +132,8 @@ class ExportJob {
         this.finished = event;
         this.phase = "finished";
         if (!this.isDialogOpen) {
+          // The notice tells the result: the next Export starts a new one.
+          this.phase = "setup";
           toasts.show({
             tone: "success",
             message: t("export.finishedToast", { name: quoted(fileNameOf(event.filePath)) }),
