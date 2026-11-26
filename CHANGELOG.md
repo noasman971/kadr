@@ -8,6 +8,28 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
+### Added (phase 3a: GPU rendering)
+
+- `VideoFrame` is now `Rgba` or `Yuv420`: decoders hand over their YUV planes and the
+  encoder takes YUV planes, so most pictures are never converted on the CPU.
+- `YuvColorSpace` (BT.601 / BT.709, limited / full range) with one set of conversion
+  coefficients shared by the CPU code and the GPU shaders.
+- `kadr-render`: `FrameRenderer` with a `GpuRenderer` (`wgpu` 30: Vulkan, DirectX 12,
+  Metal, OpenGL ES) and the `CpuRenderer` reference; the GPU is used when available.
+- A single video already at canvas size is passed through without drawing.
+- Tests checking the GPU draws the same pictures as the CPU (WARP / lavapipe in CI).
+- `criterion` benchmarks of 1080p and 4K frames (`cargo bench -p kadr-render`).
+- `kadr-cli render --cpu`; the export report names the renderer.
+- `docs/rendering.md`, decision record 0006.
+
+### Changed
+
+- Exports are BT.709 limited range and tagged as such in the MP4 (phase 2 exports were
+  BT.601 untagged, which shifted HD colours).
+- FFmpeg only prints fatal messages; Kadr reports every failure itself.
+- Measured on the owner's laptop: GPU frames take 10 ms (1080p) and 25 ms (4K); a mixed
+  1080p export runs at 1.6× real time instead of 0.6×.
+
 ## [0.3.0] — Phase 2: media and export
 
 ### Added

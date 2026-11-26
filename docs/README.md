@@ -6,7 +6,8 @@
 | [data-model.md](data-model.md) | Time, identifiers, project, timeline, clips, animation, effects, commands and undo, validation rules, the `.kadr` file |
 | [contributing.md](contributing.md) | Environment, naming and code conventions, branches, commits, pull requests |
 | [decisions/](decisions/) | Architecture decision records: why things are the way they are |
-| [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works, current performance |
+| [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works |
+| [rendering.md](rendering.md) | YUV from end to end, colour spaces, the GPU and CPU renderers, how they are compared, benchmarks |
 
 Documents added in later phases:
 

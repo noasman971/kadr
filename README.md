@@ -14,9 +14,9 @@ Claude conversation.**
 - **Desktop first, Android next.** Windows, macOS and Linux, then an Android app built
   on the same engine.
 
-> **Status: phase 2 — media and export.** Kadr can read video, audio and image
-> files, build a project, and export it to MP4 from the command line. There is no
-> graphical interface yet. See the [roadmap](#roadmap) and
+> **Status: phase 3 — GPU rendering (in progress).** Kadr can read video, audio and
+> image files, build a project, and export it to MP4 from the command line, rendering
+> on the GPU. There is no graphical interface yet. See the [roadmap](#roadmap) and
 > [Trying Kadr today](#trying-kadr-today).
 
 ---
@@ -27,8 +27,8 @@ Claude conversation.**
 |---|---|---|
 | 0 | Foundations: workspace, CI, scripts, documentation | ✅ Done |
 | 1 | Data model: timeline, clips, effects, undo/redo, project file | ✅ Done |
-| 2 | Decoding, encoding and export from the command line | 🔍 In review |
-| 3 | GPU rendering (`wgpu`) | ⏳ Next |
+| 2 | Decoding, encoding and export from the command line | ✅ Done |
+| 3 | GPU rendering (`wgpu`): compositing ✅, text, effects | 🚧 In progress |
 | 4 | Face blur by classic region tracking | |
 | 5 | Local MCP server for Claude | |
 | 6 | Desktop app (Tauri 2) — MVP | |
@@ -160,16 +160,17 @@ an audio track; `--format vertical` for TikTok / Reels / Shorts):
 .\target\release\kadr-cli assemble --output my-edit.kadr --format vertical clip1.mp4 clip2.mp4 music.mp3
 ```
 
-Export it to MP4 (hardware encoder when available; `--software-encoder` to force
-libx264, `--fast` for quick previews, Ctrl+C to cancel cleanly):
+Export it to MP4 (rendered on the GPU and encoded in hardware when available;
+`--cpu` to render on the CPU, `--software-encoder` to force libx264, `--fast` for quick
+previews, Ctrl+C to cancel cleanly):
 
 ```powershell
 .\target\release\kadr-cli render my-edit.kadr my-edit.mp4
 ```
 
-Current limits, lifted in the next phases: text clips and effects (colour, blur) are
-not drawn yet (phase 3), rendering runs on the CPU (phase 3 moves it to the GPU), and
-phone videos with a rotation flag are not rotated yet.
+Current limits, lifted in the next steps: text clips and effects (colour, blur) are
+not drawn yet (phase 3b and 3c), and phone videos with a rotation flag are not rotated
+yet.
 
 ---
 
@@ -179,7 +180,7 @@ phone videos with a rotation flag are not rotated yet.
 crates/
   kadr-core     data model: project, timeline, clips, effects, undo/redo
   kadr-media    decoding and encoding (FFmpeg on desktop, MediaCodec on Android)
-  kadr-render   compositor shared by preview and export (CPU now, GPU in phase 3)
+  kadr-render   GPU (wgpu) and CPU renderers shared by preview and export
   kadr-vision   classic computer vision: face tracking for blur, silence detection
   kadr-engine   single API used by every interface; background tasks
   kadr-tools    editing tools exposed to Claude

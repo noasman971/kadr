@@ -10,6 +10,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0003](0003-face-blur-by-classic-tracking.md) | Face blur by classic region tracking, without AI | Accepted |
 | [0004](0004-claude-through-local-mcp-only.md) | Claude only through a local MCP server, no Claude API | Accepted |
 | [0005](0005-ffmpeg-through-ffmpeg-next.md) | FFmpeg through `ffmpeg-next`, behind backend traits | Accepted |
+| [0006](0006-gpu-rendering-yuv-end-to-end.md) | GPU rendering with `wgpu`, YUV from end to end, CPU as reference | Accepted |
 
 ## Template
 
