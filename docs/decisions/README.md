@@ -12,6 +12,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0005](0005-ffmpeg-through-ffmpeg-next.md) | FFmpeg through `ffmpeg-next`, behind backend traits | Accepted |
 | [0006](0006-gpu-rendering-yuv-end-to-end.md) | GPU rendering with `wgpu`, YUV from end to end, CPU as reference | Accepted |
 | [0007](0007-scale-from-point-tracking.md) | The tracked region's size comes from point tracking (Median Flow) | Accepted |
+| [0008](0008-anchor-tracking-to-the-selection.md) | A slow-learning filter, anchored to the selection's appearance | Accepted |
 | [0010](0010-mcp-server-with-rmcp.md) | The MCP server is built on `rmcp`, with tools defined in `kadr-tools` | Accepted |
 | [0011](0011-allowed-folders-as-server-arguments.md) | In file mode, the allowed folders are arguments of the server | Accepted |
 | [0012](0012-file-mode-saves-every-change.md) | File mode saves the project after every change | Accepted |

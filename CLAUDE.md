@@ -186,6 +186,11 @@ Details: [docs/architecture.md](docs/architecture.md).
   (`scripts/generate-tracking-benchmark.ps1`, measured with the `track_video`
   example and `scripts/compare-tracking-with-truth.py`) showed drifts that every
   synthetic scenario missed, while the PSR stayed "confident". Measure changes there.
+- Tracking, drift: a high PSR only means the filter found what it learnt. With
+  MOSSE's usual learning rate (0.125) the region slid off a real video's object by
+  2–4 px/s while every frame stayed "confident". The filter now learns at 0.02 and
+  every confident frame is anchored to the selection's appearance (decision 0008):
+  re-measure on the benchmark before touching either.
 - Tracking, size: MOSSE tried at several scales drifts (it learns the slightly wrong
   size every frame), and DSST on grey levels cannot see a zoom at all. The size comes
   from the optical flow points (Median Flow): see decision 0007 before changing it.

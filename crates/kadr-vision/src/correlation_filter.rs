@@ -49,14 +49,32 @@ pub(crate) const CONTEXT_FACTOR: f32 = 2.0;
 const TARGET_PEAK_SIGMA_IN_CELLS: f32 = 2.0;
 
 /// How fast the filter learns a new appearance: the weight of the newest frame
-/// (0 = never learns, 1 = only remembers the last frame). Bolme et al. use 0.125.
-const LEARNING_RATE: f32 = 0.125;
+/// (0 = never learns, 1 = only remembers the last frame).
+///
+/// Bolme et al. use 0.125. On a real 1080p video, that made the filter forget
+/// the selection within a few frames: every small error of position was learnt
+/// as the new centre, and the region slid 2 to 4 pixels per second onto the
+/// background while the PSR stayed high. KCF and DSST use 0.02 to 0.025; on
+/// the same video 0.02 brought the mean error from 197 to 4 pixels, and 0 lost
+/// the region (its appearance does change). The tracker also anchors the
+/// region to the selection's appearance (see `tracker.rs`).
+const LEARNING_RATE: f32 = 0.02;
 
 /// `λ`, relative to the average energy per frequency of the training windows.
 const REGULARIZATION_RELATIVE_TO_MEAN_ENERGY: f32 = 0.01;
 
 /// Half-side of the square around the peak left out of the sidelobe (11 × 11 cells).
 const PEAK_EXCLUSION_HALF_SIDE_IN_CELLS: usize = 5;
+
+/// Weight of the background, far from the region, in the filter's window (the
+/// region itself weighs 1). The window is twice as large as the region, so the
+/// background would otherwise dominate it: a still, detailed background then
+/// holds the filter back while the region moves, and it drifts.
+pub(crate) const BACKGROUND_WEIGHT: f32 = 0.0;
+
+/// How fast the weight falls from 1 at the region's edge to the background's,
+/// in half-sides of the region (a gaussian tail).
+pub(crate) const TARGET_MASK_TAIL_IN_HALF_SIDES: f32 = 0.5;
 
 /// Below this standard deviation of the log brightness, a window is uniform:
 /// there is nothing to follow in it.
@@ -67,13 +85,17 @@ const MINIMUM_WINDOW_STANDARD_DEVIATION: f32 = 1e-3;
 /// at every scale, and the tracker could no longer tell when the region grows.
 const TRAINING_ROTATIONS_IN_RADIANS: [f32; 5] = [0.0, 0.05, -0.05, 0.1, -0.1];
 
-/// A square part of the image, in image pixels.
+/// A square part of the image, in image pixels, around a region.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SquareWindow {
     /// Centre of the window.
     pub(crate) center: Point,
     /// Side of the window.
     pub(crate) side_in_pixels: f32,
+    /// Width of the region at the centre of the window.
+    pub(crate) region_width_in_pixels: f32,
+    /// Height of the region at the centre of the window.
+    pub(crate) region_height_in_pixels: f32,
 }
 
 /// Where the filter's response peaks, and how clearly.
@@ -240,10 +262,35 @@ fn prepare_window(
     if standard_deviation < MINIMUM_WINDOW_STANDARD_DEVIATION {
         return None;
     }
-    for (value, weight) in values.iter_mut().zip(cosine_window) {
-        *value = (*value - mean) / standard_deviation * weight;
+    let region_mask = region_mask(&window, cell_size_in_pixels);
+    for ((value, weight), region_weight) in values.iter_mut().zip(cosine_window).zip(region_mask) {
+        *value = (*value - mean) / standard_deviation * weight * region_weight;
     }
     Some(values)
+}
+
+/// For every cell, how much it belongs to the region: 1 inside, falling to
+/// [`BACKGROUND_WEIGHT`] outside.
+fn region_mask(window: &SquareWindow, cell_size_in_pixels: f32) -> impl Iterator<Item = f32> {
+    let half_side = WINDOW_SIDE_IN_CELLS as f32 / 2.0;
+    let half_width_in_cells = (window.region_width_in_pixels / 2.0 / cell_size_in_pixels).max(1.0);
+    let half_height_in_cells =
+        (window.region_height_in_pixels / 2.0 / cell_size_in_pixels).max(1.0);
+    let along = |offset: f32, half_extent: f32| {
+        let beyond = (offset.abs() / half_extent - 1.0).max(0.0) / TARGET_MASK_TAIL_IN_HALF_SIDES;
+        (-beyond * beyond).exp()
+    };
+    let columns: Vec<f32> = (0..WINDOW_SIDE_IN_CELLS)
+        .map(|column| along(column as f32 - half_side, half_width_in_cells))
+        .collect();
+    let rows: Vec<f32> = (0..WINDOW_SIDE_IN_CELLS)
+        .map(|row| along(row as f32 - half_side, half_height_in_cells))
+        .collect();
+    rows.into_iter().flat_map(move |row_weight| {
+        columns.clone().into_iter().map(move |column_weight| {
+            BACKGROUND_WEIGHT + (1.0 - BACKGROUND_WEIGHT) * row_weight * column_weight
+        })
+    })
 }
 
 /// The 2D cosine (Hann) window: 1 at the centre cell, fading to 0 at the edges.
@@ -368,6 +415,8 @@ mod tests {
         SquareWindow {
             center: Point { x, y },
             side_in_pixels: 96.0,
+            region_width_in_pixels: 48.0,
+            region_height_in_pixels: 48.0,
         }
     }
 

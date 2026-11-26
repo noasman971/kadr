@@ -144,6 +144,44 @@ impl TrackedBlur {
         };
         Some(region.grown_by_percent(margin_in_percent))
     }
+
+    /// The stretches of samples where the tracker was not confident, in time
+    /// order: what the timeline highlights and what Claude checks.
+    pub fn unsure_ranges(&self) -> Vec<UnsureRange> {
+        let mut ranges = Vec::new();
+        let mut current: Option<UnsureRange> = None;
+        for sample in &self.region_samples {
+            if sample.confidence == TrackingConfidence::Confident {
+                ranges.extend(current.take());
+                continue;
+            }
+            current = Some(match current {
+                Some(range) => UnsureRange {
+                    last_source_time: sample.source_time,
+                    confidence: range.confidence.least_sure(sample.confidence),
+                    ..range
+                },
+                None => UnsureRange {
+                    first_source_time: sample.source_time,
+                    last_source_time: sample.source_time,
+                    confidence: sample.confidence,
+                },
+            });
+        }
+        ranges.extend(current);
+        ranges
+    }
+}
+
+/// A stretch of a tracked blur where the tracker was not confident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnsureRange {
+    /// Source time of the first unsure sample.
+    pub first_source_time: Timestamp,
+    /// Source time of the last unsure sample.
+    pub last_source_time: Timestamp,
+    /// The least sure confidence in the stretch: uncertain or lost.
+    pub confidence: TrackingConfidence,
 }
 
 /// How much the margin grows where the tracker was not confident.
@@ -322,6 +360,37 @@ mod tests {
             confidence,
             origin: RegionSampleOrigin::Tracker,
         }
+    }
+
+    #[test]
+    fn unsure_stretches_are_listed_with_their_least_sure_confidence() {
+        use TrackingConfidence::{Confident, Lost, Uncertain};
+        let area = region(0.0, 0.0, 10.0, 10.0);
+        let blur = TrackedBlur {
+            region_samples: [Confident, Uncertain, Lost, Uncertain, Confident, Uncertain]
+                .into_iter()
+                .enumerate()
+                .map(|(second, confidence)| sample(second as u64, area, confidence))
+                .collect(),
+            ..TrackedBlur::with_default_style()
+        };
+        let at = Timestamp::from_whole_seconds;
+        assert_eq!(
+            blur.unsure_ranges(),
+            vec![
+                UnsureRange {
+                    first_source_time: at(1),
+                    last_source_time: at(3),
+                    confidence: Lost,
+                },
+                UnsureRange {
+                    first_source_time: at(5),
+                    last_source_time: at(5),
+                    confidence: Uncertain,
+                },
+            ]
+        );
+        assert!(TrackedBlur::with_default_style().unsure_ranges().is_empty());
     }
 
     fn blur_with_samples(samples: Vec<RegionSample>) -> TrackedBlur {

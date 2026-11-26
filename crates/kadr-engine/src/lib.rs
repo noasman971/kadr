@@ -7,6 +7,8 @@
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
 //! - [`export_presets`]: the export sizes, and a project scaled to another size;
 //! - [`quick_assembly`]: build a simple project from a list of files;
+//! - [`region_tracking`]: follow a selected region through a clip, forwards and
+//!   backwards, to fill a tracked blur (the face blur);
 //! - [`preview`]: pictures of the timeline at any time, at an interface's size;
 //! - [`timeline_sound`]: the mixed sound of any range of the timeline, for playback;
 //! - [`media_overview`]: thumbnails and waveforms of media files;
@@ -32,6 +34,7 @@ pub mod picture_scaling;
 pub mod preview;
 pub mod project_files;
 pub mod quick_assembly;
+pub mod region_tracking;
 pub mod silence_analysis;
 pub mod still_frames;
 pub mod timeline_sound;
@@ -43,3 +46,7 @@ pub use kadr_media::{
     EncodingSpeed, FfmpegBackend, MediaBackend, MediaError, VideoEncoderPreference,
 };
 pub use kadr_render::RendererPreference;
+pub use region_tracking::{
+    RegionTrackingError, RegionTrackingReport, RegionTrackingRequest, TrackingCancellation,
+    TrackingProgress, track_region,
+};

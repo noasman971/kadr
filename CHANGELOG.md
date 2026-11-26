@@ -28,6 +28,39 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   (`cargo bench -p kadr-vision`).
 - `docs/tracking-and-blur.md`, decision record 0007.
 
+### Added (phase 4b: blur analysis)
+
+- `kadr-engine`: `region_tracking`:
+  - `RegionTrackingRequest::for_clip` turns a selection on a clip into a request;
+  - `track_region` tracks it forwards and backwards from the selected frame. The
+    backward pass decodes in chunks. It reports progress and can be cancelled;
+  - the result is smoothed and stored as few samples as possible (within a pixel);
+  - `export_tracking_debug_video` draws the tracked box and its confidence.
+- `TrackedBlur::unsure_ranges` lists where the tracker was uncertain or lost.
+- `kadr-vision`: `TrackingError::RegionWithoutDetail` for a uniform region on a
+  textured background. A recovered region now counts as uncertain, and the
+  recovery search starts at exactly one region size.
+- `kadr-cli blur video.mp4 --at 2.5 --rect 420,180,160,200 -o out.mp4 [--debug]`.
+- `scripts/generate-tracking-benchmark.ps1`, the `track_video` example and
+  `scripts/compare-tracking-with-truth.py`: measure the tracker on a 60 s 1080p video
+  whose true path is known.
+
+### Fixed (phase 4b: tracking drift on a real video)
+
+On the 1080p benchmark the region slid off the object by 2 to 4 pixels per second
+while every frame stayed "confident" (mean centre error 197 px, size error 24 %). Now
+2 px and 1.7 % (decision record 0008):
+
+- Median Flow measures the size only from points moving with the region, and the
+  correlation filter's window is weighted towards the region.
+- The correlation filter learns at 0.02 instead of 0.125: it no longer forgets the
+  selection within a few frames.
+- Every confident frame is anchored to the selection's appearance: searched a few
+  cells around the answer at three sizes, the region is pulled towards it where it
+  matches clearly.
+- A confident frame that does not look like the selection at all is reported as
+  uncertain, and the region is re-anchored where the selection is found again nearby.
+
 ### Added (phase 5: MCP server, file mode)
 
 - `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
