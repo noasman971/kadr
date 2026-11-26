@@ -10,6 +10,8 @@
 //! - [`clip`]: media or text placed on a track, with volume, opacity, position…;
 //! - [`animation`]: keyframes that animate clip properties;
 //! - [`effect`]: colour adjustment and tracked blur;
+//! - [`transition`]: how videos and images enter and leave the picture;
+//! - [`text_animation`]: how texts appear and disappear;
 //! - [`commands`]: every change, as a reversible command;
 //! - [`history`]: the [`EditSession`](history::EditSession) applying commands
 //!   with undo and redo;
@@ -37,6 +39,8 @@ pub mod ids;
 pub mod media_asset;
 pub mod project;
 pub mod project_file;
+pub mod text_animation;
 pub mod time;
 pub mod timeline;
+pub mod transition;
 pub mod validation;

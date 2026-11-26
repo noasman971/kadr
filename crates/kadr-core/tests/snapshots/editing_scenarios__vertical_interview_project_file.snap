@@ -3,7 +3,7 @@ source: crates/kadr-core/tests/editing_scenarios.rs
 expression: json_text
 ---
 {
-  "format_version": 1,
+  "format_version": 2,
   "project": {
     "settings": {
       "canvas_size": {
@@ -155,7 +155,14 @@ expression: json_text
                     ]
                   }
                 }
-              ]
+              ],
+              "entry_transition": {
+                "style": {
+                  "type": "fade"
+                },
+                "duration": 352800000
+              },
+              "exit_transition": null
             },
             {
               "id": 8,
@@ -214,7 +221,21 @@ expression: json_text
                     "temperature_shift": 0.0
                   }
                 }
-              ]
+              ],
+              "entry_transition": {
+                "style": {
+                  "type": "slide",
+                  "direction": "left"
+                },
+                "duration": 282240000
+              },
+              "exit_transition": {
+                "style": {
+                  "type": "zoom",
+                  "direction": "out"
+                },
+                "duration": 705600000
+              }
             }
           ]
         },
@@ -236,6 +257,13 @@ expression: json_text
                   "font_size_in_pixels": 64.0,
                   "color": "#FFFFFFFF",
                   "alignment": "center"
+                },
+                "entry_animation": null,
+                "exit_animation": {
+                  "style": {
+                    "type": "type_on"
+                  },
+                  "duration": 564480000
                 }
               },
               "timeline_start": 0,
@@ -282,7 +310,9 @@ expression: json_text
                   "bottom_fraction": 0.0
                 }
               },
-              "effects": []
+              "effects": [],
+              "entry_transition": null,
+              "exit_transition": null
             }
           ]
         },
@@ -338,7 +368,9 @@ expression: json_text
                   "bottom_fraction": 0.0
                 }
               },
-              "effects": []
+              "effects": [],
+              "entry_transition": null,
+              "exit_transition": null
             }
           ]
         }

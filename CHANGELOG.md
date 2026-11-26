@@ -168,10 +168,42 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
 - `kadr-mcp` adds finished analyses to the project every second, so the file is up to
   date even if Claude makes no further call.
 
+### Added (phase 8a: transitions and text animations)
+
+- `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
+  in four directions, `zoom` in or out) and entry and exit **text animations** on texts
+  (`fade`, `slide`, `pop`, `type_on`, `word_by_word`), with the undoable commands
+  `SetClipTransition` and `SetTextAnimation` and their validation rules. A clip
+  touching a transition's edge on the same track shows underneath, so a fade between
+  two clips is a dissolve and a slide pushes the previous clip out. Splitting keeps
+  the entry on the first part and the exit on the second.
+- File format version 2, with a migration from version 1.
+- `kadr-render`: `transition_motion` and `text_animation_frame` move layers (opacity,
+  position, scale) on both renderers; `TextRasterizer::rasterize_revealed` draws
+  part of a text for type-on and word-by-word animations.
+- `kadr-engine`: exports draw transitions, reading the touching clip's source past its
+  cut (holding the file's last or first frame where it ends).
+- `kadr-cli assemble --transition … --title … --title-animation …` to try them.
+- `docs/transitions-and-text-animations.md`, decision record 0050.
+
 ### Changed
 
 - Build scripts and procedural macros are compiled with optimisations, so `bindgen`
   no longer overflows the stack of Windows build scripts.
+
+### Fixed
+
+- Desktop inspector: a change made just before the inspector closed (a click on the
+  empty timeline or on another clip) was lost, often with an error in the console.
+  It happened to a title's words typed and not yet confirmed, to a colour chosen in
+  the picker and to every number field (position, scale, opacity, crop, volume,
+  speed, colour, font size, length): the field sends its value while it is being
+  removed, when the inspector no longer has its clip. The change now goes to the
+  clip the inspector was showing.
+- Number fields: after ↑ or ↓, leaving the field put the old value back.
+- Number fields in English: a value of 1000 or more was shown as "1,200", read back
+  as 1.2, so just entering and leaving the field changed it (Position X 1200 px
+  became 1 px). Editable numbers are now shown without thousands separators.
 
 ## [0.4.0] — Phase 3: GPU rendering
 

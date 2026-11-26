@@ -60,11 +60,7 @@ impl AddClip {
         duration: TimeSpan,
         timeline_start: Timestamp,
     ) -> Self {
-        let content = TextContent {
-            text: text.into(),
-            duration,
-            style: TextStyle::default(),
-        };
+        let content = TextContent::new(text, duration, TextStyle::default());
         Self::new(track_id, ClipContent::Text(content), timeline_start)
     }
 }
@@ -243,13 +239,23 @@ impl EditCommand for MoveClip {
     }
 }
 
-/// Which edge of a clip a trim moves.
+/// One edge of a clip: the one a trim moves, or where a transition plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipEdge {
-    /// The beginning: the end stays in place.
+    /// The beginning (for a trim, the end stays in place).
     Start,
-    /// The end: the beginning stays in place.
+    /// The end (for a trim, the beginning stays in place).
     End,
+}
+
+impl ClipEdge {
+    /// `"start"` or `"end"`, for messages.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ClipEdge::Start => "start",
+            ClipEdge::End => "end",
+        }
+    }
 }
 
 /// Moves one edge of a clip, shortening or lengthening it.
@@ -275,13 +281,11 @@ impl TrimClip {
 
 impl EditCommand for TrimClip {
     fn label(&self) -> String {
-        let edge_name = match self.edge {
-            ClipEdge::Start => "start",
-            ClipEdge::End => "end",
-        };
         format!(
-            "Move the {edge_name} of clip {} to {}",
-            self.clip_id, self.new_edge_time
+            "Move the {} of clip {} to {}",
+            self.edge.display_name(),
+            self.clip_id,
+            self.new_edge_time
         )
     }
 

@@ -179,11 +179,7 @@ fn add_text(
             parameters.center_y_in_pixels.map(|y| y - canvas_centre.1),
         ),
     ];
-    let content = ClipContent::Text(TextContent {
-        text: parameters.text.clone(),
-        duration,
-        style,
-    });
+    let content = ClipContent::Text(TextContent::new(parameters.text.clone(), duration, style));
     let label = format!("Add the text \"{}\"", short_text(&parameters.text));
     let clip_id = toolbox.change_project(&label, |transaction| {
         let track_id = match track {

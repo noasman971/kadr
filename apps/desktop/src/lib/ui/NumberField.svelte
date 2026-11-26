@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { t, translations } from "../i18n/i18n.svelte";
+  import { formatEditableNumber, parseEditableNumber } from "./numberText";
 
   interface Props {
     label: string;
@@ -32,12 +33,17 @@
   let isEditing = $state(false);
   /** The value shown while dragging, before it is committed. */
   let draggedValue = $state<number | null>(null);
+  // The value when the field got the focus. Leaving the field compares the
+  // typed text with it, never with `value`: the field can be left while the
+  // component owning it closes (WebView2 blurs a focused field as it is removed),
+  // and by then `value` may read an item that is gone, or another one.
+  let valueAtFocus = 0;
 
   const shown = $derived(draggedValue ?? value);
 
   $effect(() => {
     if (!isEditing) {
-      text = translations.formatNumber(shown, decimals);
+      text = formatEditableNumber(shown, decimals, translations.language);
     }
   });
 
@@ -46,20 +52,29 @@
     return Math.min(max, Math.max(min, Math.round(candidate * factor) / factor));
   }
 
-  function commit(candidate: number): void {
+  /** Commits `candidate` if it differs from `baseline`, the value it replaces. */
+  function commit(candidate: number, baseline: number): void {
     const clamped = clamp(candidate);
-    if (clamped !== clamp(value)) {
+    if (clamped !== clamp(baseline)) {
       onCommit(clamped);
     }
   }
 
+  function startEditing(): void {
+    isEditing = true;
+    valueAtFocus = value;
+  }
+
   function commitText(): void {
+    if (!isEditing) {
+      return;
+    }
     isEditing = false;
-    const parsed = Number(text.replace(/\s/g, "").replace(",", "."));
+    const parsed = parseEditableNumber(text);
     if (Number.isFinite(parsed)) {
-      commit(parsed);
+      commit(parsed, valueAtFocus);
     } else {
-      text = translations.formatNumber(value, decimals);
+      text = formatEditableNumber(valueAtFocus, decimals, translations.language);
     }
   }
 
@@ -68,13 +83,17 @@
       (event.currentTarget as HTMLInputElement).blur();
     } else if (event.key === "Escape") {
       isEditing = false;
-      text = translations.formatNumber(value, decimals);
+      text = formatEditableNumber(value, decimals, translations.language);
       (event.currentTarget as HTMLInputElement).blur();
       event.stopPropagation();
     } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
       event.preventDefault();
       const direction = event.key === "ArrowUp" ? 1 : -1;
-      commit(value + direction * step * (event.shiftKey ? BIG_STEP_FACTOR : 1));
+      const stepped = clamp(value + direction * step * (event.shiftKey ? BIG_STEP_FACTOR : 1));
+      commit(stepped, value);
+      // The field shows the new value, so leaving it does not commit the old text back.
+      valueAtFocus = stepped;
+      text = formatEditableNumber(stepped, decimals, translations.language);
     }
     // Keys typed here are not editor shortcuts.
     event.stopPropagation();
@@ -95,7 +114,7 @@
     const end = () => {
       target.removeEventListener("pointermove", move);
       if (draggedValue !== null) {
-        commit(draggedValue);
+        commit(draggedValue, startValue);
       }
       draggedValue = null;
     };
@@ -117,7 +136,7 @@
         inputmode="decimal"
         aria-label={label}
         bind:value={text}
-        onfocus={() => (isEditing = true)}
+        onfocus={startEditing}
         onblur={commitText}
         onkeydown={handleKeydown}
         spellcheck="false"
