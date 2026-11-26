@@ -19,8 +19,9 @@
 //! ## Rules for this crate
 //!
 //! - Everything goes through the [`MediaBackend`] traits. The desktop backend is
-//!   [`FfmpegBackend`] (feature `ffmpeg`, on by default); the Android backend will
-//!   use `MediaCodec` (phase 9).
+//!   `FfmpegBackend` (feature `ffmpeg`, on by default); the Android backend is
+//!   `MediaCodecBackend` (feature `mediacodec`, Android builds only), which uses
+//!   the phone's hardware decoders and encoders. See `docs/android.md`.
 //! - Hardware encoding is used when available, with an automatic fallback to the
 //!   software encoder. Hardware *decoding* is not used yet: decoding on the CPU
 //!   costs about 1 ms per 1080p frame (see decision record 0006).
@@ -32,6 +33,8 @@ pub mod backend;
 pub mod error;
 #[cfg(feature = "ffmpeg")]
 mod ffmpeg;
+#[cfg(feature = "mediacodec")]
+mod mediacodec;
 pub mod test_patterns;
 pub mod video_frame;
 
@@ -43,4 +46,6 @@ pub use backend::{
 pub use error::MediaError;
 #[cfg(feature = "ffmpeg")]
 pub use ffmpeg::FfmpegBackend;
+#[cfg(all(feature = "mediacodec", target_os = "android"))]
+pub use mediacodec::MediaCodecBackend;
 pub use video_frame::{VideoFrame, YuvColorSpace, YuvMatrix, YuvPicture, YuvRange};

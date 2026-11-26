@@ -15,6 +15,9 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0020](0020-svelte-typescript-front-end.md) | Svelte 5 and TypeScript for the desktop front end | Accepted |
 | [0021](0021-desktop-app-layout.md) | The desktop app in `apps/desktop/`, its Rust crate in the workspace | Accepted |
 | [0022](0022-front-end-and-engine-communication.md) | The back end owns the project; preview frames and sound rendered by the engine, sent as binary | Accepted |
+| [0040](0040-media-backend-features.md) | The media backend is chosen with Cargo features (FFmpeg by default, none on Android) | Accepted |
+| [0041](0041-minimum-android-api-level.md) | Android 9 (API level 28) is the oldest supported Android | Accepted |
+| [0042](0042-mediacodec-through-the-ndk.md) | MediaCodec through the NDK media API, with the `ndk` crate | Accepted |
 
 ## Template
 

@@ -66,6 +66,8 @@ cargo fmt --all --check
 cargo doc --workspace --no-deps
 powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1
 powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
+# Android (docs/android.md): ANDROID_NDK_HOME set, cargo-ndk installed
+cargo ndk --target arm64-v8a --platform 28 build -p kadr-core -p kadr-vision -p kadr-render -p kadr-engine --no-default-features --lib
 ```
 
 End-of-phase checklist: build without warnings, clippy, fmt, tests, `cargo doc`, docs
@@ -164,3 +166,14 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
   the script to the scratchpad and run it from there.
+- **FFmpeg is a default feature of `kadr-engine`** (decision 0040): Android builds use
+  `--no-default-features`. Anything in `kadr-engine/src` that names `FfmpegBackend`
+  must be `#[cfg(feature = "ffmpeg")]`, or the Android CI job fails. Engine tests
+  always have FFmpeg (dev-dependency), so test files need nothing special.
+- Android toolchain: SDK in `%LOCALAPPDATA%\Android\Sdk`, NDK r30 in its
+  `ndk\30.0.16248370` folder; Git Bash sessions need `ANDROID_NDK_HOME` exported.
+  Since command-line tools 23, `sdkmanager` is a deprecated wrapper whose installs fail
+  ("Failed to connect to remote repository"): use
+  `cmdline-tools\latest\bin\android.exe sdk install ndk/<version>`. PowerShell's
+  `Expand-Archive` unpacked 100 files of a 150 MB zip in 30 minutes: use `unzip` from
+  Git Bash.

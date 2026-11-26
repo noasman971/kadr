@@ -11,6 +11,7 @@
 | [tracking-and-blur.md](tracking-and-blur.md) | The region tracker behind the face blur, step by step: settings, accuracy, speed, limits |
 | [ux.md](ux.md) | The desktop app's screens and flows, shortcuts, states, languages, accessibility ([mockups](mockups/index.html)) |
 | [design-system.md](design-system.md) | Interface tokens (colours, spacing, type, motion) and components |
+| [android.md](android.md) | Building the engine for Android phones: toolchain, commands, testing on a phone or emulator, what works and what is left |
 
 Documents added in later phases:
 
