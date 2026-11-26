@@ -6,6 +6,7 @@
   import type { ProjectView } from "../../api/types";
   import { t, undoStepDisplayName } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
+  import { exportJob } from "../../state/exportJob.svelte";
   import Button from "../../ui/Button.svelte";
   import Icon from "../../ui/Icon.svelte";
   import IconButton from "../../ui/IconButton.svelte";
@@ -95,12 +96,45 @@
   <span class="format-chip" title={t("topBar.format")}><Icon name="monitor" size={14} />{formatLabel}</span>
   <IconButton label={t("topBar.shortcuts")} shortcut="?" onclick={onShowShortcuts}><Icon name="help" /></IconButton>
   <IconButton label={t("topBar.settings")} onclick={onOpenSettings}><Icon name="settings" /></IconButton>
-  <Button variant="primary" disabled={!hasClips} title="{t('topBar.export')} (Ctrl+E)" onclick={onExport}>
-    <Icon name="download" />{t("topBar.export")}
-  </Button>
+  {#if exportJob.phase === "running" && !exportJob.isDialogOpen}
+    <!-- The export folded away with "Keep editing": a click opens it again. -->
+    <button type="button" class="export-pill tabular" onclick={() => exportJob.openDialog()}>
+      <span class="pill-bar" style:width="{exportJob.percentDone}%"></span>
+      <span class="pill-text"><Icon name="download" size={14} />{t("export.pill", { percent: exportJob.percentDone })}</span>
+    </button>
+  {:else}
+    <Button variant="primary" disabled={!hasClips} title="{t('topBar.export')} (Ctrl+E)" onclick={onExport}>
+      <Icon name="download" />{t("topBar.export")}
+    </Button>
+  {/if}
 </header>
 
 <style>
+  .export-pill {
+    position: relative;
+    height: var(--control-height);
+    min-width: 132px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-inset);
+    color: var(--color-text);
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .pill-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--color-accent-soft);
+    transition: width var(--duration-fast) linear;
+  }
+  .pill-text {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
   .top-bar {
     grid-area: top;
     display: flex;

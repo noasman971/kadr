@@ -2,7 +2,7 @@
 // here is a thin wrapper around one Tauri command; failures throw a
 // `CommandError` (see `types.ts`).
 
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 import {
   decodeRgbaPicture,
@@ -16,6 +16,9 @@ import {
 import type {
   EditRequest,
   EditResponse,
+  ExportEvent,
+  ExportSettings,
+  ExportStarted,
   ImportResponse,
   ProjectFormatChoice,
   ProjectView,
@@ -62,6 +65,16 @@ export const backend = {
     });
     return decodeRgbaPicture(buffer);
   },
+
+  /** Starts an export; `onEvent` receives its progress, then how it ended. */
+  startExport(settings: ExportSettings, onEvent: (event: ExportEvent) => void): Promise<ExportStarted> {
+    const channel = new Channel<ExportEvent>();
+    channel.onmessage = onEvent;
+    return invoke<ExportStarted>("start_export", { settings, onEvent: channel });
+  },
+  cancelExport: () => invoke<void>("cancel_export"),
+  revealExportedFile: (filePath: string) => invoke<void>("reveal_exported_file", { filePath }),
+  openExportedFile: (filePath: string) => invoke<void>("open_exported_file", { filePath }),
 
   async getWaveform(mediaId: number): Promise<Waveform> {
     return decodeWaveform(await invoke<ArrayBuffer>("get_waveform", { mediaId }));
