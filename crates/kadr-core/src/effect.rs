@@ -105,7 +105,49 @@ impl TrackedBlur {
             region_samples: Vec::new(),
         }
     }
+
+    /// Where the region is at `source_time`, interpolated between the two
+    /// nearest samples, with the confidence of the less sure of the two.
+    /// Before the first sample or after the last one, the nearest sample is kept
+    /// (better to hide too much than to reveal a face). `None` without samples.
+    pub fn region_at(&self, source_time: Timestamp) -> Option<(PixelRegion, TrackingConfidence)> {
+        let samples = &self.region_samples;
+        let index_of_next = samples.partition_point(|sample| sample.source_time <= source_time);
+        let (previous, next) = match (
+            index_of_next
+                .checked_sub(1)
+                .and_then(|index| samples.get(index)),
+            samples.get(index_of_next),
+        ) {
+            (Some(previous), Some(next)) => (previous, next),
+            (Some(only), None) | (None, Some(only)) => return Some((only.region, only.confidence)),
+            (None, None) => return None,
+        };
+        let elapsed = source_time.span_since(previous.source_time)?;
+        let between = next.source_time.span_since(previous.source_time)?;
+        let fraction = elapsed.fraction_of(between) as f32;
+        Some((
+            previous.region.interpolated_towards(&next.region, fraction),
+            previous.confidence.least_sure(next.confidence),
+        ))
+    }
+
+    /// The area to hide at `source_time`: the tracked region grown by the margin,
+    /// and by half as much again when the tracker was not confident.
+    pub fn hidden_area_at(&self, source_time: Timestamp) -> Option<PixelRegion> {
+        let (region, confidence) = self.region_at(source_time)?;
+        let margin_in_percent = match confidence {
+            TrackingConfidence::Confident => self.margin_in_percent,
+            TrackingConfidence::Uncertain | TrackingConfidence::Lost => {
+                self.margin_in_percent * UNSURE_MARGIN_FACTOR
+            }
+        };
+        Some(region.grown_by_percent(margin_in_percent))
+    }
 }
+
+/// How much the margin grows where the tracker was not confident.
+const UNSURE_MARGIN_FACTOR: f32 = 1.5;
 
 /// How a region is hidden.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -165,6 +207,32 @@ impl PixelRegion {
         .all(|value| value.is_finite());
         all_finite && self.width_in_pixels > 0.0 && self.height_in_pixels > 0.0
     }
+
+    /// The region `fraction` of the way to `target` (0 = this one, 1 = `target`).
+    pub fn interpolated_towards(&self, target: &PixelRegion, fraction: f32) -> PixelRegion {
+        let mix = |from: f32, to: f32| from + (to - from) * fraction;
+        PixelRegion {
+            left_in_pixels: mix(self.left_in_pixels, target.left_in_pixels),
+            top_in_pixels: mix(self.top_in_pixels, target.top_in_pixels),
+            width_in_pixels: mix(self.width_in_pixels, target.width_in_pixels),
+            height_in_pixels: mix(self.height_in_pixels, target.height_in_pixels),
+        }
+    }
+
+    /// The same region, wider and taller by `percent` of its size, around the same centre.
+    pub fn grown_by_percent(&self, percent: f32) -> PixelRegion {
+        let growth_factor = 1.0 + percent / 100.0;
+        let (new_width, new_height) = (
+            self.width_in_pixels * growth_factor,
+            self.height_in_pixels * growth_factor,
+        );
+        PixelRegion {
+            left_in_pixels: self.left_in_pixels - (new_width - self.width_in_pixels) / 2.0,
+            top_in_pixels: self.top_in_pixels - (new_height - self.height_in_pixels) / 2.0,
+            width_in_pixels: new_width,
+            height_in_pixels: new_height,
+        }
+    }
 }
 
 /// How sure the tracker was about a region.
@@ -178,6 +246,22 @@ pub enum TrackingConfidence {
     Uncertain,
     /// The region was lost (hidden or out of frame); the user should check it.
     Lost,
+}
+
+impl TrackingConfidence {
+    /// The less sure of two confidences.
+    pub fn least_sure(self, other: TrackingConfidence) -> TrackingConfidence {
+        let rank = |confidence| match confidence {
+            TrackingConfidence::Confident => 0,
+            TrackingConfidence::Uncertain => 1,
+            TrackingConfidence::Lost => 2,
+        };
+        if rank(other) > rank(self) {
+            other
+        } else {
+            self
+        }
+    }
 }
 
 /// Who decided where a region is.
@@ -203,4 +287,106 @@ pub struct RegionSample {
     pub confidence: TrackingConfidence,
     /// Who placed it.
     pub origin: RegionSampleOrigin,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn region(left: f32, top: f32, width: f32, height: f32) -> PixelRegion {
+        PixelRegion {
+            left_in_pixels: left,
+            top_in_pixels: top,
+            width_in_pixels: width,
+            height_in_pixels: height,
+        }
+    }
+
+    fn assert_regions_close(found: PixelRegion, expected: PixelRegion) {
+        let pairs = [
+            (found.left_in_pixels, expected.left_in_pixels),
+            (found.top_in_pixels, expected.top_in_pixels),
+            (found.width_in_pixels, expected.width_in_pixels),
+            (found.height_in_pixels, expected.height_in_pixels),
+        ];
+        assert!(
+            pairs.iter().all(|(a, b)| (a - b).abs() < 1e-3),
+            "{found:?} vs {expected:?}"
+        );
+    }
+
+    fn sample(at_second: u64, area: PixelRegion, confidence: TrackingConfidence) -> RegionSample {
+        RegionSample {
+            source_time: Timestamp::from_whole_seconds(at_second),
+            region: area,
+            confidence,
+            origin: RegionSampleOrigin::Tracker,
+        }
+    }
+
+    fn blur_with_samples(samples: Vec<RegionSample>) -> TrackedBlur {
+        TrackedBlur {
+            region_samples: samples,
+            ..TrackedBlur::with_default_style()
+        }
+    }
+
+    #[test]
+    fn regions_are_interpolated_between_samples() {
+        let blur = blur_with_samples(vec![
+            sample(
+                1,
+                region(100.0, 100.0, 50.0, 50.0),
+                TrackingConfidence::Confident,
+            ),
+            sample(
+                3,
+                region(200.0, 100.0, 70.0, 50.0),
+                TrackingConfidence::Uncertain,
+            ),
+        ]);
+        let (halfway, confidence) = blur.region_at(Timestamp::from_whole_seconds(2)).unwrap();
+        assert_eq!(halfway, region(150.0, 100.0, 60.0, 50.0));
+        assert_eq!(confidence, TrackingConfidence::Uncertain);
+    }
+
+    #[test]
+    fn the_nearest_sample_is_kept_outside_the_tracked_range() {
+        let first = region(10.0, 10.0, 20.0, 20.0);
+        let last = region(90.0, 10.0, 20.0, 20.0);
+        let blur = blur_with_samples(vec![
+            sample(2, first, TrackingConfidence::Confident),
+            sample(4, last, TrackingConfidence::Confident),
+        ]);
+        assert_eq!(blur.region_at(Timestamp::ZERO).unwrap().0, first);
+        assert_eq!(
+            blur.region_at(Timestamp::from_whole_seconds(9)).unwrap().0,
+            last
+        );
+        assert_eq!(
+            blur.region_at(Timestamp::from_whole_seconds(4)).unwrap().0,
+            last
+        );
+        assert!(
+            blur_with_samples(Vec::new())
+                .region_at(Timestamp::ZERO)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_margin_grows_where_the_tracker_was_unsure() {
+        let tracked = region(100.0, 100.0, 100.0, 100.0);
+        let confident = blur_with_samples(vec![sample(0, tracked, TrackingConfidence::Confident)]);
+        let unsure = blur_with_samples(vec![sample(0, tracked, TrackingConfidence::Lost)]);
+        // Default margin 20 %: 120 px wide; unsure: 30 %, 130 px wide. Same centre.
+        assert_regions_close(
+            confident.hidden_area_at(Timestamp::ZERO).unwrap(),
+            region(90.0, 90.0, 120.0, 120.0),
+        );
+        assert_regions_close(
+            unsure.hidden_area_at(Timestamp::ZERO).unwrap(),
+            region(85.0, 85.0, 130.0, 130.0),
+        );
+    }
 }
