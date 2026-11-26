@@ -229,7 +229,7 @@ fn enabled_color_adjustments(clip: &Clip) -> Vec<ColorAdjustment> {
 }
 
 /// The areas the clip's enabled tracked blurs hide at `source_time`.
-fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<HiddenRegion> {
+pub(crate) fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<HiddenRegion> {
     clip.effects
         .iter()
         .filter(|effect| effect.is_enabled)
