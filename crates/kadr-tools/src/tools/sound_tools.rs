@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::catalog::{ToolEffect, ToolEntry, declare_tool};
 use crate::output::{ToolError, ToolOutput};
 use crate::time_input::{seconds_in, seconds_of};
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 
 /// The sound tools.
 pub(crate) fn sound_tools() -> Vec<ToolEntry> {
@@ -79,7 +79,7 @@ struct SilencesView {
 }
 
 fn detect_silences(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: DetectSilencesParameters,
 ) -> Result<ToolOutput, ToolError> {
     let settings = settings_from(&parameters)?;
@@ -179,7 +179,7 @@ fn settings_from(
 
 /// Refuses files without sound, or outside the allowed folders.
 fn ensure_has_readable_sound(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     media_asset: &MediaAsset,
 ) -> Result<(), ToolError> {
     if !media_asset.description.has_audio() {

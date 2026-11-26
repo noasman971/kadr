@@ -18,7 +18,7 @@ use crate::catalog::{ToolEffect, ToolEntry, declare_tool};
 use crate::output::{ToolError, ToolOutput};
 use crate::pictures_for_claude::{MAXIMUM_PICTURE_SIDE_IN_PIXELS, PictureForClaude};
 use crate::time_input::{seconds_in, seconds_of, timestamp_from_seconds};
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 
 /// The picture tools.
 pub(crate) fn picture_tools() -> Vec<ToolEntry> {
@@ -72,7 +72,7 @@ struct GetFrameParameters {
 }
 
 fn get_frame(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: GetFrameParameters,
 ) -> Result<ToolOutput, ToolError> {
     let time = timestamp_from_seconds("time_in_seconds", parameters.time_in_seconds)?;
@@ -97,7 +97,7 @@ fn get_frame(
 }
 
 fn timeline_frame(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
     time: Timestamp,
 ) -> Result<(RgbaImage, String), ToolError> {
@@ -120,7 +120,7 @@ fn timeline_frame(
 }
 
 fn clip_frame(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
     clip_id: ClipId,
     time: Timestamp,
@@ -154,7 +154,7 @@ fn clip_frame(
 }
 
 fn media_frame(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
     media_id: MediaAssetId,
     time: Timestamp,
@@ -196,7 +196,10 @@ fn no_picture() -> ToolError {
 
 /// Refuses to read a media file outside the allowed folders (a project file can
 /// name any path).
-fn ensure_media_readable(toolbox: &KadrToolbox, media_asset: &MediaAsset) -> Result<(), ToolError> {
+fn ensure_media_readable(
+    toolbox: &ToolCall<'_>,
+    media_asset: &MediaAsset,
+) -> Result<(), ToolError> {
     toolbox
         .allowed_folders()
         .check_existing_file(&media_asset.description.file_path)
@@ -206,7 +209,7 @@ fn ensure_media_readable(toolbox: &KadrToolbox, media_asset: &MediaAsset) -> Res
 
 /// [`ensure_media_readable`] for every media file the timeline uses.
 pub(crate) fn ensure_project_media_readable(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
 ) -> Result<(), ToolError> {
     for media_asset in project.media_assets() {
@@ -255,7 +258,7 @@ struct ContactSheetView {
 }
 
 fn get_contact_sheet(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: GetContactSheetParameters,
 ) -> Result<ToolOutput, ToolError> {
     let (smallest, largest) = THUMBNAIL_COUNT_RANGE;
@@ -329,7 +332,7 @@ fn evenly_spaced_times(start: Timestamp, length: TimeSpan, count: u32) -> Vec<Ti
 type Thumbnails = (Vec<RgbaImage>, Vec<Timestamp>, String);
 
 fn timeline_thumbnails(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
     count: u32,
 ) -> Result<Thumbnails, ToolError> {
@@ -348,7 +351,7 @@ fn timeline_thumbnails(
 }
 
 fn clip_thumbnails(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
     clip_id: ClipId,
     count: u32,
@@ -373,7 +376,7 @@ fn clip_thumbnails(
 }
 
 fn media_thumbnails(
-    toolbox: &KadrToolbox,
+    toolbox: &ToolCall<'_>,
     project: &Project,
     media_id: MediaAssetId,
     count: u32,

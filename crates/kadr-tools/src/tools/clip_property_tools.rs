@@ -13,7 +13,7 @@ use serde::Deserialize;
 use crate::catalog::{ToolEffect, ToolEntry, declare_tool};
 use crate::output::{ToolError, ToolOutput};
 use crate::time_input::half_frame;
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::tools::timeline_tools::clip_details;
 
 /// The clip property tools.
@@ -67,7 +67,7 @@ struct SetClipSpeedParameters {
 }
 
 fn set_clip_speed(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: SetClipSpeedParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -157,7 +157,7 @@ struct SetClipVolumeParameters {
 }
 
 fn set_clip_volume(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: SetClipVolumeParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -277,7 +277,7 @@ impl SetTransformParameters {
 }
 
 fn set_transform(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: SetTransformParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);

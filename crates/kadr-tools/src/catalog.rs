@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::output::{ToolError, ToolOutput};
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 
 /// What a tool may do, for clients that show or confirm tool calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +44,7 @@ pub struct ToolDefinition {
 
 /// The function running a tool, from its raw JSON arguments.
 type ToolRunner =
-    Box<dyn Fn(&mut KadrToolbox, Value) -> Result<ToolOutput, ToolError> + Send + Sync>;
+    Box<dyn Fn(&mut ToolCall<'_>, Value) -> Result<ToolOutput, ToolError> + Send + Sync>;
 
 /// A tool: its definition and the code that runs it.
 pub(crate) struct ToolEntry {
@@ -63,7 +63,7 @@ pub(crate) fn declare_tool<Parameters>(
     title: &'static str,
     description: &'static str,
     effect: ToolEffect,
-    run: fn(&mut KadrToolbox, Parameters) -> Result<ToolOutput, ToolError>,
+    run: fn(&mut ToolCall<'_>, Parameters) -> Result<ToolOutput, ToolError>,
 ) -> ToolEntry
 where
     Parameters: DeserializeOwned + JsonSchema + 'static,
