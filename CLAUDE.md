@@ -45,9 +45,10 @@ It is the source of truth for scope, phases and rules.
   validation: at the end of a phase, still stop and wait for the owner's OK before
   tagging the version and starting the next phase.
 - **`main` is protected on GitHub** (owner's request, 2026-11-26), administrators
-  included: pull request required (0 approvals), the five CI checks required
+  included: pull request required (0 approvals), the six CI checks required
   ("Formatting", the three "Build, lint, test and docs (…)" jobs, "Test video fixtures
-  can be generated"), conversations resolved, no force push, no deletion. Direct pushes
+  can be generated", and since 2026-11-26 "Desktop front end (types, tests, build)"),
+  conversations resolved, no force push, no deletion. Direct pushes
   to `main` are refused. If a CI job is renamed, update the required checks too
   (`gh api repos/noasman971/kadr/branches/main/protection`), or every PR will wait for
   a check that never runs. Tags can still be pushed.

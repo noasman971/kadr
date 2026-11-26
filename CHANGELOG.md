@@ -89,6 +89,19 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - CI: WebKitGTK on Linux for the desktop crate, and a job checking, testing and
   building the front end.
 
+### Added (phase 6c: timeline editing)
+
+- Clips on the timeline show thumbnails along pictures and a waveform along sound,
+  with badges for a changed speed or volume.
+- Drag a file from the library onto a track or onto the "new track" zone; move
+  clips along their track, to another track or to a new one; trim either edge
+  (the preview shows the frame at the edge). A ghost shows where the clip would
+  land, or turns red and says why it cannot (overlap, wrong kind of track).
+- Snapping to clip edges, the playhead and the start (N, or Alt held to drag
+  without it); split at the playhead (S); delete the selection (Delete, with an
+  Undo notice); previous and next cut (↑ / ↓); hide, mute and remove tracks.
+- Every gesture is one undo step whose name appears in the undo button and notices.
+
 ### Changed
 
 - Build scripts and procedural macros are compiled with optimisations, so `bindgen`
