@@ -725,8 +725,9 @@ fn trim_clip(
 const SPLIT_CLIP_DESCRIPTION: &str = "\
 Cuts a clip in two at a time on the timeline (in seconds, strictly inside the clip). The first \
 part keeps the clip_id; the second part gets a new clip_id, returned. Effects and animations are \
-kept on both parts. To cut out a section (for example a silence from 4.2 s to 6.0 s): split at \
-4.2, split the second part at 6.0, then remove_clip the middle part with close_gap. \
+kept on both parts. To cut out a section (for example from 4.2 s to 6.0 s): split at 4.2, split \
+the second part at 6.0, then remove_clip the middle part with close_gap. To cut silences, \
+remove_silences does them all at once. \
 Example: {\"clip_id\": 4, \"time_in_seconds\": 12.5}";
 
 /// Parameters of `split_clip`.
