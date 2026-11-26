@@ -14,7 +14,7 @@ use kadr_media::{AudioBuffer, AudioSegmentRequest, MediaBackend};
 use super::{ExportCancellation, ExportError};
 
 /// The mixed sound of the whole timeline, at the project's sample rate.
-pub(super) fn mix_timeline_sound(
+pub(crate) fn mix_timeline_sound(
     project: &Project,
     backend: &dyn MediaBackend,
     cancellation: &ExportCancellation,
@@ -45,7 +45,7 @@ pub(super) fn mix_timeline_sound(
 }
 
 /// What to decode for this clip, or `None` if the clip has no sound.
-fn sound_request_for(
+pub(crate) fn sound_request_for(
     project: &Project,
     clip: &Clip,
     sample_rate: u32,
@@ -78,14 +78,20 @@ fn mix_clip_sound(
     first_sample: usize,
     clip: &Clip,
 ) {
-    let volume = &clip.volume_multiplier;
     let sample_rate = mix.sample_rate_in_hertz();
-    if volume.is_animated() {
-        mix.mix_in(clip_sound, first_sample, |sample_index| {
+    mix.mix_in(clip_sound, first_sample, clip_gain(clip, sample_rate));
+}
+
+/// The clip's volume at each of its samples (sample 0 is the clip's start).
+pub(crate) fn clip_gain(clip: &Clip, sample_rate: u32) -> impl Fn(usize) -> f32 + '_ {
+    let volume = &clip.volume_multiplier;
+    let is_animated = volume.is_animated();
+    let constant_volume = volume.constant_value;
+    move |sample_index| {
+        if is_animated {
             volume.value_at(span_of_sample_count(sample_index, sample_rate))
-        });
-    } else {
-        let constant_volume = volume.constant_value;
-        mix.mix_in(clip_sound, first_sample, |_| constant_volume);
+        } else {
+            constant_volume
+        }
     }
 }

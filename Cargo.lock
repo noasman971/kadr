@@ -844,6 +844,7 @@ dependencies = [
  "kadr-core",
  "kadr-media",
  "kadr-render",
+ "rayon",
  "tempfile",
  "thiserror",
 ]

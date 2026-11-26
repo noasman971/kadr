@@ -9,8 +9,8 @@
 //! name once complete: a cancelled or failed export never leaves a broken file
 //! nor replaces a previous good export.
 
-mod audio_mixer;
-mod frame_composer;
+pub(crate) mod audio_mixer;
+pub(crate) mod frame_composer;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -207,11 +207,7 @@ fn write_export(
         encoding_speed: request.encoding_speed,
     })?;
     let video_encoder_name = sink.video_encoder_name().to_string();
-    let mut composer = FrameComposer::new(
-        project,
-        backend,
-        create_renderer(request.renderer_preference)?,
-    );
+    let mut composer = FrameComposer::new(create_renderer(request.renderer_preference)?);
     let renderer_description = composer.renderer_description();
     let mut written_sample_count = 0;
 
@@ -220,7 +216,8 @@ fn write_export(
             return Err(ExportError::Cancelled);
         }
         let frame_start = settings.frame_rate.timestamp_of_frame(frame_index);
-        sink.write_video_frame(&composer.compose_frame_at(frame_start)?)?;
+        let frame = composer.compose_frame_at::<ExportError>(project, backend, frame_start)?;
+        sink.write_video_frame(&frame)?;
 
         // Keep sound and pictures advancing together in the file.
         let next_frame_start = settings.frame_rate.timestamp_of_frame(frame_index + 1);

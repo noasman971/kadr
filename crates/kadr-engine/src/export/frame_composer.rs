@@ -9,11 +9,16 @@
 //! decoder position. Text clips are rasterised once and kept while their words
 //! and style stay the same.
 //!
+//! The composer does not hold the project: the export hands it the same project
+//! for every frame, the preview ([`crate::preview`]) the latest version after each
+//! edit. Its caches check that what they hold still matches the clip.
+//!
 //! Effects: tracked blurs hide their region in the source picture (at the clip's
 //! source time) before it is drawn; colour adjustments are handed to the renderer
 //! with the layer.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kadr_core::clip::{Clip, ClipContent, TextContent};
@@ -23,35 +28,32 @@ use kadr_core::media_asset::MediaKind;
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
-use kadr_media::{MediaBackend, VideoFrame, VideoFrameSource};
+use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_render::{
-    CanvasDescription, FrameRenderer, HiddenRegion, LayerPlacement, TextRasterizer, VisualLayer,
-    hide_regions,
+    CanvasDescription, FrameRenderer, HiddenRegion, LayerPlacement, RenderError, TextRasterizer,
+    VisualLayer, hide_regions,
 };
 
-use super::ExportError;
+/// The decoder of one clip, with the file it reads.
+struct OpenVideoSource {
+    /// Checked on reuse: after an undo, a clip number can come back for another file.
+    file_path: PathBuf,
+    source: Box<dyn VideoFrameSource>,
+}
 
-/// Renders timeline pictures for one export.
-pub(super) struct FrameComposer<'export> {
-    project: &'export Project,
-    backend: &'export dyn MediaBackend,
+/// Renders timeline pictures, keeping decoders and text pictures between frames.
+pub(crate) struct FrameComposer {
     renderer: Box<dyn FrameRenderer>,
-    open_sources: HashMap<ClipId, Box<dyn VideoFrameSource>>,
+    open_sources: HashMap<ClipId, OpenVideoSource>,
     /// Created on the first text clip: loading fonts takes a moment.
     text_rasterizer: Option<TextRasterizer>,
     /// The picture of each text clip, with the content it was drawn from.
     text_pictures: HashMap<ClipId, (TextContent, Arc<VideoFrame>)>,
 }
 
-impl<'export> FrameComposer<'export> {
-    pub(super) fn new(
-        project: &'export Project,
-        backend: &'export dyn MediaBackend,
-        renderer: Box<dyn FrameRenderer>,
-    ) -> Self {
+impl FrameComposer {
+    pub(crate) fn new(renderer: Box<dyn FrameRenderer>) -> Self {
         Self {
-            project,
-            backend,
             renderer,
             open_sources: HashMap::new(),
             text_rasterizer: None,
@@ -59,22 +61,23 @@ impl<'export> FrameComposer<'export> {
         }
     }
 
-    /// What renders the frames, for the export report.
-    pub(super) fn renderer_description(&self) -> String {
+    /// What renders the frames, for reports.
+    pub(crate) fn renderer_description(&self) -> String {
         self.renderer.description()
     }
 
-    /// The finished picture of the timeline at `timeline_time`.
-    pub(super) fn compose_frame_at(
+    /// The finished picture of `project`'s timeline at `timeline_time`.
+    pub(crate) fn compose_frame_at<Error: From<MediaError> + From<RenderError>>(
         &mut self,
+        project: &Project,
+        backend: &dyn MediaBackend,
         timeline_time: Timestamp,
-    ) -> Result<VideoFrame, ExportError> {
-        self.close_sources_of_finished_clips(timeline_time);
+    ) -> Result<VideoFrame, Error> {
+        self.close_sources_of_finished_clips(project, timeline_time);
 
         let mut prepared_layers: Vec<(Arc<VideoFrame>, LayerPlacement, Vec<ColorAdjustment>)> =
             Vec::new();
-        let visible_tracks = self
-            .project
+        let visible_tracks = project
             .timeline()
             .tracks()
             .iter()
@@ -83,7 +86,7 @@ impl<'export> FrameComposer<'export> {
             let Some(clip) = clip_under_playhead(track, timeline_time) else {
                 continue;
             };
-            if let Some(picture) = self.source_picture_of(clip, timeline_time)? {
+            if let Some(picture) = self.source_picture_of(project, backend, clip, timeline_time)? {
                 let time_in_clip = timeline_time
                     .span_since(clip.timeline_start)
                     .unwrap_or(TimeSpan::ZERO);
@@ -103,7 +106,7 @@ impl<'export> FrameComposer<'export> {
                 color_adjustments,
             })
             .collect();
-        let settings = self.project.settings();
+        let settings = project.settings();
         let canvas = CanvasDescription {
             size: settings.canvas_size,
             background: settings.background_color,
@@ -115,16 +118,18 @@ impl<'export> FrameComposer<'export> {
     /// shows no picture (sound only).
     fn source_picture_of(
         &mut self,
+        project: &Project,
+        backend: &dyn MediaBackend,
         clip: &Clip,
         timeline_time: Timestamp,
-    ) -> Result<Option<Arc<VideoFrame>>, ExportError> {
+    ) -> Result<Option<Arc<VideoFrame>>, MediaError> {
         let segment = match &clip.content {
             ClipContent::Media(segment) => segment,
             ClipContent::Text(text_content) => {
                 return Ok(Some(self.text_picture_of(clip.id, text_content)));
             }
         };
-        let Some(media_asset) = self.project.media_asset(segment.media_asset_id) else {
+        let Some(media_asset) = project.media_asset(segment.media_asset_id) else {
             return Ok(None);
         };
         if !media_asset.description.has_picture() {
@@ -138,19 +143,38 @@ impl<'export> FrameComposer<'export> {
                 None => return Ok(None),
             }
         };
-        let source = match self.open_sources.entry(clip.id) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
-                self.backend
-                    .open_video_source(&media_asset.description.file_path)?,
-            ),
-        };
-        let picture = source.frame_at(source_time)?;
+        let picture = self
+            .video_source_of(backend, clip.id, &media_asset.description.file_path)?
+            .frame_at(source_time)?;
         let hidden_regions = hidden_regions_of(clip, source_time);
         if hidden_regions.is_empty() {
             return Ok(Some(picture));
         }
         Ok(Some(Arc::new(hide_regions(&picture, &hidden_regions))))
+    }
+
+    /// The decoder of `clip_id`, opened (or opened again) if it does not read `file_path`.
+    fn video_source_of(
+        &mut self,
+        backend: &dyn MediaBackend,
+        clip_id: ClipId,
+        file_path: &Path,
+    ) -> Result<&mut Box<dyn VideoFrameSource>, MediaError> {
+        let has_matching_source = self
+            .open_sources
+            .get(&clip_id)
+            .is_some_and(|open_source| open_source.file_path == file_path);
+        if !has_matching_source {
+            self.open_sources.remove(&clip_id);
+        }
+        let open_source = match self.open_sources.entry(clip_id) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(OpenVideoSource {
+                file_path: file_path.to_path_buf(),
+                source: backend.open_video_source(file_path)?,
+            }),
+        };
+        Ok(&mut open_source.source)
     }
 
     /// The picture of a text clip, drawn again only if its words or style changed.
@@ -169,9 +193,9 @@ impl<'export> FrameComposer<'export> {
         picture
     }
 
-    /// Frees the decoders of clips that ended before `timeline_time`.
-    fn close_sources_of_finished_clips(&mut self, timeline_time: Timestamp) {
-        let timeline = self.project.timeline();
+    /// Frees the decoders of clips that ended before `timeline_time` or no longer exist.
+    fn close_sources_of_finished_clips(&mut self, project: &Project, timeline_time: Timestamp) {
+        let timeline = project.timeline();
         self.open_sources.retain(|clip_id, _| {
             timeline
                 .find_clip(*clip_id)
