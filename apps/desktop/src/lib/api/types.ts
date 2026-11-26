@@ -122,7 +122,19 @@ export interface RecentProject {
 export type ProjectFormatChoice = "automatic" | "landscape" | "vertical" | "square";
 
 /** A change asked of the back end; one request is one undo step. */
-export type EditRequest = { type: "addMediaAtEnd"; mediaId: number };
+/** One user gesture, applied by the back end as one undo step (`editing.rs`). */
+export type EditRequest =
+  | { type: "addMediaAtEnd"; mediaId: number }
+  /** `trackId: null` puts the clip on a new track on top. */
+  | { type: "addMediaAt"; mediaId: number; trackId: number | null; startTicks: number }
+  | { type: "moveClip"; clipId: number; trackId: number | null; startTicks: number }
+  | { type: "trimClip"; clipId: number; edge: "start" | "end"; timeTicks: number }
+  /** An empty `clipIds` cuts every clip under `timeTicks`. */
+  | { type: "splitClips"; clipIds: number[]; timeTicks: number }
+  | { type: "removeClips"; clipIds: number[] }
+  | { type: "setTrackMuted"; trackId: number; isMuted: boolean }
+  | { type: "setTrackHidden"; trackId: number; isHidden: boolean }
+  | { type: "removeTrack"; trackId: number };
 
 export type EditNotice = {
   type: "formatAdopted";

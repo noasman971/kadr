@@ -2,8 +2,8 @@
 //! muting, hiding or removing tracks. Each function is one undo step.
 
 use kadr_core::commands::{
-    AddTrack, ClipEdge, CreatedObjectsExt, MoveClip, RemoveClip, RemoveTrack, SetTrackHidden,
-    SetTrackMuted, SplitClip, TrackPosition, TrimClip,
+    ClipEdge, CreatedObjectsExt, MoveClip, RemoveClip, RemoveTrack, SetTrackHidden, SetTrackMuted,
+    SplitClip, TrimClip,
 };
 use kadr_core::error::EditError;
 use kadr_core::history::EditSession;
@@ -11,7 +11,7 @@ use kadr_core::ids::{ClipId, TrackId};
 use kadr_core::time::Timestamp;
 use serde::Deserialize;
 
-use super::{EditOutcome, clip_track_kind, missing_created_object};
+use super::{EditOutcome, clip_track_kind, new_track_on_top};
 
 /// Which edge of a clip a trim moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -40,10 +40,7 @@ pub fn move_clip(
             Some(track_id) => track_id,
             None => {
                 let kind = clip_track_kind(transaction.project(), clip_id)?;
-                transaction
-                    .execute(AddTrack::new(kind, TrackPosition::Top))?
-                    .first_track_id()
-                    .ok_or_else(missing_created_object)?
+                new_track_on_top(transaction, kind)?
             }
         };
         transaction.execute(MoveClip::to_track(clip_id, destination, start))?;
@@ -160,12 +157,16 @@ pub fn set_track_hidden(
     })
 }
 
-/// Removes a track (the engine refuses a track that still holds clips).
+/// Removes a track. The engine removes its clips with it; the interface only
+/// offers this on empty tracks.
 ///
 /// # Errors
 ///
-/// When the track does not exist or is not empty.
-pub fn remove_track(session: &mut EditSession, track_id: TrackId) -> Result<EditOutcome, EditError> {
+/// When the track does not exist.
+pub fn remove_track(
+    session: &mut EditSession,
+    track_id: TrackId,
+) -> Result<EditOutcome, EditError> {
     session.transaction("removeTrack", |transaction| {
         transaction.execute(RemoveTrack::new(track_id))?;
         Ok(EditOutcome::default())
