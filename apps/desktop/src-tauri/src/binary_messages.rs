@@ -52,7 +52,7 @@ pub fn encode_waveform(waveform: &WaveformPeaks) -> Vec<u8> {
 /// Sound: its interleaved samples.
 pub fn encode_sound(sound: &AudioBuffer) -> Vec<u8> {
     let samples = sound.interleaved_samples();
-    let mut bytes = Vec::with_capacity(samples.len() * size_of::<f32>());
+    let mut bytes = Vec::with_capacity(size_of_val(samples));
     for sample in samples {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }

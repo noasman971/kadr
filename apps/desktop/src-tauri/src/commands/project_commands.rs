@@ -124,7 +124,8 @@ pub async fn save_project_as(
     }
     state.with_open_project(|open_project| {
         open_project.save_as(file_path)?;
-        let _ = remember_recent_project(&state.configuration_folder, open_project.file_path(), None);
+        let _ =
+            remember_recent_project(&state.configuration_folder, open_project.file_path(), None);
         Ok(open_project.view())
     })
 }
@@ -175,7 +176,12 @@ fn free_project_path(folder: &Path, name: &str) -> PathBuf {
 fn sanitized_file_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
-        .filter(|character| !matches!(character, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .filter(|character| {
+            !matches!(
+                character,
+                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'
+            )
+        })
         .collect();
     let trimmed = cleaned.trim();
     if trimmed.is_empty() {

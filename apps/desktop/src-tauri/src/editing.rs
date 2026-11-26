@@ -31,7 +31,11 @@ const MAXIMUM_FRAMES_PER_SECOND: f64 = 240.0;
 
 /// A change asked by the interface.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum EditRequest {
     /// Places a media file at the end of the first track of its kind (videos and
     /// pictures on the first video track, sounds on the first audio track),
@@ -44,7 +48,11 @@ pub enum EditRequest {
 
 /// Something the interface should tell the user after an edit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum EditNotice {
     /// The project took the format of the first video ("Automatic" format).
     FormatAdopted {
@@ -313,18 +321,24 @@ mod tests {
     }
 
     fn session_with(descriptions: Vec<MediaAssetDescription>) -> (EditSession, Vec<MediaAssetId>) {
-        let mut session = EditSession::new(Project::new(ProjectSettings::landscape_1080p())).unwrap();
+        let mut session =
+            EditSession::new(Project::new(ProjectSettings::landscape_1080p())).unwrap();
         let media_ids = import_media_files(&mut session, descriptions).unwrap();
         (session, media_ids)
     }
 
-    fn add_at_end(session: &mut EditSession, adopts: &mut bool, media_id: MediaAssetId) -> EditOutcome {
+    fn add_at_end(
+        session: &mut EditSession,
+        adopts: &mut bool,
+        media_id: MediaAssetId,
+    ) -> EditOutcome {
         apply_edit_request(session, adopts, &EditRequest::AddMediaAtEnd { media_id }).unwrap()
     }
 
     #[test]
     fn importing_twice_reuses_the_media_and_is_one_undo_step() {
-        let (mut session, first_ids) = session_with(vec![video("a.mp4", 1920, 1080, 3), sound("b.mp3", 9)]);
+        let (mut session, first_ids) =
+            session_with(vec![video("a.mp4", 1920, 1080, 3), sound("b.mp3", 9)]);
         let second_ids = import_media_files(
             &mut session,
             vec![video("a.mp4", 1920, 1080, 3), picture("c.png")],
@@ -351,7 +365,11 @@ mod tests {
 
         let timeline = session.project().timeline();
         assert_eq!(timeline.tracks().len(), 2);
-        let video_track = timeline.tracks().iter().find(|track| track.kind == TrackKind::Video).unwrap();
+        let video_track = timeline
+            .tracks()
+            .iter()
+            .find(|track| track.kind == TrackKind::Video)
+            .unwrap();
         let clips = video_track.clips();
         assert_eq!(clips.len(), 2);
         assert_eq!(clips[1].timeline_start, Timestamp::from_whole_seconds(3));
@@ -370,7 +388,11 @@ mod tests {
         let mut adopts = true;
 
         // A picture does not decide the format.
-        assert!(add_at_end(&mut session, &mut adopts, ids[0]).notices.is_empty());
+        assert!(
+            add_at_end(&mut session, &mut adopts, ids[0])
+                .notices
+                .is_empty()
+        );
         assert!(adopts);
 
         let outcome = add_at_end(&mut session, &mut adopts, ids[1]);
@@ -388,13 +410,23 @@ mod tests {
         assert_eq!(settings.frame_rate, FrameRate::FPS_25);
 
         // Later videos do not change it.
-        assert!(add_at_end(&mut session, &mut adopts, ids[2]).notices.is_empty());
-        assert_eq!(session.project().settings().canvas_size.height_in_pixels, 1920);
+        assert!(
+            add_at_end(&mut session, &mut adopts, ids[2])
+                .notices
+                .is_empty()
+        );
+        assert_eq!(
+            session.project().settings().canvas_size.height_in_pixels,
+            1920
+        );
 
         // One undo removes the clip and restores the format.
         session.undo().unwrap();
         session.undo().unwrap();
-        assert_eq!(session.project().settings(), &ProjectSettings::landscape_1080p());
+        assert_eq!(
+            session.project().settings(),
+            &ProjectSettings::landscape_1080p()
+        );
     }
 
     #[test]

@@ -321,9 +321,7 @@ pub fn tracks_in_display_order(project: &Project) -> Vec<&Track> {
         .iter()
         .rev()
         .filter(|track| track.kind == TrackKind::Video);
-    let audio_tracks = tracks
-        .iter()
-        .filter(|track| track.kind == TrackKind::Audio);
+    let audio_tracks = tracks.iter().filter(|track| track.kind == TrackKind::Audio);
     video_tracks.chain(audio_tracks).collect()
 }
 

@@ -241,12 +241,9 @@ mod tests {
     fn every_change_is_saved_and_bumps_the_revision() {
         let directory = tempfile::tempdir().unwrap();
         let file_path = directory.path().join("Holiday.kadr");
-        let mut open_project = OpenProject::create(
-            file_path.clone(),
-            ProjectSettings::landscape_1080p(),
-            true,
-        )
-        .unwrap();
+        let mut open_project =
+            OpenProject::create(file_path.clone(), ProjectSettings::landscape_1080p(), true)
+                .unwrap();
         assert_eq!(open_project.view().name, "Holiday");
 
         open_project
