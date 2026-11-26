@@ -142,6 +142,12 @@ impl RegionTrackingRequest {
     }
 }
 
+/// The shortest side a selection may have in a video `picture_width` pixels
+/// wide, in the video's pixels (the tracker needs some detail to follow).
+pub fn minimum_selection_side_in_pixels(picture_width: u32) -> f32 {
+    MINIMUM_REGION_SIDE_IN_PIXELS * shrink_factor_for_tracking(picture_width as usize) as f32
+}
+
 /// How far the analysis has gone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrackingProgress {

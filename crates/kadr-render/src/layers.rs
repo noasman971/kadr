@@ -89,6 +89,67 @@ impl LayerPlacement {
     }
 }
 
+impl LayerPlacement {
+    /// Where the source picture (of `picture_size`) lands on a canvas of
+    /// `canvas_size` with this placement, for interfaces that draw on top of a
+    /// clip (a blur's box on the preview). `None` when the layer shows nothing.
+    pub fn source_to_canvas_mapping(
+        &self,
+        canvas_size: PictureSize,
+        picture_size: PictureSize,
+    ) -> Option<SourceToCanvasMapping> {
+        let geometry = LayerGeometry::new(
+            canvas_size,
+            picture_size.width_in_pixels,
+            picture_size.height_in_pixels,
+            self,
+        )?;
+        let scale = 1.0 / geometry.source_pixels_per_canvas_pixel;
+        let (a, b) = (
+            scale * geometry.rotation_cosine,
+            scale * geometry.rotation_sine,
+        );
+        let (c, d) = (-b, a);
+        let e = geometry.canvas_center_x
+            - (a * geometry.source_center_x + c * geometry.source_center_y);
+        let f = geometry.canvas_center_y
+            - (b * geometry.source_center_x + d * geometry.source_center_y);
+        Some(SourceToCanvasMapping {
+            matrix: [a, b, c, d, e, f],
+            visible_source: [
+                geometry.crop_left,
+                geometry.crop_top,
+                geometry.crop_right,
+                geometry.crop_bottom,
+            ],
+        })
+    }
+}
+
+/// How a layer's source pixels map onto the canvas: the visible part of the
+/// picture is fitted, scaled, rotated clockwise around its centre, then moved.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SourceToCanvasMapping {
+    /// The affine map in the order of SVG's `matrix(a, b, c, d, e, f)`:
+    /// `canvas_x = a·x + c·y + e` and `canvas_y = b·x + d·y + f`, for a source
+    /// point (x, y) in pixels, origin at the top-left corner.
+    pub matrix: [f32; 6],
+    /// The visible (not cropped) part of the source picture: left, top, right
+    /// and bottom edges, in source pixels.
+    pub visible_source: [f32; 4],
+}
+
+impl SourceToCanvasMapping {
+    /// The canvas point showing source point (x, y).
+    pub fn canvas_point_of(&self, source_x: f32, source_y: f32) -> (f32, f32) {
+        let [a, b, c, d, e, f] = self.matrix;
+        (
+            a * source_x + c * source_y + e,
+            b * source_x + d * source_y + f,
+        )
+    }
+}
+
 /// A picture to draw, and how.
 #[derive(Debug, Clone, Copy)]
 pub struct VisualLayer<'picture> {
@@ -298,6 +359,50 @@ mod tests {
         let geometry = LayerGeometry::new(canvas, 200, 80, &native).unwrap();
         assert_eq!(geometry.canvas_corners()[0], (860.0, 500.0));
         assert_eq!(geometry.canvas_corners()[3], (1060.0, 580.0));
+    }
+
+    #[test]
+    fn the_public_mapping_agrees_with_the_renderers_geometry() {
+        let canvas = PictureSize {
+            width_in_pixels: 1080,
+            height_in_pixels: 1920,
+        };
+        let picture = PictureSize {
+            width_in_pixels: 1920,
+            height_in_pixels: 1080,
+        };
+        let placement = LayerPlacement {
+            offset_x_in_pixels: 120.0,
+            offset_y_in_pixels: -40.0,
+            scale_factor: 1.2,
+            rotation_in_degrees: 12.0,
+            crop: CropInsets {
+                left_fraction: 0.1,
+                top_fraction: 0.0,
+                right_fraction: 0.05,
+                bottom_fraction: 0.2,
+            },
+            ..LayerPlacement::FITTED
+        };
+        let mapping = placement.source_to_canvas_mapping(canvas, picture).unwrap();
+        let geometry = LayerGeometry::new(canvas, 1920, 1080, &placement).unwrap();
+        // The canvas pixel showing a source point (all on the canvas) maps back
+        // near that point.
+        for (source_x, source_y) in [(400.0, 300.0), (960.0, 540.0), (1500.0, 800.0)] {
+            let (canvas_x, canvas_y) = mapping.canvas_point_of(source_x, source_y);
+            let pixel = (canvas_x.floor() as u32, canvas_y.floor() as u32);
+            let (back_x, back_y) = geometry.source_point_for(pixel.0, pixel.1).unwrap();
+            let pixel_in_source = geometry.source_pixels_per_canvas_pixel;
+            assert!(
+                (back_x - source_x).abs() <= pixel_in_source * 1.5,
+                "{back_x} vs {source_x}"
+            );
+            assert!(
+                (back_y - source_y).abs() <= pixel_in_source * 1.5,
+                "{back_y} vs {source_y}"
+            );
+        }
+        assert_eq!(mapping.visible_source, [192.0, 0.0, 1824.0, 864.0]);
     }
 
     #[test]
