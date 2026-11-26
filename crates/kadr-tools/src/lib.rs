@@ -13,7 +13,8 @@
 //! ```
 //!
 //! - [`KadrToolbox`]: the open project, the allowed folders, the background
-//!   exports; [`KadrToolbox::call_tool`] runs a tool by name.
+//!   exports and tracking analyses; [`KadrToolbox::call_tool`] runs a tool by
+//!   name.
 //! - [`ToolDefinition`]: name, description and JSON schema of a tool, from
 //!   [`KadrToolbox::tool_definitions`].
 //! - [`ToolOutput`]: text and pictures returned to Claude.
@@ -33,6 +34,7 @@
 //!
 //! See `docs/mcp-server.md` for the list of tools.
 
+mod blur_tasks;
 mod catalog;
 mod export_tasks;
 mod file_access;

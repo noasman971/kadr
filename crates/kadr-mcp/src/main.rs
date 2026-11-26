@@ -79,6 +79,7 @@ fn serve_until_disconnected(arguments: ServerArguments) -> Result<(), String> {
         .build()
         .map_err(|error| format!("the server could not start: {error}"))?;
     runtime.block_on(async move {
+        let background_work = server.apply_finished_background_work_regularly();
         tracing::info!(
             "Kadr MCP server {} ready on stdio",
             env!("CARGO_PKG_VERSION")
@@ -92,6 +93,7 @@ fn serve_until_disconnected(arguments: ServerArguments) -> Result<(), String> {
             .await
             .map_err(|error| format!("the MCP connection ended abnormally: {error}"))?;
         tracing::info!("MCP connection closed: {quit_reason:?}");
+        background_work.abort();
         Ok(())
     })
 }
