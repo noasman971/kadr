@@ -2606,6 +2606,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kadr-app-link"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "kadr-tools",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "kadr-cli"
 version = "0.1.0"
 dependencies = [
@@ -2631,9 +2643,11 @@ dependencies = [
 name = "kadr-desktop"
 version = "0.1.0"
 dependencies = [
+ "kadr-app-link",
  "kadr-core",
  "kadr-engine",
  "kadr-media",
+ "kadr-tools",
  "serde",
  "serde_json",
  "tauri",
@@ -2665,6 +2679,7 @@ dependencies = [
  "base64 0.23.1",
  "clap",
  "image",
+ "kadr-app-link",
  "kadr-core",
  "kadr-engine",
  "kadr-media",
