@@ -48,5 +48,5 @@ pub use kadr_media::{
 pub use kadr_render::RendererPreference;
 pub use region_tracking::{
     RegionTrackingError, RegionTrackingReport, RegionTrackingRequest, TrackingCancellation,
-    TrackingProgress, track_region,
+    TrackingProgress, corrected_tracked_blur, find_tracked_blur, track_region,
 };

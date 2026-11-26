@@ -27,6 +27,7 @@
 //! desktop app. See `docs/mcp-server.md`.
 
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -53,11 +54,19 @@ Typical work: get_project_info (shows the allowed folders) → open_project, or 
 remove_clip, add_text, add_transition, set_transform… → look at the result with get_frame or \
 get_contact_sheet → export → get_export_status until finished.
 
+To blur a face (or a plate, a screen): get_frame with the clip_id where the face is clearly \
+visible → blur_region with the rectangle around it, in the clip's source pixels → \
+get_blur_status until finished → look at each range to check with get_frame, and correct with \
+blur_region and the blur's effect_id where the face shows.
+
 Videos attached to this conversation are NOT available to Kadr: ask the user for the file name \
 or folder and find it with find_media_files. Times are in seconds. Sizes and positions are in \
 pixels, origin at the top-left corner. Every tool call is one undo step (undo / redo). Kadr only \
 uses files in the folders the user allowed, never replaces a file unless you pass \"overwrite\": \
 true after asking the user, and never deletes files.";
+
+/// How often finished background work is added to the project between calls.
+pub const BACKGROUND_WORK_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The MCP server: Kadr's tools, served to Claude.
 #[derive(Clone)]
@@ -88,6 +97,31 @@ impl KadrMcpServer {
             toolbox: Arc::new(Mutex::new(toolbox)),
             tools: Arc::new(tools),
         }
+    }
+
+    /// Adds the background work that finished (tracking analyses) to the
+    /// project every [`BACKGROUND_WORK_INTERVAL`], so that the project file is
+    /// up to date even if Claude makes no further call. Runs until the
+    /// returned task is aborted.
+    pub fn apply_finished_background_work_regularly(&self) -> tokio::task::JoinHandle<()> {
+        let toolbox = Arc::clone(&self.toolbox);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(BACKGROUND_WORK_INTERVAL);
+            loop {
+                interval.tick().await;
+                let toolbox = Arc::clone(&toolbox);
+                let applied = tokio::task::spawn_blocking(move || {
+                    toolbox
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .apply_finished_background_work();
+                })
+                .await;
+                if let Err(join_error) = applied {
+                    tracing::error!("adding finished background work crashed: {join_error}");
+                }
+            }
+        })
     }
 
     /// Runs one tool call on a blocking thread (tools decode video, render and
