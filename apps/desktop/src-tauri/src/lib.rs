@@ -8,6 +8,8 @@
 //!
 //! - [`open_project`]: the project being edited, saved after every change;
 //! - [`editing`]: the edit requests and the rules each one follows;
+//! - [`tracking_job`] and [`blur_overlay`]: following a box drawn on the
+//!   preview for a blur, and what the preview draws on top of a clip;
 //! - [`project_view`]: the description of the project the front end draws;
 //! - [`media_workers`]: the threads owning decoders (preview, thumbnails);
 //! - [`binary_messages`]: the byte layouts of pictures and sound;
@@ -19,6 +21,7 @@
 
 pub mod app_state;
 pub mod binary_messages;
+pub mod blur_overlay;
 pub mod command_error;
 pub mod commands;
 pub mod editing;
@@ -27,12 +30,13 @@ pub mod media_workers;
 pub mod open_project;
 pub mod project_view;
 pub mod recent_projects;
+pub mod tracking_job;
 
 use tauri::Manager;
 
 use crate::app_state::AppState;
 use crate::commands::{
-    editing_commands, export_commands, picture_and_sound_commands, project_commands,
+    blur_commands, editing_commands, export_commands, picture_and_sound_commands, project_commands,
 };
 
 /// Name of the folder, in the user's documents, where new projects are created.
@@ -77,6 +81,9 @@ pub fn run() -> Result<(), tauri::Error> {
             export_commands::cancel_export,
             export_commands::reveal_exported_file,
             export_commands::open_exported_file,
+            blur_commands::get_clip_overlay,
+            blur_commands::start_region_tracking,
+            blur_commands::cancel_region_tracking,
         ])
         .run(tauri::generate_context!())
 }
