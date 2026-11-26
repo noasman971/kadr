@@ -294,7 +294,7 @@ fn encoding_choices(command: &BlurCommand) -> (VideoEncoderPreference, EncodingS
 }
 
 /// Encoders need even sizes.
-fn even_size(size: PictureSize) -> PictureSize {
+pub(crate) fn even_size(size: PictureSize) -> PictureSize {
     PictureSize {
         width_in_pixels: size.width_in_pixels & !1,
         height_in_pixels: size.height_in_pixels & !1,
