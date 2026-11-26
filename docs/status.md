@@ -56,7 +56,7 @@ which is more detailed and is the reference for its phase.
 | 4. Tracking and blur | 4a merged (#7). 4b (#8): drift on a real video fixed (mean error 197 → 2 px) | `feature/phase-4b-blur-analysis`, [#8](https://github.com/noasman971/kadr/pull/8) | Owner: validate phase 4, then tag `v0.5.0` |
 | 5. MCP server | Draft (#9): 34 of 35 tools tested | `feature/phase-5-mcp-server`, [#9](https://github.com/noasman971/kadr/pull/9) | Run the tests after the merge of `main`, then merge |
 | 6. Desktop app | 6a (#6), 6b (#10) and 6c (#14) merged. 6d in PR #15, tried by hand | `feature/phase-6d-inspector-export`, [#15](https://github.com/noasman971/kadr/pull/15) | Merge 6d, then the owner's edit-and-export test |
-| 7. Blur and Claude in the app | Waits for phases 4 and 6 | — | — |
+| 7. Blur and Claude in the app | Started 2026-11-26: 7a (blur tools for Claude) in PR | `feature/phase-7a-blur-tools` | 7b: blur in the app |
 | 8. Features, engine side | **Paused** by the owner. 8a in draft (#11) | `feature/phase-8a-transitions-text-animations`, [#11](https://github.com/noasman971/kadr/pull/11) | Owner: resume or not |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
@@ -102,8 +102,7 @@ Versions are tagged in phase order, each only after the owner validates the phas
   (`detect_silences`). Next, run `cargo test -p kadr-mcp`, `cargo test -p kadr-engine
   --lib` and `cargo doc --workspace --no-deps`, merge once CI is green, then the real
   test with the owner in Claude Desktop.
-- **After phase 4b is merged**, in a separate PR: `blur_region` and
-  `get_blur_status`, built on `kadr_engine::region_tracking`.
+- `blur_region` and `get_blur_status` came with phase 7a (see below).
 - **Resume with:** *"Resume phase 5 of Kadr: read CLAUDE.md, docs/status.md and the
   'Status for resuming' section of PR #9, then continue with its next step."*
 
@@ -125,6 +124,31 @@ Versions are tagged in phase order, each only after the owner validates the phas
   `npm run tauri dev`.
 - **Resume with:** *"Resume phase 6 of Kadr: read CLAUDE.md, docs/status.md and the
   'Status for resuming' section of PR #15, then continue with its next step."*
+
+## Phase 7: blur and Claude in the app
+
+- **Plan**, one branch and pull request each, merged in order:
+  1. **7a, blur tools for Claude** (`feature/phase-7a-blur-tools`): MCP tools
+     `blur_region` (background analysis; with an `effect_id` it corrects a blur and
+     re-tracks from there), `get_blur_status` (ranges to check), `cancel_blur`;
+     re-tracking from a correction in `kadr-engine`.
+  2. **7b, blur in the app** (`feature/phase-7b-blur-in-app`): draw a box on the
+     preview, tracking with progress and cancel, a Blur section in the inspector.
+  3. **7c, checking and correcting** (`feature/phase-7c-blur-correction`): unsure
+     ranges on the timeline, go to the next one, correct the box and re-track.
+  4. **7d, live link** (`feature/phase-7d-live-link`): decision record 0030;
+     `kadr-mcp` passes Claude's calls to the open app, which runs them on its own
+     project; *"Claude a modifié le projet"* notice; file mode when the app is
+     closed.
+  5. **7e, Connect to Claude** (`feature/phase-7e-connect-to-claude`): a settings
+     screen that writes the Claude Desktop configuration and manages the allowed
+     folders.
+- **Done when** the owner says in Claude Desktop *« floute le visage de la personne
+  à gauche dans interview.mp4 et exporte pour TikTok »* and it works.
+- Decision records 0030–0039 are reserved for phase 7.
+- **Resume with:** *"Resume phase 7 of Kadr: read CLAUDE.md, docs/status.md and the
+  'Status for resuming' section of the latest phase 7 pull request, then continue
+  with its next step."*
 
 ## Phase 8: features, engine side (paused)
 

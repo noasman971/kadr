@@ -44,7 +44,7 @@ flowchart LR
 | No silent overwrite | An existing file is only replaced with `"overwrite": true`. A project file changed by another program since Kadr read it is never overwritten: the call is refused and Claude reopens it. |
 | No deletion | No tool deletes a file. Removing clips, tracks or media only changes the project. |
 | Pictures for Claude | JPEG, longest side at most **1024 pixels**, with the original size and the factor to convert measured positions back to original pixels. |
-| Long tasks | `export` answers at once with a task id (`export-1`); `get_export_status` follows it, `cancel_export` stops it. |
+| Long tasks | `export` and `blur_region` answer at once with a task id (`export-1`, `blur-1`); `get_export_status` and `get_blur_status` follow them, `cancel_export` and `cancel_blur` stop them. |
 | Snapping | A clip edge given within half a frame of another clip's edge on the same track snaps onto it, so a time copied with rounding (`1.999999`) does not overlap by a microsecond. |
 
 ## The tools
@@ -111,6 +111,44 @@ flowchart LR
 Single pictures are drawn with the CPU renderer: starting the GPU takes longer than
 drawing a frame. The pixel work is in `kadr_engine::still_frames`.
 
+### Blurring a face
+
+| Tool | What it does |
+|---|---|
+| `blur_region` | Hides what is inside a rectangle (a face, a plate, a screen) through a whole video clip. The rectangle is given on **one** frame: `clip_id`, `time_in_seconds` (timeline time, as for `get_frame` with `clip_id`), `left_in_pixels`, `top_in_pixels`, `width_in_pixels`, `height_in_pixels` in the clip's **source** pixels. Optional `style` (`gaussian_blur`, `pixelate`, `solid_fill`), `strength_in_pixels`, `fill_color`, `shape` (`ellipse` or `rectangle`), `margin_in_percent`. Answers at once with a task id (`blur-1`). With `effect_id`, **corrects** that blur instead: the rectangle is where the region really is at that time, and tracking restarts from there. |
+| `get_blur_status` | With `task_id`: running (percent, time left), finished (the blur's `effect_id`, frame counts, **ranges to check**), failed (why) or cancelled. With `clip_id`: the clip's tracked blurs and their ranges to check. Without either: everything. |
+| `cancel_blur` | Stops a running analysis; nothing is added. |
+
+How Claude uses them:
+
+1. `get_frame` with the `clip_id` at a time where the face is clearly visible; Claude
+   measures the face on the picture and converts it to source pixels with the factor
+   the answer gives.
+2. `blur_region` with that rectangle; `get_blur_status` every few seconds (a minute of
+   1080p takes about 10 s).
+3. When the analysis ends, **the toolbox adds the tracked blur to the project** as one
+   undo step labelled `Claude: Blur a region on clip 4`. It does so at the start of the
+   next tool call, and `kadr-mcp` also does it every second between calls, so the file
+   is saved even if the conversation stops there. The answer of the next call (other
+   than `get_blur_status`) ends with *"Meanwhile, in the background: blur-1
+   finished…"*.
+4. The status lists the **ranges to check**: stretches where the tracker was
+   *uncertain* (it probably followed the region; the hidden area was widened) or
+   *lost* (hidden, out of the picture; the blur stays where the region was last
+   seen), in timeline seconds, each with a `look_at_time_in_seconds`. Claude looks at
+   them with `get_frame` (blurs are applied on its pictures).
+5. Where the face shows, `blur_region` with the blur's `effect_id`, a time in the range
+   and the rectangle there: the analysis runs again from that frame up to the
+   neighbouring anchors, and only replaces what it does better (see
+   [tracking-and-blur.md](tracking-and-blur.md#correcting-a-tracked-blur)). One undo
+   step: `Claude: Correct blur 7 on clip 4`.
+
+Mistakes are refused before anything runs: a rectangle outside the picture or too
+small (the sizes are given in the video's pixels), a clip that is not on screen at
+that time, a strength out of range, an unknown blur. An analysis that ends after its
+project was closed, or whose clip was removed meanwhile, fails with the reason and
+changes nothing.
+
 ### Sound
 
 | Tool | What it does |
@@ -136,12 +174,6 @@ fractions). A preset of **another shape** is refused with the way forward: chang
 the project with `set_project_settings`, check the framing with `get_frame`, then
 export. Changing the shape silently would export something Claude never looked at.
 
-### Still to come
-
-| Tool | When |
-|---|---|
-| `blur_region`, `get_blur_status` | Need phase 4b's tracking analysis in `kadr-engine`. |
-
 ## Examples of conversations
 
 > **User:** In my Videos folder there is an interview. Make a 30-second vertical
@@ -162,6 +194,16 @@ export. Changing the shape silently would export something Claude never looked a
 >
 > **Claude:** `detect_silences` (clip_id) → for each silence, from the last to the
 > first: `split_clip`, `split_clip`, `remove_clip` (close_gap) → `get_timeline`.
+
+> **User:** Blur the face of the person on the left in the interview, then export
+> for TikTok.
+>
+> **Claude:** `get_timeline` → `get_frame` (clip_id, a time where the face is
+> visible) → `blur_region` (the rectangle in source pixels) → `get_blur_status`
+> until finished → `get_frame` in each range to check → `blur_region` with
+> `effect_id` where the face shows → `set_project_settings` (vertical_1080x1920) →
+> `set_transform` (fill_canvas, centre on the people) → `get_frame` to check →
+> `export` (tiktok_reels_shorts) → `get_export_status` until finished.
 
 > **User:** Undo that last change.
 >
@@ -185,6 +227,9 @@ client over an in-memory pipe), as Claude Desktop would:
   `overwrite`, no deletion, a project changed by another program;
 - `export_task.rs`: export in the background, status until finished, scaled
   export, cancellation;
+- `blur.rs`: a blur on a synthetic scene with an obstacle (known true position):
+  the analysis, the range to check, a correction with another style, undo, mistakes
+  refused before anything runs, cancellation;
 - `stdio_binary.rs`: the real `kadr-mcp` program as a child process — the test
   fails if anything but the protocol reaches stdout.
 
