@@ -16,8 +16,9 @@ Claude conversation.**
 
 > **Status: phase 3 — GPU rendering.** Kadr can read video, audio and image files,
 > build a project, and export it to MP4 from the command line, rendering on the GPU
-> with text, colour adjustment and tracked blurs. There is no graphical interface yet. See the [roadmap](#roadmap) and
-> [Trying Kadr today](#trying-kadr-today).
+> with text, colour adjustment and tracked blurs. The desktop app (phase 6) is being
+> built: it already imports media, plays the edit with its sound and saves projects.
+> See the [roadmap](#roadmap) and [Trying Kadr today](#trying-kadr-today).
 
 ---
 
@@ -31,7 +32,7 @@ Claude conversation.**
 | 3 | GPU rendering (`wgpu`): compositing, text, effects | 🔍 In review |
 | 4 | Face blur by classic region tracking | |
 | 5 | Local MCP server for Claude | |
-| 6 | Desktop app (Tauri 2) — MVP | |
+| 6 | Desktop app (Tauri 2) — MVP | 🚧 In progress |
 | 7 | Face blur and Claude inside the app | |
 | 8 | Silence removal, transitions, colour, stabilisation, keyframes, proxies | |
 | 9 | Android app | |
@@ -141,6 +142,25 @@ powershell -ExecutionPolicy Bypass -File scripts/generate-test-fixtures.ps1
 
 ## Trying Kadr today
 
+### The desktop app (in progress)
+
+With [Node.js](#setting-up-windows) installed, from `apps/desktop/`:
+
+```powershell
+npm ci
+```
+
+```powershell
+npm run tauri dev
+```
+
+Create a project, drop videos, photos or music on the window, click **+** on a
+thumbnail to put it on the timeline, and play it (Space, J/K/L). Projects are saved
+automatically in `Documents/Kadr/`. Editing on the timeline, the inspector and export
+arrive in the next steps of phase 6. See [apps/desktop/README.md](apps/desktop/README.md).
+
+### The command line
+
 Build the command-line tool once (optimised):
 
 ```powershell
@@ -185,6 +205,8 @@ crates/
   kadr-tools    editing tools exposed to Claude
   kadr-mcp      local MCP server for Claude Desktop / Claude Code
   kadr-cli      command-line binary for testing
+apps/
+  desktop       desktop app: Svelte front end, Tauri back end (crate kadr-desktop)
 docs/           architecture, decisions, guides
 scripts/        environment check and test video generation
 tests/fixtures/ test video descriptions (videos are generated, not committed)

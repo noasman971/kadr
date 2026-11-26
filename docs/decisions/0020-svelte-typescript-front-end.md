@@ -33,8 +33,10 @@ Option 1, validated by the owner on 2026-11-26:
 - **Svelte 5** with runes, **TypeScript** in strict mode, built by **Vite**.
 - **No component library**: Kadr's own components, built on the tokens of
   [design-system.md](../design-system.md).
-- Icons: **Lucide** (`@lucide/svelte`, ISC). Font: **Inter**
-  (`@fontsource-variable/inter`, SIL Open Font License), bundled, never fetched.
+- Icons: **Lucide** (ISC). Font: **Inter** (`@fontsource-variable/inter`, SIL Open
+  Font License), bundled, never fetched. *Implementation note (6b): the shapes of the
+  few icons used are copied into `src/lib/ui/icons.ts` instead of installing
+  `@lucide/svelte`, whose thousands of files were slow to install and unnecessary.*
 - Translations: a small in-house module, French and English dictionaries typed from
   one shape so a missing key fails the type check. No i18n dependency.
 - Checks: `svelte-check` (types), `vitest` for pure logic (time ↔ pixels, snapping,
