@@ -125,6 +125,7 @@ export const frenchMessages: Messages = {
   "kind.text": "Titre",
 
   "undo.addClip": "ajouter un clip",
+  "undo.addFirstVideo": "ajouter la première vidéo (et son format)",
   "undo.importMedia": "importer des fichiers",
 
   "toast.undo": "Annuler",

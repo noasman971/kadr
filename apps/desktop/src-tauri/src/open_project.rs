@@ -14,6 +14,7 @@ use kadr_core::project::{Project, ProjectSettings};
 use kadr_engine::project_files::{load_project_file, save_project_file};
 
 use crate::command_error::{CommandError, CommandResult, ErrorCode};
+use crate::editing::ADD_FIRST_VIDEO_UNDO_LABEL;
 use crate::project_view::{ProjectView, ViewContext, build_project_view};
 
 /// Extension of Kadr project files.
@@ -144,24 +145,32 @@ impl OpenProject {
         Ok(output)
     }
 
-    /// Undoes the last step and returns its label.
+    /// Undoes the last step and returns its label. Undoing the step that placed
+    /// the first video makes the format automatic again.
     ///
     /// # Errors
     ///
     /// When there is nothing to undo.
     pub fn undo(&mut self) -> CommandResult<String> {
         let label = self.session.undo()?;
+        if label == ADD_FIRST_VIDEO_UNDO_LABEL {
+            self.adopts_first_video_format = true;
+        }
         self.after_change();
         Ok(label)
     }
 
-    /// Redoes the last undone step and returns its label.
+    /// Redoes the last undone step and returns its label. Redoing the step that
+    /// placed the first video fixes the format again.
     ///
     /// # Errors
     ///
     /// When there is nothing to redo.
     pub fn redo(&mut self) -> CommandResult<String> {
         let label = self.session.redo()?;
+        if label == ADD_FIRST_VIDEO_UNDO_LABEL {
+            self.adopts_first_video_format = false;
+        }
         self.after_change();
         Ok(label)
     }
@@ -234,7 +243,10 @@ impl OpenProject {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editing::{EditRequest, apply_edit_request, import_media_files};
     use kadr_core::commands::{AddTrack, TrackPosition};
+    use kadr_core::media_asset::{MediaAssetDescription, MediaKind, PictureSize};
+    use kadr_core::time::{FrameRate, TimeSpan};
     use kadr_core::timeline::TrackKind;
 
     #[test]
@@ -258,6 +270,62 @@ mod tests {
         open_project.undo().unwrap();
         assert_eq!(open_project.revision(), 3);
         assert!(open_project.snapshot().timeline().tracks().is_empty());
+    }
+
+    #[test]
+    fn undoing_the_first_video_makes_the_format_automatic_again() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut open_project = OpenProject::create(
+            directory.path().join("Auto.kadr"),
+            ProjectSettings::landscape_1080p(),
+            true,
+        )
+        .unwrap();
+        let video = MediaAssetDescription {
+            file_path: PathBuf::from("C:/videos/phone.mp4"),
+            display_name: "phone.mp4".to_string(),
+            kind: MediaKind::Video,
+            duration: Some(TimeSpan::from_whole_seconds(4)),
+            picture_size: Some(PictureSize {
+                width_in_pixels: 1080,
+                height_in_pixels: 1920,
+            }),
+            frame_rate: Some(FrameRate::FPS_25),
+            audio_format: None,
+        };
+        let media_ids = open_project
+            .edit(|session, _| import_media_files(session, vec![video]))
+            .unwrap();
+        let place_video = EditRequest::AddMediaAtEnd {
+            media_id: media_ids[0],
+        };
+        open_project
+            .edit(|session, adopts| apply_edit_request(session, adopts, &place_video))
+            .unwrap();
+        assert!(!open_project.view().adopts_first_video_format);
+
+        open_project.undo().unwrap();
+        assert!(open_project.view().adopts_first_video_format);
+        assert_eq!(
+            open_project.project().settings(),
+            &ProjectSettings::landscape_1080p()
+        );
+
+        open_project.redo().unwrap();
+        assert!(!open_project.view().adopts_first_video_format);
+        assert_eq!(
+            open_project
+                .project()
+                .settings()
+                .canvas_size
+                .height_in_pixels,
+            1920
+        );
+
+        // Undoing the import does not touch the flag; the next video decides again.
+        open_project.undo().unwrap();
+        open_project.undo().unwrap();
+        assert!(open_project.view().adopts_first_video_format);
     }
 
     #[test]

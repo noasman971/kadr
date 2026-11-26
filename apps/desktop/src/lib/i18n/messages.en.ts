@@ -125,6 +125,7 @@ export const englishMessages = {
   "kind.text": "Title",
 
   "undo.addClip": "add a clip",
+  "undo.addFirstVideo": "add the first video (and its format)",
   "undo.importMedia": "import files",
 
   "toast.undo": "Undo",
