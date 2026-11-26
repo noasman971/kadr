@@ -9,6 +9,7 @@
 | [media-and-export.md](media-and-export.md) | How files are read, how sound and pictures stay in sync, how an export works |
 | [rendering.md](rendering.md) | YUV from end to end, colour spaces, the GPU and CPU renderers, how they are compared, benchmarks |
 | [tracking-and-blur.md](tracking-and-blur.md) | The region tracker behind the face blur, step by step: settings, accuracy, speed, limits |
+| [transitions-and-text-animations.md](transitions-and-text-animations.md) | Fade, slide and zoom transitions between clips, text animations (type-on…), how they are drawn |
 
 Documents added in later phases:
 

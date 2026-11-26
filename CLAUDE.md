@@ -164,3 +164,13 @@ desktop app (Tauri 2) arrives in phase 6. Details: [docs/architecture.md](docs/a
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
   the script to the scratchpad and run it from there.
+- Transitions (phase 8a, decision 0030) live on clip **edges** (`entry_transition`,
+  `exit_transition`), never as separate objects: no command has to update them when
+  clips move. The clip touching the edge is drawn underneath by
+  `kadr-engine/src/export/clip_layers.rs`; its source continues past its cut. Keep
+  that file the only place deciding which clips a track shows.
+- File format changes: bump `CURRENT_FORMAT_VERSION`, add a `Migration`, keep the
+  previous snapshot as a fixture in `crates/kadr-core/tests/fixtures/` (format 1:
+  `vertical_interview_format_1.kadr`) with a test that it still opens. A new enum
+  variant (effect kind…) needs a version bump too, even with a no-op migration: an
+  older Kadr must say "newer version" rather than "damaged file".

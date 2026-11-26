@@ -12,6 +12,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0005](0005-ffmpeg-through-ffmpeg-next.md) | FFmpeg through `ffmpeg-next`, behind backend traits | Accepted |
 | [0006](0006-gpu-rendering-yuv-end-to-end.md) | GPU rendering with `wgpu`, YUV from end to end, CPU as reference | Accepted |
 | [0007](0007-scale-from-point-tracking.md) | The tracked region's size comes from point tracking (Median Flow) | Accepted |
+| [0030](0030-transitions-at-clip-edges.md) | Transitions at clip edges, using the neighbouring clip's handles | Accepted |
 
 ## Template
 

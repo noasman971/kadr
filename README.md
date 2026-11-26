@@ -160,6 +160,13 @@ an audio track; `--format vertical` for TikTok / Reels / Shorts):
 .\target\release\kadr-cli assemble --output my-edit.kadr --format vertical clip1.mp4 clip2.mp4 music.mp3
 ```
 
+Add a transition at every cut and an animated title (see
+[docs/transitions-and-text-animations.md](docs/transitions-and-text-animations.md)):
+
+```powershell
+.\target\release\kadr-cli assemble --output demo.kadr --transition slide-left --title "Hello" --title-animation type-on clip1.mp4 clip2.mp4
+```
+
 Export it to MP4 (rendered on the GPU and encoded in hardware when available;
 `--cpu` to render on the CPU, `--software-encoder` to force libx264, `--fast` for quick
 previews, Ctrl+C to cancel cleanly):
