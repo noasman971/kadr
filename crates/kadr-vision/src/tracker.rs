@@ -110,6 +110,9 @@ pub enum TrackingError {
     /// The region and its surroundings are uniform.
     #[error("the region and its surroundings are uniform: there is nothing to follow")]
     RegionWithoutTexture,
+    /// The region itself is uniform, even if its surroundings are not.
+    #[error("the region itself is uniform: it has no detail to recognise it by when it is lost")]
+    RegionWithoutDetail,
     /// A frame does not have the size of the first one.
     #[error(
         "the frame is {width} × {height} pixels, but tracking started on a {expected_width} × {expected_height} frame"
@@ -213,7 +216,7 @@ impl RegionTracker {
         let filter = CorrelationFilter::train(&pyramid, filter_window(region.center(), &region))
             .ok_or(TrackingError::RegionWithoutTexture)?;
         let appearance = AppearanceTemplate::capture(&pyramid, &region)
-            .ok_or(TrackingError::RegionWithoutTexture)?;
+            .ok_or(TrackingError::RegionWithoutDetail)?;
         Ok(Self {
             filter,
             region,
@@ -357,8 +360,8 @@ impl RegionTracker {
     }
 
     fn look_for_lost_region(&mut self, pyramid: &ImagePyramid) -> TrackedRegion {
-        let lost_frames = self.lost_frames_in_a_row.unwrap_or(0) + 1;
-        self.lost_frames_in_a_row = Some(lost_frames);
+        let searches_before = self.lost_frames_in_a_row.unwrap_or(0);
+        self.lost_frames_in_a_row = Some(searches_before + 1);
         // Where it was last seen: the obstacle may simply have gone.
         let at_last_position = self.detect_around(pyramid, self.region.center());
         let last_position_ratio =
@@ -369,7 +372,7 @@ impl RegionTracker {
         // Further away, by appearance.
         let search_radius = self.region.longer_side()
             * (RECOVERY_SEARCH_START_IN_REGION_SIDES
-                + RECOVERY_SEARCH_GROWTH_IN_REGION_SIDES_PER_FRAME * lost_frames as f32)
+                + RECOVERY_SEARCH_GROWTH_IN_REGION_SIDES_PER_FRAME * searches_before as f32)
                 .min(RECOVERY_SEARCH_MAXIMUM_IN_REGION_SIDES);
         let best_match = [&self.initial_appearance, &self.recent_appearance]
             .into_iter()
@@ -388,6 +391,8 @@ impl RegionTracker {
 
     fn end_loss(&mut self, detection: Detection) -> TrackedRegion {
         self.lost_frames_in_a_row = None;
+        // Reported uncertain, so it counts towards the uncertain frames in a row.
+        self.uncertain_frames_in_a_row = 1;
         self.region = self.clamped_to_frame(detection.region);
         self.last_motion = (0.0, 0.0);
         // Found again, but not learnt yet: uncertain until the next frame confirms.
@@ -493,6 +498,26 @@ mod tests {
         assert_eq!(
             RegionTracker::start(uniform, fine).unwrap_err(),
             TrackingError::RegionWithoutTexture
+        );
+    }
+
+    #[test]
+    fn a_uniform_region_on_a_busy_background_is_refused_with_its_own_reason() {
+        use crate::synthetic_scenes::textured_value;
+        let frame = GreyImage::from_fn(200, 160, |column, row| {
+            let is_inside_the_plate = (80..120).contains(&column) && (60..100).contains(&row);
+            if is_inside_the_plate {
+                20.0
+            } else {
+                40.0 + 180.0 * textured_value(column as f32, row as f32, 8.0, 5)
+            }
+        });
+        // Inside the plate, away from its edges; the filter's window still sees
+        // the textured background around it.
+        let plate = Region::from_top_left(85.0, 65.0, 30.0, 30.0);
+        assert_eq!(
+            RegionTracker::start(frame, plate).unwrap_err(),
+            TrackingError::RegionWithoutDetail
         );
     }
 
