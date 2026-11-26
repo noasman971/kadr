@@ -10,6 +10,7 @@
 //! nor replaces a previous good export.
 
 mod audio_mixer;
+mod clip_layers;
 mod frame_composer;
 
 use std::fs;

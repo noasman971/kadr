@@ -12,8 +12,12 @@
 //! Effects: tracked blurs hide their region in the source picture (at the clip's
 //! source time) before it is drawn; colour adjustments are handed to the renderer
 //! with the layer.
+//!
+//! Transitions and text animations move layers (see [`super::clip_layers`]); a
+//! clip shown under its neighbour's transition reads its source past its cut,
+//! holding the file's first or last frame where the file ends.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use kadr_core::clip::{Clip, ClipContent, TextContent};
@@ -22,14 +26,15 @@ use kadr_core::ids::ClipId;
 use kadr_core::media_asset::MediaKind;
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
-use kadr_core::timeline::{Track, TrackKind};
+use kadr_core::timeline::TrackKind;
 use kadr_media::{MediaBackend, VideoFrame, VideoFrameSource};
 use kadr_render::{
-    CanvasDescription, FrameRenderer, HiddenRegion, LayerPlacement, TextRasterizer, VisualLayer,
-    hide_regions,
+    CanvasDescription, FrameRenderer, HiddenRegion, LayerPlacement, TextRasterizer, TextReveal,
+    VisualLayer, hide_regions,
 };
 
 use super::ExportError;
+use super::clip_layers::plan_track_layers;
 
 /// Renders timeline pictures for one export.
 pub(super) struct FrameComposer<'export> {
@@ -39,8 +44,9 @@ pub(super) struct FrameComposer<'export> {
     open_sources: HashMap<ClipId, Box<dyn VideoFrameSource>>,
     /// Created on the first text clip: loading fonts takes a moment.
     text_rasterizer: Option<TextRasterizer>,
-    /// The picture of each text clip, with the content it was drawn from.
-    text_pictures: HashMap<ClipId, (TextContent, Arc<VideoFrame>)>,
+    /// The picture of each text clip, with the content and the part of it it
+    /// was drawn from.
+    text_pictures: HashMap<ClipId, (TextContent, TextReveal, Arc<VideoFrame>)>,
 }
 
 impl<'export> FrameComposer<'export> {
@@ -69,10 +75,10 @@ impl<'export> FrameComposer<'export> {
         &mut self,
         timeline_time: Timestamp,
     ) -> Result<VideoFrame, ExportError> {
-        self.close_sources_of_finished_clips(timeline_time);
-
+        let settings = self.project.settings();
         let mut prepared_layers: Vec<(Arc<VideoFrame>, LayerPlacement, Vec<ColorAdjustment>)> =
             Vec::new();
+        let mut clips_shown = HashSet::new();
         let visible_tracks = self
             .project
             .timeline()
@@ -80,20 +86,22 @@ impl<'export> FrameComposer<'export> {
             .iter()
             .filter(|track| track.kind == TrackKind::Video && !track.is_hidden);
         for track in visible_tracks {
-            let Some(clip) = clip_under_playhead(track, timeline_time) else {
-                continue;
-            };
-            if let Some(picture) = self.source_picture_of(clip, timeline_time)? {
-                let time_in_clip = timeline_time
-                    .span_since(clip.timeline_start)
-                    .unwrap_or(TimeSpan::ZERO);
-                prepared_layers.push((
-                    picture,
-                    LayerPlacement::of_clip_at(clip, time_in_clip),
-                    enabled_color_adjustments(clip),
-                ));
+            for planned_layer in plan_track_layers(track, timeline_time, settings.canvas_size) {
+                let clip = planned_layer.clip;
+                clips_shown.insert(clip.id);
+                let picture =
+                    self.source_picture_of(clip, timeline_time, planned_layer.text_reveal)?;
+                if let Some(picture) = picture {
+                    let placement = LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
+                        .moved_by(planned_layer.motion);
+                    prepared_layers.push((picture, placement, enabled_color_adjustments(clip)));
+                }
             }
         }
+        // A clip leaves the picture for good once it is over (its transitions
+        // included): free its decoder.
+        self.open_sources
+            .retain(|clip_id, _| clips_shown.contains(clip_id));
 
         let layers: Vec<VisualLayer<'_>> = prepared_layers
             .iter()
@@ -103,7 +111,6 @@ impl<'export> FrameComposer<'export> {
                 color_adjustments,
             })
             .collect();
-        let settings = self.project.settings();
         let canvas = CanvasDescription {
             size: settings.canvas_size,
             background: settings.background_color,
@@ -112,16 +119,22 @@ impl<'export> FrameComposer<'export> {
     }
 
     /// The source picture a clip shows at `timeline_time`, or `None` if the clip
-    /// shows no picture (sound only).
+    /// shows no picture (sound only). Outside the clip (under a transition of
+    /// the clip touching it), the source continues past the clip's cut.
     fn source_picture_of(
         &mut self,
         clip: &Clip,
         timeline_time: Timestamp,
+        text_reveal: TextReveal,
     ) -> Result<Option<Arc<VideoFrame>>, ExportError> {
         let segment = match &clip.content {
             ClipContent::Media(segment) => segment,
             ClipContent::Text(text_content) => {
-                return Ok(Some(self.text_picture_of(clip.id, text_content)));
+                return Ok(Some(self.text_picture_of(
+                    clip.id,
+                    text_content,
+                    text_reveal,
+                )));
             }
         };
         let Some(media_asset) = self.project.media_asset(segment.media_asset_id) else {
@@ -133,8 +146,10 @@ impl<'export> FrameComposer<'export> {
         let source_time = if media_asset.description.kind == MediaKind::Image {
             Timestamp::ZERO
         } else {
-            match clip.source_time_at(timeline_time) {
-                Some(source_time) => source_time,
+            match clip.source_time_continued_at(timeline_time) {
+                Some(source_time) => {
+                    held_inside_file(source_time, media_asset.description.duration)
+                }
                 None => return Ok(None),
             }
         };
@@ -153,43 +168,45 @@ impl<'export> FrameComposer<'export> {
         Ok(Some(Arc::new(hide_regions(&picture, &hidden_regions))))
     }
 
-    /// The picture of a text clip, drawn again only if its words or style changed.
-    fn text_picture_of(&mut self, clip_id: ClipId, text_content: &TextContent) -> Arc<VideoFrame> {
-        if let Some((drawn_content, picture)) = self.text_pictures.get(&clip_id)
+    /// The picture of a text clip, drawn again only if its words, its style or
+    /// the part of it shown (type-on animations) changed.
+    fn text_picture_of(
+        &mut self,
+        clip_id: ClipId,
+        text_content: &TextContent,
+        text_reveal: TextReveal,
+    ) -> Arc<VideoFrame> {
+        if let Some((drawn_content, drawn_reveal, picture)) = self.text_pictures.get(&clip_id)
             && drawn_content == text_content
+            && *drawn_reveal == text_reveal
         {
             return Arc::clone(picture);
         }
         let rasterizer = self.text_rasterizer.get_or_insert_with(TextRasterizer::new);
-        let picture = Arc::new(VideoFrame::Rgba(
-            rasterizer.rasterize(&text_content.text, &text_content.style),
-        ));
-        self.text_pictures
-            .insert(clip_id, (text_content.clone(), Arc::clone(&picture)));
+        let picture = Arc::new(VideoFrame::Rgba(rasterizer.rasterize_revealed(
+            &text_content.text,
+            &text_content.style,
+            text_reveal,
+        )));
+        self.text_pictures.insert(
+            clip_id,
+            (text_content.clone(), text_reveal, Arc::clone(&picture)),
+        );
         picture
-    }
-
-    /// Frees the decoders of clips that ended before `timeline_time`.
-    fn close_sources_of_finished_clips(&mut self, timeline_time: Timestamp) {
-        let timeline = self.project.timeline();
-        self.open_sources.retain(|clip_id, _| {
-            timeline
-                .find_clip(*clip_id)
-                .is_some_and(|(_, clip)| clip.timeline_end() > timeline_time)
-        });
     }
 }
 
-/// The clip of `track` containing `timeline_time`, if any.
-fn clip_under_playhead(track: &Track, timeline_time: Timestamp) -> Option<&Clip> {
-    let clips = track.clips();
-    // Clips are sorted by start and never overlap: the candidate is the last
-    // clip starting at or before the playhead.
-    let clips_started = clips.partition_point(|clip| clip.timeline_start <= timeline_time);
-    let candidate = clips.get(clips_started.checked_sub(1)?)?;
-    candidate
-        .contains_timeline_time(timeline_time)
-        .then_some(candidate)
+/// `source_time`, moved back inside a file lasting `file_duration` if it is past
+/// its end, so the last frame is held. Files without a duration (still images)
+/// are left alone.
+fn held_inside_file(source_time: Timestamp, file_duration: Option<TimeSpan>) -> Timestamp {
+    let Some(file_duration) = file_duration else {
+        return source_time;
+    };
+    let last_moment = (Timestamp::ZERO + file_duration)
+        .checked_sub(TimeSpan::from_ticks(1))
+        .unwrap_or(Timestamp::ZERO);
+    source_time.min(last_moment)
 }
 
 /// The clip's enabled colour adjustments, in order.
