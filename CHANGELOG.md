@@ -156,6 +156,20 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
 - Build scripts and procedural macros are compiled with optimisations, so `bindgen`
   no longer overflows the stack of Windows build scripts.
 
+### Fixed
+
+- Desktop inspector: a change made just before the inspector closed (a click on the
+  empty timeline or on another clip) was lost, often with an error in the console.
+  It happened to a title's words typed and not yet confirmed, to a colour chosen in
+  the picker and to every number field (position, scale, opacity, crop, volume,
+  speed, colour, font size, length): the field sends its value while it is being
+  removed, when the inspector no longer has its clip. The change now goes to the
+  clip the inspector was showing.
+- Number fields: after ↑ or ↓, leaving the field put the old value back.
+- Number fields in English: a value of 1000 or more was shown as "1,200", read back
+  as 1.2, so just entering and leaving the field changed it (Position X 1200 px
+  became 1 px). Editable numbers are now shown without thousands separators.
+
 ## [0.4.0] — Phase 3: GPU rendering
 
 ### Added (phase 3a: GPU rendering)
