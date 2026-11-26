@@ -4,7 +4,7 @@
   each with a Reset. Every finished change is one edit, so one undo step.
 -->
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
 
   import type { ClipValueName, ClipView, ColorSettings, EditRequest, TextAlignment } from "../../api/types";
   import { t, translations } from "../../i18n/i18n.svelte";
@@ -21,6 +21,29 @@
 
   let { clip }: Props = $props();
 
+  // The inspector panel keys this component by clip id, so it edits one clip
+  // for its whole life. Changes name that clip by its id and read its settings
+  // from the project, never from `clip`: a field can send its value while the
+  // inspector closes (the colour picker does when it is removed), and by then
+  // `clip` is no longer this clip.
+  const clipId = untrack(() => clip.id);
+
+  /** This clip as the project has it now, or `undefined` once it is gone. */
+  function currentClip(): ClipView | undefined {
+    return editor.view?.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
+  }
+
+  function colorSettingsOf(view: ClipView): ColorSettings {
+    return view.colorAdjustment
+      ? {
+          exposure: view.colorAdjustment.exposure,
+          contrast: view.colorAdjustment.contrast,
+          saturation: view.colorAdjustment.saturation,
+          temperature: view.colorAdjustment.temperature,
+        }
+      : NEUTRAL_COLOR;
+  }
+
   const KIND_ICONS: Record<ClipView["kind"], IconName> = { video: "film", audio: "music", image: "image", text: "type" };
   const SPEED_CHOICES = [0.5, 1, 1.5, 2];
   const FONT_FAMILIES = ["Inter", "Arial", "Georgia", "Times New Roman", "Courier New", "Impact", "Segoe UI", "Verdana"];
@@ -34,16 +57,7 @@
   const hasPictureSettings = $derived(clip.kind !== "audio");
   const hasSpeed = $derived(clip.kind === "video" || clip.kind === "audio");
   const hasColor = $derived(clip.kind === "video" || clip.kind === "image");
-  const colorSettings: ColorSettings = $derived(
-    clip.colorAdjustment
-      ? {
-          exposure: clip.colorAdjustment.exposure,
-          contrast: clip.colorAdjustment.contrast,
-          saturation: clip.colorAdjustment.saturation,
-          temperature: clip.colorAdjustment.temperature,
-        }
-      : NEUTRAL_COLOR,
-  );
+  const colorSettings: ColorSettings = $derived(colorSettingsOf(clip));
 
   let textArea: HTMLTextAreaElement | undefined = $state();
   let draftText = $state("");
@@ -57,7 +71,7 @@
   // placeholder words, once they are rendered, so typing replaces them.
   $effect(() => {
     const field = textArea;
-    if (editor.clipToFocusForText === clip.id && field) {
+    if (editor.clipToFocusForText === clipId && field) {
       editor.clipToFocusForText = null;
       void tick().then(() => {
         field.focus();
@@ -71,25 +85,31 @@
   }
 
   function setValue(value: ClipValueName, amount: number): void {
-    edit({ type: "setClipValue", clipId: clip.id, value, amount });
+    edit({ type: "setClipValue", clipId, value, amount });
   }
 
   function setCrop(side: "left" | "top" | "right" | "bottom", percent: number): void {
-    edit({ type: "setClipCrop", clipId: clip.id, ...clip.crop, [side]: percent / 100 });
+    const current = currentClip();
+    if (current) {
+      edit({ type: "setClipCrop", clipId, ...current.crop, [side]: percent / 100 });
+    }
   }
 
   function setColor(change: Partial<ColorSettings>): void {
-    edit({ type: "setClipColor", clipId: clip.id, settings: { ...colorSettings, ...change } });
+    const current = currentClip();
+    if (current) {
+      edit({ type: "setClipColor", clipId, settings: { ...colorSettingsOf(current), ...change } });
+    }
   }
 
   function setText(change: Partial<{ text: string; fontFamily: string; fontSize: number; color: string; alignment: TextAlignment }>): void {
-    if (!clip.text) {
+    const current = currentClip()?.text;
+    if (!current) {
       return;
     }
-    const current = clip.text;
     edit({
       type: "setClipText",
-      clipId: clip.id,
+      clipId,
       settings: {
         text: current.text,
         fontFamily: current.fontFamily,
@@ -102,10 +122,14 @@
   }
 
   function commitDraftText(): void {
-    if (clip.text && draftText.trim() !== "" && draftText !== clip.text.text) {
+    const current = currentClip()?.text;
+    if (!current) {
+      return;
+    }
+    if (draftText.trim() !== "" && draftText !== current.text) {
       setText({ text: draftText });
-    } else if (clip.text) {
-      draftText = clip.text.text;
+    } else {
+      draftText = current.text;
     }
   }
 
@@ -121,7 +145,10 @@
   }
 
   function setTextDuration(seconds: number): void {
-    edit({ type: "trimClip", clipId: clip.id, edge: "end", timeTicks: clip.startTicks + Math.round(seconds * TICKS_PER_SECOND) });
+    const current = currentClip();
+    if (current) {
+      edit({ type: "trimClip", clipId, edge: "end", timeTicks: current.startTicks + Math.round(seconds * TICKS_PER_SECOND) });
+    }
   }
 </script>
 
@@ -134,7 +161,7 @@
   <section class="section">
     <div class="section-head">
       <h3>{t("inspector.picture")}</h3>
-      <IconButton size="small" label={t("inspector.reset")} onclick={() => edit({ type: "resetClipPicture", clipId: clip.id })}>
+      <IconButton size="small" label={t("inspector.reset")} onclick={() => edit({ type: "resetClipPicture", clipId })}>
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
@@ -185,13 +212,13 @@
   <section class="section">
     <div class="section-head">
       <h3>{t("inspector.speed")}</h3>
-      <IconButton size="small" label={t("inspector.reset")} disabled={clip.speed === 1} onclick={() => edit({ type: "setClipSpeed", clipId: clip.id, speed: 1 })}>
+      <IconButton size="small" label={t("inspector.reset")} disabled={clip.speed === 1} onclick={() => edit({ type: "setClipSpeed", clipId, speed: 1 })}>
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
     <div class="segmented" role="group" aria-label={t("inspector.speed")}>
       {#each SPEED_CHOICES as speed (speed)}
-        <button type="button" aria-pressed={!customSpeed && clip.speed === speed} onclick={() => { customSpeed = false; edit({ type: "setClipSpeed", clipId: clip.id, speed }); }}>
+        <button type="button" aria-pressed={!customSpeed && clip.speed === speed} onclick={() => { customSpeed = false; edit({ type: "setClipSpeed", clipId, speed }); }}>
           {translations.formatNumber(speed, 1)}×
         </button>
       {/each}
@@ -200,7 +227,7 @@
       </button>
     </div>
     {#if customSpeed || !SPEED_CHOICES.includes(clip.speed)}
-      <NumberField label={t("inspector.speedValue")} unit="×" step={0.05} decimals={2} min={0.1} max={16} value={clip.speed} onCommit={(speed) => edit({ type: "setClipSpeed", clipId: clip.id, speed })} />
+      <NumberField label={t("inspector.speedValue")} unit="×" step={0.05} decimals={2} min={0.1} max={16} value={clip.speed} onCommit={(speed) => edit({ type: "setClipSpeed", clipId, speed })} />
     {/if}
     <p class="hint">{t("inspector.speedHint")}</p>
   </section>
@@ -210,7 +237,7 @@
   <section class="section">
     <div class="section-head">
       <h3>{t("inspector.color")}</h3>
-      <IconButton size="small" label={t("inspector.reset")} disabled={clip.colorAdjustment === null} onclick={() => edit({ type: "resetClipColor", clipId: clip.id })}>
+      <IconButton size="small" label={t("inspector.reset")} disabled={clip.colorAdjustment === null} onclick={() => edit({ type: "resetClipColor", clipId })}>
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
