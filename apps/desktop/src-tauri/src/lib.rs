@@ -8,8 +8,9 @@
 //!
 //! - [`open_project`]: the project being edited, saved after every change;
 //! - [`editing`]: the edit requests and the rules each one follows;
-//! - [`tracking_job`] and [`blur_overlay`]: following a box drawn on the
-//!   preview for a blur, and what the preview draws on top of a clip;
+//! - [`tracking_job`], [`blur_results`] and [`blur_overlay`]: following a box
+//!   drawn on the preview for a new or corrected blur, and what the preview
+//!   draws on top of a clip;
 //! - [`project_view`]: the description of the project the front end draws;
 //! - [`media_workers`]: the threads owning decoders (preview, thumbnails);
 //! - [`binary_messages`]: the byte layouts of pictures and sound;
@@ -22,6 +23,7 @@
 pub mod app_state;
 pub mod binary_messages;
 pub mod blur_overlay;
+pub mod blur_results;
 pub mod command_error;
 pub mod commands;
 pub mod editing;
