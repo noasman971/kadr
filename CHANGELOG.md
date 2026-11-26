@@ -61,6 +61,17 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
   README section "Editing with Claude".
 
+### Added (phase 6a: desktop app design)
+
+- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
+  notifications, keyboard shortcuts, languages and accessibility.
+- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
+  light themes, with measured WCAG contrast, and the component list.
+- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
+  both languages.
+- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
+  repository) and 0022 (how the front end and the engine talk).
+
 ## [0.4.0] — Phase 3: GPU rendering
 
 ### Added (phase 3a: GPU rendering)
@@ -98,17 +109,6 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - The export reports tracked blurs without regions and ignored colour adjustments.
 - Tests: region effects, colour formula, GPU/CPU parity with adjustments, exports of a
   moving hidden area and of a black-and-white adjustment.
-
-### Added (phase 6a: desktop app design)
-
-- `docs/ux.md`: the desktop app's screens and flows (import → edit → export), states,
-  notifications, keyboard shortcuts, languages and accessibility.
-- `docs/design-system.md`: colour, spacing, type and motion tokens for the dark and
-  light themes, with measured WCAG contrast, and the component list.
-- `docs/mockups/index.html`: static mockups of every key screen, in both themes and
-  both languages.
-- Decision records 0020 (Svelte 5 and TypeScript), 0021 (the app's layout in the
-  repository) and 0022 (how the front end and the engine talk).
 
 ### Changed
 
