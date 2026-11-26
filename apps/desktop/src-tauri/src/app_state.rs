@@ -11,6 +11,7 @@ use crate::command_error::{CommandError, CommandResult};
 use crate::export_job::ExportJobs;
 use crate::media_workers::{PreviewWorker, ThumbnailWorker};
 use crate::open_project::OpenProject;
+use crate::tracking_job::TrackingJobs;
 
 /// The app's state, managed by Tauri.
 pub struct AppState {
@@ -32,6 +33,8 @@ pub struct AppState {
     pub projects_folder: PathBuf,
     /// The export running in the background, and the files exports wrote.
     pub exports: ExportJobs,
+    /// The region being followed for a blur, if any.
+    pub tracking: TrackingJobs,
 }
 
 impl AppState {
@@ -54,6 +57,7 @@ impl AppState {
             configuration_folder,
             projects_folder,
             exports: ExportJobs::default(),
+            tracking: TrackingJobs::default(),
         })
     }
 

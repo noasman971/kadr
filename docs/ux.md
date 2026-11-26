@@ -170,6 +170,7 @@ value typed) is one undo step.
 | **Speed** | 0.5×, 1×, 1.5×, 2×, or a custom value. Voices keep their pitch; the clip's length changes, later clips do not move (a longer clip that would overlap is refused with a message) | Videos and sounds |
 | **Colour** | Exposure, contrast, saturation, temperature; off until first touched | Videos and pictures |
 | **Text** | Words, font, size, colour, alignment, duration | Titles |
+| **Blur** | Each tracked blur: style, strength, shape, margin, on / off, delete; *Add* starts the blur tool (see [Blurring a face](#blurring-a-face-phase-7)) | Videos |
 
 Number fields accept typing, arrow keys (Shift for bigger steps) and dragging
 sideways on the field. Each section has a *Reset*.
@@ -212,6 +213,76 @@ video*. Or a **human error**: what happened, why, what to do (*"The disk is full
 Free some space or pick another folder, then try again. Your previous file was not
 touched."*), with *Try again* and *Copy the details*.
 
+## Blurring a face (phase 7)
+
+What the person wants: hide a face (or a licence plate, a screen) through a whole
+clip, without drawing it frame by frame, and be sure nothing shows.
+
+### 1. Select the region
+
+1. The playhead is on a frame where the face is clearly visible.
+2. **Blur a region** (the preview's toolbar, **B**, or *Add a blur* in the inspector's
+   *Blur* section) turns the preview into a drawing surface: the cursor becomes a
+   cross, a hint says *"Draw a box around the face to blur"*.
+   - The clip blurred is the **selected video clip**, or the top video clip under the
+     playhead when none is selected. With no video under the playhead the button is
+     disabled and its tooltip says why.
+3. The person drags a box over the face. It stays on screen with eight handles and a
+   small bar: **Blur and follow** (Enter) and **Cancel** (Escape). Dragging inside the
+   box moves it, dragging a handle resizes it. A box too small to follow (24 pixels in
+   1080p) shows *"Too small to follow: draw a larger box"* and the button is disabled.
+
+The box is drawn on the canvas, but stored in the source video's pixels: moving,
+scaling or cropping the clip later keeps the blur on the face.
+
+### 2. Follow it
+
+**Blur and follow** starts the analysis, forwards and backwards from that frame:
+
+- a card on the preview shows *"Following the face… 42 % · about 6 s left"* with
+  **Cancel**; editing goes on meanwhile (the result is added when it ends, as its own
+  undo step);
+- when it ends, the blur appears on the clip, in the preview at once, and a
+  notification says *"Face blurred through the clip"*, or *"Face blurred · 2 moments
+  to check"* with **Check** when the tracker was unsure somewhere;
+- an analysis that fails says why (*"The box has no detail to follow: draw it around
+  the whole face, hair included"*), with nothing changed.
+
+Only one analysis runs at a time; **Blur a region** is disabled meanwhile, its tooltip
+says why.
+
+### 3. See it and adjust it (inspector, *Blur* section)
+
+Shown for videos. One block per blur of the clip (several faces, several blurs):
+
+| Setting | Choices |
+|---|---|
+| Style | **Blur** (default), **Pixels**, **Mask** (solid colour) |
+| Strength | Blur radius or square size, in pixels; colour for the mask |
+| Shape | **Ellipse** (faces, default) or **Rectangle** (plates, screens) |
+| Margin | Extra hidden space around the box, 0–100 %, default 20 % |
+| On / off, Delete | The eye hides the blur without deleting it; delete is undoable |
+
+While the clip is selected and the playhead is inside it, the preview draws each
+blur's **box** at that moment: a thin outline, solid where the tracker was sure,
+dashed with a ⚠ where it was not. The outline never shows in the export.
+
+### 4. Check and correct (7c)
+
+- Stretches where the tracker was **uncertain** or **lost** are drawn on the clip in
+  the timeline: amber stripes (uncertain) or red stripes (lost), with a ⚠ icon, so the
+  information is not carried by colour alone. Their tooltip says *"Check: the tracker
+  was unsure from 0:12.4 to 0:13.1"*.
+- **Next moment to check** (in the *Blur* section, and **Shift+B**) puts the playhead
+  in the middle of the next stretch and selects the clip.
+- To correct, the person drags the box (or its handles) where the face really is on
+  that frame, then **Correct from here** (Enter): the analysis runs again from that
+  frame, both ways, up to the neighbouring corrections or the original selection, and
+  keeps the surer answer frame by frame. The correction is one undo step. Ten seconds
+  are enough for a typical correction: go to the stretch, drag, Enter.
+- When nothing is left to check, the *Blur* section says *"Followed with confidence on
+  every frame"*.
+
 ## States every screen handles
 
 | State | What the user sees |
@@ -229,7 +300,8 @@ action), never stacking more than three:
 
 - after destructive or surprising actions, with **Undo**: clip deleted, format changed
   by the first video, format changed for an export preset;
-- background work finished: export done (with *Show in folder*);
+- background work finished: export done (with *Show in folder*), a face blurred
+  through a clip (with *Undo*, and how many moments to check);
 - errors that are not tied to a dialog (an unreadable imported file).
 
 ## Keyboard shortcuts
@@ -249,6 +321,7 @@ The full list is also in the app (`?`). Shortcuts do not fire while typing in a 
 | | Undo / redo | Ctrl+Z / Ctrl+Y, Ctrl+Shift+Z |
 | | Deselect | Esc |
 | | Add a title at the playhead | T |
+| | Blur a region (draw a box on the preview); then Enter to follow it, Esc to leave | B |
 | Timeline | Zoom in / out | + / − , Ctrl + wheel |
 | | Fit the whole edit | Shift+Z |
 | | Snapping on / off | N |
@@ -283,7 +356,6 @@ sizes and dates use the language's conventions (*17,6 Mo* / *17.6 MB*).
 
 | Later | Phase |
 |---|---|
-| Blurring a face: draw a box on the preview, tracking with progress, uncertain ranges coloured on the timeline, correction | 7 |
 | Claude working on the open project, *"Claude changed the project"* notifications, *Connect to Claude* screen | 7 |
 | Moving and resizing clips directly in the preview, with guides | 7 |
 | Transitions, keyframe curves, silence removal, stabilisation, LUTs, subtitles | 8 |

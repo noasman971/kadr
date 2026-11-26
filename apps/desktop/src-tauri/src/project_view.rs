@@ -13,12 +13,16 @@ use std::path::Path;
 
 use kadr_core::animation::AnimatedValue;
 use kadr_core::clip::{Clip, ClipContent, TextAlignment};
-use kadr_core::effect::EffectKind;
+use kadr_core::effect::{EffectKind, RegionSampleOrigin, TrackedBlur, TrackingConfidence};
 use kadr_core::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use kadr_core::media_asset::{MediaAsset, MediaKind};
 use kadr_core::project::Project;
+use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
 use serde::Serialize;
+
+use crate::blur_overlay::ConfidenceView;
+use crate::editing::BlurSettings;
 
 /// Everything the interface shows about the open project.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -206,6 +210,34 @@ pub struct ColorAdjustmentView {
     pub temperature: f32,
 }
 
+/// A tracked blur of a clip.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackedBlurView {
+    /// The effect holding it.
+    pub effect_id: EffectId,
+    /// Whether it is drawn.
+    pub is_enabled: bool,
+    /// Style, strength, shape, margin.
+    pub settings: BlurSettings,
+    /// How many times the box was corrected by hand.
+    pub correction_count: usize,
+    /// Where the tracker was not sure, on the timeline, in time order.
+    pub unsure_ranges: Vec<UnsureRangeView>,
+}
+
+/// A stretch of a clip where a blur's tracker was not sure.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsureRangeView {
+    /// Start on the timeline, in ticks.
+    pub start_ticks: u64,
+    /// End on the timeline (excluded), in ticks.
+    pub end_ticks: u64,
+    /// Uncertain or lost.
+    pub confidence: ConfidenceView,
+}
+
 /// One clip.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -254,6 +286,8 @@ pub struct ClipView {
     pub text: Option<TextView>,
     /// The colour adjustment, if the clip has one.
     pub color_adjustment: Option<ColorAdjustmentView>,
+    /// The tracked blurs, in the order they are applied.
+    pub tracked_blurs: Vec<TrackedBlurView>,
     /// Number of effects of any kind.
     pub effect_count: usize,
 }
@@ -443,6 +477,7 @@ fn clip_view_of(project: &Project, track: &Track, clip: &Clip) -> ClipView {
         },
         text,
         color_adjustment: first_color_adjustment_of(clip),
+        tracked_blurs: tracked_blurs_of(project, clip),
         effect_count: clip.effects.len(),
     }
 }
@@ -470,6 +505,68 @@ impl MediaFields {
             has_sound: false,
         }
     }
+}
+
+fn tracked_blurs_of(project: &Project, clip: &Clip) -> Vec<TrackedBlurView> {
+    clip.effects
+        .iter()
+        .filter_map(|effect| match &effect.kind {
+            EffectKind::TrackedBlur(blur) => Some(TrackedBlurView {
+                effect_id: effect.id,
+                is_enabled: effect.is_enabled,
+                settings: BlurSettings::of(blur),
+                correction_count: blur
+                    .region_samples
+                    .iter()
+                    .filter(|sample| sample.origin == RegionSampleOrigin::ManualCorrection)
+                    .count(),
+                unsure_ranges: unsure_ranges_on_timeline(project, clip, blur),
+            }),
+            EffectKind::ColorAdjustment(_) => None,
+        })
+        .collect()
+}
+
+/// The blur's unsure stretches the clip shows, on the timeline. Each covers its
+/// frames to the end of the last one.
+fn unsure_ranges_on_timeline(
+    project: &Project,
+    clip: &Clip,
+    blur: &TrackedBlur,
+) -> Vec<UnsureRangeView> {
+    let ClipContent::Media(segment) = &clip.content else {
+        return Vec::new();
+    };
+    let one_source_frame = project
+        .media_asset(segment.media_asset_id)
+        .and_then(|asset| asset.description.frame_rate)
+        .and_then(|frame_rate| frame_rate.timestamp_of_frame(1).span_since(Timestamp::ZERO))
+        .unwrap_or(TimeSpan::ZERO);
+    blur.unsure_ranges()
+        .iter()
+        .filter_map(|range| {
+            let first = range.first_source_time.max(segment.source_start);
+            let end = (range.last_source_time + one_source_frame).min(segment.source_end);
+            if first >= end {
+                return None;
+            }
+            let to_timeline = |source_time: Timestamp| {
+                source_time.span_since(segment.source_start).map(|elapsed| {
+                    clip.timeline_start + segment.speed.timeline_span_for_source_span(elapsed)
+                })
+            };
+            Some(UnsureRangeView {
+                start_ticks: to_timeline(first)?.ticks(),
+                end_ticks: to_timeline(end)?.ticks(),
+                confidence: match range.confidence {
+                    TrackingConfidence::Lost => ConfidenceView::Lost,
+                    TrackingConfidence::Uncertain | TrackingConfidence::Confident => {
+                        ConfidenceView::Uncertain
+                    }
+                },
+            })
+        })
+        .collect()
 }
 
 fn first_color_adjustment_of(clip: &Clip) -> Option<ColorAdjustmentView> {

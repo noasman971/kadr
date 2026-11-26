@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import type { ClipView, MediaView } from "../../api/types";
-  import { translations } from "../../i18n/i18n.svelte";
+  import { t, translations } from "../../i18n/i18n.svelte";
   import { ticksToPixels } from "../../timeline/timelineGeometry";
   import Icon from "../../ui/Icon.svelte";
   import type { IconName } from "../../ui/icons";
@@ -87,6 +87,9 @@
     <span class="name">{clip.name}</span>
     {#if speedBadge}<span class="badge">{speedBadge}</span>{/if}
     {#if volumeBadge}<span class="badge">{volumeBadge}</span>{/if}
+    {#if clip.trackedBlurs.length > 0}
+      <span class="badge blurred" title={t("blur.clipBadge")} aria-label={t("blur.clipBadge")}><Icon name="scanFace" size={11} /></span>
+    {/if}
   </div>
   {#if isOnScreen && showsPictures && media}
     <div class="pictures" style:height="{filmstripHeight}px">
@@ -203,6 +206,10 @@
     border-radius: var(--radius-sm);
     background: rgba(0, 0, 0, 0.35);
     line-height: 15px;
+  }
+  .badge.blurred {
+    display: grid;
+    place-items: center;
   }
   .pictures,
   .sound {

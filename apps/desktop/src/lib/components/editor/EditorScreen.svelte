@@ -8,6 +8,7 @@
   import type { ProjectView } from "../../api/types";
   import { t } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
+  import { blurTool } from "../../state/blurTool.svelte";
   import { exportJob } from "../../state/exportJob.svelte";
   import ExportDialog from "../export/ExportDialog.svelte";
   import { mediaDrag } from "../../state/mediaDrag.svelte";
@@ -141,6 +142,16 @@
     }
     const isCommand = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
+    // While a box is drawn for a blur, Enter follows it and Escape leaves the tool.
+    if (blurTool.isActive && (event.key === "Enter" || event.key === "Escape")) {
+      if (event.key === "Enter") {
+        void blurTool.confirm();
+      } else {
+        blurTool.cancel();
+      }
+      event.preventDefault();
+      return;
+    }
     let isHandled = true;
     if (isCommand && key === "z" && !event.shiftKey) {
       void editor.undo();
@@ -186,6 +197,12 @@
       void deleteSelection();
     } else if (key === "t") {
       void editor.addTitle("title");
+    } else if (key === "b" && !event.shiftKey) {
+      if (blurTool.isActive) {
+        blurTool.cancel();
+      } else {
+        blurTool.start();
+      }
     } else if (key === "n") {
       preferences.update({ isSnappingOn: !preferences.isSnappingOn });
     } else if (event.key === "Escape") {

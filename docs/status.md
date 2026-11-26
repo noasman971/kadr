@@ -56,7 +56,7 @@ which is more detailed and is the reference for its phase.
 | 4. Tracking and blur | 4a merged (#7). 4b (#8): drift on a real video fixed (mean error 197 → 2 px) | `feature/phase-4b-blur-analysis`, [#8](https://github.com/noasman971/kadr/pull/8) | Owner: validate phase 4, then tag `v0.5.0` |
 | 5. MCP server | Draft (#9): 34 of 35 tools tested | `feature/phase-5-mcp-server`, [#9](https://github.com/noasman971/kadr/pull/9) | Run the tests after the merge of `main`, then merge |
 | 6. Desktop app | 6a (#6), 6b (#10) and 6c (#14) merged. 6d in PR #15, tried by hand | `feature/phase-6d-inspector-export`, [#15](https://github.com/noasman971/kadr/pull/15) | Merge 6d, then the owner's edit-and-export test |
-| 7. Blur and Claude in the app | Started 2026-11-26: 7a (blur tools for Claude) in PR | `feature/phase-7a-blur-tools` | 7b: blur in the app |
+| 7. Blur and Claude in the app | 7a (blur tools for Claude) merged (#17); 7b (blur in the app) in PR | `feature/phase-7b-blur-in-app` | 7c: check and correct |
 | 8. Features | Resumed on 2026-11-26. 8a (transitions, text animations) in #11, `main` merged in, every test passing | `feature/phase-8a-transitions-text-animations`, [#11](https://github.com/noasman971/kadr/pull/11) | Merge #11, then the next feature after the owner's go-ahead |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
@@ -128,7 +128,7 @@ Versions are tagged in phase order, each only after the owner validates the phas
 ## Phase 7: blur and Claude in the app
 
 - **Plan**, one branch and pull request each, merged in order:
-  1. **7a, blur tools for Claude** (`feature/phase-7a-blur-tools`): MCP tools
+  1. **7a, blur tools for Claude** (merged, #17): MCP tools
      `blur_region` (background analysis; with an `effect_id` it corrects a blur and
      re-tracks from there), `get_blur_status` (ranges to check), `cancel_blur`;
      re-tracking from a correction in `kadr-engine`.

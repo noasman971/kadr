@@ -14,6 +14,7 @@
   import IconButton from "../../ui/IconButton.svelte";
   import type { IconName } from "../../ui/icons";
   import NumberField from "../../ui/NumberField.svelte";
+  import BlurInspector from "./BlurInspector.svelte";
 
   interface Props {
     clip: ClipView;
@@ -247,6 +248,10 @@
     <NumberField label={t("inspector.saturation")} unit="%" min={0} max={200} value={colorSettings.saturation * 100} onCommit={(value) => setColor({ saturation: value / 100 })} />
     <NumberField label={t("inspector.temperature")} min={-100} max={100} value={colorSettings.temperature * 100} onCommit={(value) => setColor({ temperature: value / 100 })} />
   </section>
+{/if}
+
+{#if clip.kind === "video"}
+  <BlurInspector {clip} />
 {/if}
 
 {#if clip.text}

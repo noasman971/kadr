@@ -16,3 +16,9 @@ export function pointerOffsetX(clientX: number, element: Element): number {
   const zoom = element.currentCSSZoom || 1;
   return (clientX - element.getBoundingClientRect().left) / zoom;
 }
+
+/** How far `clientY` is from the top edge of `element`, in the element's own CSS pixels. */
+export function pointerOffsetY(clientY: number, element: Element): number {
+  const zoom = element.currentCSSZoom || 1;
+  return (clientY - element.getBoundingClientRect().top) / zoom;
+}

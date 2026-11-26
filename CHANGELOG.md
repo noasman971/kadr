@@ -168,6 +168,19 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
 - `kadr-mcp` adds finished analyses to the project every second, so the file is up to
   date even if Claude makes no further call.
 
+### Added (phase 7b: blur in the desktop app)
+
+- Blur tool on the preview (**B**, the preview's button, or *Add* in the inspector):
+  draw a box on a face, move and resize it, ellipse or rectangle, *Blur and follow*
+  (Enter). The analysis runs in the background with its progress and *Stop*; the
+  result is one undo step, announced with *Undo*.
+- The inspector's *Blur* section: style (blur, pixels, mask), strength, shape, margin,
+  on / off, delete; how many moments the tracker was unsure about.
+- The preview draws each blur's box at the playhead for the selected clip (dashed
+  with ⚠ where the tracker was unsure); blurred clips get a badge on the timeline.
+- `kadr_engine::clip_geometry` and `kadr_render::SourceToCanvasMapping`: where a
+  clip's source picture is on the canvas, for interfaces drawing on top of it.
+
 ### Added (phase 8a: transitions and text animations)
 
 - `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
