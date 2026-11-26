@@ -19,6 +19,7 @@
   import Icon from "../../ui/Icon.svelte";
   import IconButton from "../../ui/IconButton.svelte";
   import type { IconName } from "../../ui/icons";
+  import { pointerOffsetX } from "../../ui/pointer";
   import TimelineRuler from "./TimelineRuler.svelte";
 
   interface Props {
@@ -45,6 +46,11 @@
       viewportWidth - headerWidth,
       ticksToPixels(view.durationTicks, pixelsPerSecond) + TRAILING_SPACE_IN_SECONDS * pixelsPerSecond,
     ),
+  );
+  // Ruler, one row per track, then the filler. `repeat(0, …)` is invalid CSS and
+  // would drop the whole declaration, so an empty timeline lists no track rows.
+  const gridRows = $derived(
+    [`${RULER_HEIGHT_IN_PIXELS}px`, ...view.tracks.map(() => "auto"), "1fr"].join(" "),
   );
   const playheadX = $derived(ticksToPixels(editor.playheadTicks, pixelsPerSecond));
   const selected = $derived(new Set(editor.selectedClipIds));
@@ -81,8 +87,8 @@
       return;
     }
     event.preventDefault();
-    const bounds = scroller.getBoundingClientRect();
-    zoomAround(pixelsPerSecond * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), event.clientX - bounds.left - headerWidth);
+    const anchorX = pointerOffsetX(event.clientX, scroller) - headerWidth;
+    zoomAround(pixelsPerSecond * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), anchorX);
   }
 
   function selectClip(event: MouseEvent, clip: ClipView): void {
@@ -150,7 +156,7 @@
     <div
       class="grid"
       style:grid-template-columns="var(--track-header-width) {contentWidth}px"
-      style:grid-template-rows="{RULER_HEIGHT_IN_PIXELS}px repeat({view.tracks.length}, auto) 1fr"
+      style:grid-template-rows={gridRows}
     >
       <div class="corner" bind:clientWidth={headerWidth}></div>
       <div class="ruler-cell">
