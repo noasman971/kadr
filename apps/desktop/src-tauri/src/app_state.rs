@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use kadr_engine::timeline_sound::TimelineSoundMixer;
 use kadr_media::{FfmpegBackend, MediaBackend};
 
+use crate::claude_link::ClaudeToolbox;
 use crate::command_error::{CommandError, CommandResult};
 use crate::export_job::ExportJobs;
 use crate::media_workers::{PreviewWorker, ThumbnailWorker};
@@ -35,6 +36,8 @@ pub struct AppState {
     pub exports: ExportJobs,
     /// The region being followed for a blur, if any.
     pub tracking: TrackingJobs,
+    /// Runs Claude's tool calls on the open project (decision record 0030).
+    pub claude: ClaudeToolbox,
 }
 
 impl AppState {
@@ -50,6 +53,7 @@ impl AppState {
             preview: PreviewWorker::start(Arc::clone(&backend)).map_err(CommandError::internal)?,
             thumbnails: ThumbnailWorker::start(Arc::clone(&backend))
                 .map_err(CommandError::internal)?,
+            claude: ClaudeToolbox::new(Arc::clone(&backend)),
             backend,
             open_project: Mutex::new(None),
             timeline_sound: Arc::new(Mutex::new(TimelineSoundMixer::new())),
