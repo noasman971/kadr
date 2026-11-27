@@ -94,6 +94,10 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ### Fixed
 
+- Desktop inspector, *Blur* section: two quick changes (a wider margin, then the
+  rectangle shape, before the first answer arrived) undid each other. Blur
+  changes now name only the settings they change, like the other settings since
+  #18.
 - Desktop inspector: two quick changes to the same clip could make the second undo
   the first. New words typed in a title, then a click on an alignment button before
   the first answer arrived, brought the old words back; the same could happen to

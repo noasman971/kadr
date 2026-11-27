@@ -34,12 +34,14 @@
   const isToolBusy = $derived(blurTool.phase === "tracking");
   const unavailableReason = $derived(isToolBusy ? t("blur.busy") : null);
 
+  // Only what changes: the view may be behind (an earlier change not answered
+  // yet, or Claude's change), and the back end keeps every other setting.
   function change(blur: TrackedBlurView, changes: Partial<BlurSettings>): void {
     void editor.edit({
       type: "setBlurSettings",
       clipId: clip.id,
       effectId: blur.effectId,
-      settings: { ...blur.settings, ...changes },
+      changes,
     });
   }
 

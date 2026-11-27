@@ -297,8 +297,8 @@ Details: [docs/architecture.md](docs/architecture.md).
   older Kadr must say "newer version" rather than "damaged file".
 - Desktop edit requests must never carry settings the user did not change: the view
   the front end draws can be behind the back end (an earlier change not answered
-  yet, or Claude's change). Crop, colour and text requests take `changes` with
-  optional fields, applied to the project as it is then. `editor.edit`, `undo` and
+  yet, or Claude's change). Crop, colour, text and blur requests take `changes`
+  with optional fields, applied to the project as it is then. `editor.edit`, `undo` and
   `redo` go one at a time, in order (`inOrder`): Tauri runs commands on a thread
   pool, so two requests sent together can be applied in either order. To reproduce
   such races, wrap `window.fetch` in the page and hold back `apply_edit` requests or
