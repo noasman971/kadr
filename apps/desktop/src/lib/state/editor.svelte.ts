@@ -49,6 +49,9 @@ class EditorState {
   /** Listeners told about every new view (playback restarts its sound). */
   private viewListeners: Array<(view: ProjectView) => void> = [];
 
+  /** The last change (edit, undo or redo) sent or waiting to be sent. */
+  private lastChange: Promise<unknown> = Promise.resolve();
+
   onViewChanged(listener: (view: ProjectView) => void): void {
     this.viewListeners.push(listener);
   }
@@ -96,15 +99,17 @@ class EditorState {
 
   /** Applies one edit (one undo step); returns the created clips. */
   async edit(request: EditRequest): Promise<number[]> {
-    try {
-      const response = await backend.applyEdit(request);
-      this.acceptView(response.view);
-      this.announceNotices(response.outcome.notices);
-      return response.outcome.createdClipIds;
-    } catch (error) {
-      this.showError(error);
-      return [];
-    }
+    return this.inOrder(async () => {
+      try {
+        const response = await backend.applyEdit(request);
+        this.acceptView(response.view);
+        this.announceNotices(response.outcome.notices);
+        return response.outcome.createdClipIds;
+      } catch (error) {
+        this.showError(error);
+        return [];
+      }
+    });
   }
 
   /** Adds a title at the playhead (T, the toolbar, the Text tab), selected, its words focused. */
@@ -118,24 +123,24 @@ class EditorState {
     }
   }
 
+  /** Undoes the last step, once the changes made before have been answered. */
   async undo(): Promise<void> {
-    const step = this.view?.undoLabel;
-    if (!step) {
-      return;
-    }
-    if (await this.runRequest(() => backend.undo())) {
-      toasts.show({ tone: "info", group: HISTORY_TOAST_GROUP, message: t("toast.undone", { step: undoStepDisplayName(step) }) });
-    }
+    await this.inOrder(async () => {
+      const step = this.view?.undoLabel;
+      if (step && (await this.runRequest(() => backend.undo()))) {
+        toasts.show({ tone: "info", group: HISTORY_TOAST_GROUP, message: t("toast.undone", { step: undoStepDisplayName(step) }) });
+      }
+    });
   }
 
+  /** Redoes the last undone step, once the changes made before have been answered. */
   async redo(): Promise<void> {
-    const step = this.view?.redoLabel;
-    if (!step) {
-      return;
-    }
-    if (await this.runRequest(() => backend.redo())) {
-      toasts.show({ tone: "info", group: HISTORY_TOAST_GROUP, message: t("toast.redone", { step: undoStepDisplayName(step) }) });
-    }
+    await this.inOrder(async () => {
+      const step = this.view?.redoLabel;
+      if (step && (await this.runRequest(() => backend.redo()))) {
+        toasts.show({ tone: "info", group: HISTORY_TOAST_GROUP, message: t("toast.redone", { step: undoStepDisplayName(step) }) });
+      }
+    });
   }
 
   /** Imports files: they show as "Reading…" tiles until the back end answers. */
@@ -203,6 +208,21 @@ class EditorState {
         });
       }
     }
+  }
+
+  /**
+   * Runs `change` once every change asked before it has been answered.
+   *
+   * Tauri runs commands on a pool of threads, so two requests sent at once can
+   * reach the project in either order: left then right alignment could end up
+   * left, and an undo could overtake the edit it was meant to undo. Changes
+   * therefore go one at a time, in the order the user made them. A change that
+   * fails does not hold back the next ones.
+   */
+  private inOrder<Result>(change: () => Promise<Result>): Promise<Result> {
+    const result = this.lastChange.then(change);
+    this.lastChange = result.catch(() => undefined);
+    return result;
   }
 
   private async runAndShowProject(request: () => Promise<ProjectView>): Promise<boolean> {

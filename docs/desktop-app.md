@@ -215,6 +215,15 @@ undo step:
 - `NumberField` takes typing, ↑ / ↓ (Shift for steps ten times bigger) and dragging
   its label sideways; the value is sent when the gesture ends. A value animated with
   keyframes shows *Animated (n keyframes)* and is not editable yet (phase 8).
+- Crop, colour and text requests name **only the settings that change**
+  (`changes: { alignment: "left" }`); the back end reads the others from the project
+  when it applies the request. The view the inspector draws can be behind: an
+  earlier change may not be answered yet, or Claude may have changed the clip.
+  Sending every setting from that view put old values back (new words, then a quick
+  click on an alignment button, brought the old words back).
+- The title's words field follows the project's words, except while it has the
+  focus: an answer arriving then (to a font size change, say) must not replace what
+  is being typed. Leaving the field sends the words only if the user changed them.
 - The colour adjustment is an effect added on the first change, replaced afterwards,
   and removed by *Reset*.
 - A speed change keeps the clip's start; a clip that would then overlap the next one
@@ -357,9 +366,15 @@ the user's view in [ux.md](ux.md#claude-in-the-app-phase-7).
 1. Add a variant to `EditRequest` in `editing.rs`, with a test, and a branch in
    `apply_edit_request` that runs `kadr-core` commands inside one transaction whose
    label is a key (`"splitClip"`).
+   A request that changes some settings of a group (a title's style, say) names
+   only those, as `Option` fields, and the back end applies them to the project
+   as it is then: never send values the user did not change.
 2. Add the same shape to `EditRequest` in `src/lib/api/types.ts`.
 3. Add `undo.<label>` to both message files.
-4. Call `editor.edit({ type: "…", … })` from the component.
+4. Call `editor.edit({ type: "…", … })` from the component. Edits, undo and redo
+   go to the back end **one at a time, in the order they were made**
+   (`editor.svelte.ts`, `inOrder`): Tauri runs commands on a pool of threads, so
+   two requests sent together could otherwise be applied in either order.
 
 ## Languages
 

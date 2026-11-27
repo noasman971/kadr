@@ -22,14 +22,15 @@ It is the source of truth for scope, phases and rules.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
 - **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
-- **Phases 4, 5, 6, 8 and 9 are in progress in parallel**, each on its own branch
-  with a draft pull request whose description starts with "Status for resuming".
-  **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
+- **Phases 4 (face blur by tracking), 5 (MCP server) and 6 (desktop app): done**,
+  tagged `v0.5.0`, `v0.6.0` and `v0.7.0` at the owner's request on 2026-11-27.
+- **Phases 7 (blur and Claude in the app) and 8 (features) are in progress**, each in
+  small PRs whose description starts with "Status for resuming". Phase 9 (Android) is
+  paused by the owner; phase 10 (iOS) needs a Mac.
+- **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
   another computer, and the prompt to start each session with: read it first.**
-  Phase 9 is paused by the owner; phase 8 resumed on 2026-11-26. Phase 7
-  (blur and Claude in the app) started on 2026-11-26, in small PRs 7a–7e (plan in
-  docs/status.md); phase 10 (iOS) needs a Mac. Versions are tagged in phase order
-  (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
+  Versions are tagged in phase order (`v0.8.0` = phase 7, `v0.9.0` = phase 8, …),
+  each after the owner validates it.
 
 ## Decisions taken with the owner
 
@@ -196,6 +197,18 @@ Details: [docs/architecture.md](docs/architecture.md).
   compiles the whole workspace. Five at once filled 32 GB of memory and made
   everything 10 to 20 times slower. Run two or three sessions at most, with
   `CARGO_BUILD_JOBS=4`.
+- **Disk:** each session's build folder grows to 10–30 GB (debug, release, Tauri).
+  On 2026-11-27 five of them filled the desktop PC's disk and builds failed with
+  `link.exe` error 1318. Delete a finished session's build folder, with the owner's
+  OK; never one that a running session uses.
+- **Repository inside OneDrive** (the desktop PC's `Bureau` folder): keep the build
+  output out of it, or OneDrive syncs gigabytes and can lock files mid-build. Each
+  checkout or worktree gets a machine-local `.cargo/config.toml` with
+  `[build] target-dir = "<a folder outside OneDrive>"`, excluded from git through
+  `.git/info/exclude` (shared by every worktree); never commit it.
+- **Tools installed while the Claude app is open:** sessions inherit the app's old
+  `PATH`. Until the app restarts, start build commands with
+  `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); $env:FFMPEG_DIR = [Environment]::GetEnvironmentVariable('FFMPEG_DIR','User')`.
 - **Tracking:** synthetic scenes are not enough. A real 1080p video
   (`scripts/generate-tracking-benchmark.ps1`, measured with the `track_video`
   example and `scripts/compare-tracking-with-truth.py`) showed drifts that every
@@ -282,3 +295,18 @@ Details: [docs/architecture.md](docs/architecture.md).
   `vertical_interview_format_1.kadr`) with a test that it still opens. A new enum
   variant (effect kind…) needs a version bump too, even with a no-op migration: an
   older Kadr must say "newer version" rather than "damaged file".
+- Desktop edit requests must never carry settings the user did not change: the view
+  the front end draws can be behind the back end (an earlier change not answered
+  yet, or Claude's change). Crop, colour and text requests take `changes` with
+  optional fields, applied to the project as it is then. `editor.edit`, `undo` and
+  `redo` go one at a time, in order (`inOrder`): Tauri runs commands on a thread
+  pool, so two requests sent together can be applied in either order. To reproduce
+  such races, wrap `window.fetch` in the page and hold back `apply_edit` requests or
+  answers (DevTools port).
+- Running the app while another session runs its own: port 1420 is then taken, and
+  a `tauri dev` whose Vite fails still starts its window on the **other** session's
+  front end. Use other ports and a separate WebView2 folder: a `--config` file
+  setting `build.devUrl` to `http://localhost:1430` and `build.beforeDevCommand` to
+  `npx vite --port 1430 --strictPort`, with `WEBVIEW2_USER_DATA_FOLDER` set and
+  another `--remote-debugging-port`. A running `kadr.exe` cannot be deleted but can
+  be renamed, which unblocks a rebuild.
