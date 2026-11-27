@@ -4,10 +4,11 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use kadr_core::effect::TrackingConfidence;
+use kadr_core::effect::{ColorLut, TrackingConfidence};
 use kadr_core::media_asset::{MediaAssetDescription, MediaKind};
 use kadr_core::project::Project;
 use kadr_core::time::{FrameRate, TICKS_PER_SECOND, Timestamp};
+use kadr_engine::color_grading::ColorTableSummary;
 use kadr_engine::{ExportProgress, ExportReport, RegionTrackingReport, TrackingProgress};
 
 /// Describes a probed media file, one property per line.
@@ -53,6 +54,25 @@ pub fn describe_assembled_project(project_path: &Path, project: &Project) -> Str
         project.timeline().duration(),
         canvas.width_in_pixels,
         canvas.height_in_pixels
+    )
+}
+
+/// One line saying which LUT `assemble` applied, and to how many clips.
+pub fn describe_color_lut(
+    color_lut: &ColorLut,
+    summary: &ColorTableSummary,
+    graded_clip_count: usize,
+) -> String {
+    let title = summary
+        .title
+        .as_ref()
+        .map(|title| format!(" \"{title}\""))
+        .unwrap_or_default();
+    format!(
+        "  colour LUT{title} ({}) from {}, at {:.0} %, on {graded_clip_count} clip(s)",
+        summary.size_in_words(),
+        color_lut.file_path.display(),
+        color_lut.strength_fraction * 100.0
     )
 }
 
@@ -245,5 +265,22 @@ mod tests {
             "Exported out.mp4: 150 frames, 5.000 s, rendered by CPU, encoder libx264, in 2.0 s (2.5× real time)"
         ));
         assert!(summary.ends_with("  note: text clip 4 was not drawn"));
+    }
+
+    #[test]
+    fn the_lut_line_gives_its_title_size_and_strength() {
+        let color_lut = ColorLut {
+            file_path: PathBuf::from("film.cube"),
+            strength_fraction: 0.8,
+        };
+        let summary = ColorTableSummary {
+            title: Some("Film".to_string()),
+            shape: kadr_engine::color_grading::LookupTableShape::ThreeDimensional,
+            size: 33,
+        };
+        assert_eq!(
+            describe_color_lut(&color_lut, &summary, 2),
+            "  colour LUT \"Film\" (33 × 33 × 33) from film.cube, at 80 %, on 2 clip(s)"
+        );
     }
 }

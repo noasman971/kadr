@@ -60,6 +60,12 @@ pub enum Command {
         /// How long the title takes to appear (and to disappear), in seconds.
         #[arg(long, default_value_t = 0.8)]
         title_animation_seconds: f64,
+        /// A colour LUT (`.cube` file) giving every video and image its look.
+        #[arg(long)]
+        lut: Option<PathBuf>,
+        /// How much of the LUT's look is applied, from 0 (none) to 1 (all of it).
+        #[arg(long, default_value_t = 1.0)]
+        lut_strength: f32,
         /// The media files, in order.
         #[arg(required = true)]
         files: Vec<PathBuf>,
@@ -433,9 +439,35 @@ mod tests {
                 format: CanvasFormat::Vertical,
                 transition: None,
                 title: None,
+                lut: None,
+                lut_strength: 1.0,
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn assemble_takes_a_lut_and_its_strength() {
+        let parsed = CommandLine::try_parse_from([
+            "kadr-cli",
+            "assemble",
+            "-o",
+            "graded.kadr",
+            "--lut",
+            "looks/film.cube",
+            "--lut-strength",
+            "0.8",
+            "a.mp4",
+        ])
+        .unwrap();
+        let Command::Assemble {
+            lut, lut_strength, ..
+        } = parsed.command
+        else {
+            panic!("expected the assemble command");
+        };
+        assert_eq!(lut, Some(PathBuf::from("looks/film.cube")));
+        assert_eq!(lut_strength, 0.8);
     }
 
     #[test]

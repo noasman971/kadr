@@ -1,5 +1,6 @@
-//! Optional touches `assemble` adds to the project it builds: a transition at
-//! the start of every picture clip, and an animated title.
+//! Optional touches `assemble` adds to the project it builds: a colour LUT on
+//! every picture clip, a transition at the start of every picture clip, and an
+//! animated title.
 //!
 //! They exist so transitions and text animations can be tried from the command
 //! line before the desktop app; every change goes through the same undoable
@@ -7,9 +8,10 @@
 
 use kadr_core::clip::ClipContent;
 use kadr_core::commands::{
-    AddClip, AddTrack, ClipEdge, CreatedObjectsExt, SetClipTransition, SetTextAnimation,
+    AddClip, AddEffect, AddTrack, ClipEdge, CreatedObjectsExt, SetClipTransition, SetTextAnimation,
     TrackPosition,
 };
+use kadr_core::effect::{ColorLut, EffectKind};
 use kadr_core::error::EditError;
 use kadr_core::history::EditSession;
 use kadr_core::project::Project;
@@ -17,6 +19,45 @@ use kadr_core::text_animation::TextAnimation;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
 use kadr_core::transition::Transition;
+
+/// Gives every video and image clip the look of `color_lut`. Sound and text
+/// clips are left alone. Returns the project and how many clips were graded.
+///
+/// The file is not read here: read it first with
+/// `kadr_engine::color_grading::load_color_lookup_table`.
+///
+/// # Errors
+///
+/// Fails if the LUT is refused (for example a strength above 1).
+pub fn add_color_lut_to_every_picture_clip(
+    project: Project,
+    color_lut: &ColorLut,
+) -> Result<(Project, usize), EditError> {
+    let mut session = EditSession::new(project)?;
+    let project = session.project();
+    let picture_clip_ids: Vec<_> = project
+        .timeline()
+        .all_clips()
+        .filter(|(track, _)| track.kind == TrackKind::Video)
+        .filter(|(_, clip)| match &clip.content {
+            ClipContent::Media(segment) => project
+                .media_asset(segment.media_asset_id)
+                .is_some_and(|asset| asset.description.has_picture()),
+            ClipContent::Text(_) => false,
+        })
+        .map(|(_, clip)| clip.id)
+        .collect();
+    session.transaction("Add a colour LUT", |transaction| {
+        for &clip_id in &picture_clip_ids {
+            transaction.execute(AddEffect::new(
+                clip_id,
+                EffectKind::ColorLut(color_lut.clone()),
+            ))?;
+        }
+        Ok(())
+    })?;
+    Ok((session.into_project(), picture_clip_ids.len()))
+}
 
 /// Gives every video and image clip of the bottom video track an entry
 /// `transition`: the first one appears from the background, each following one
@@ -98,7 +139,7 @@ fn missing_created_object() -> EditError {
 mod tests {
     use super::*;
     use kadr_core::commands::ImportMedia;
-    use kadr_core::media_asset::{MediaAssetDescription, MediaKind, PictureSize};
+    use kadr_core::media_asset::{AudioFormat, MediaAssetDescription, MediaKind, PictureSize};
     use kadr_core::project::ProjectSettings;
     use kadr_core::text_animation::TextAnimationStyle;
     use kadr_core::time::FrameRate;
@@ -153,6 +194,88 @@ mod tests {
         let clips = project.timeline().tracks()[0].clips();
         assert_eq!(clips.len(), 2);
         assert!(clips.iter().all(|clip| clip.entry_transition == Some(fade)));
+    }
+
+    #[test]
+    fn every_picture_clip_gets_the_lut_but_not_sound_or_text() {
+        let with_title = add_animated_title(
+            two_clips_end_to_end(),
+            "Hello",
+            TimeSpan::from_whole_seconds(3),
+            TextAnimation {
+                style: TextAnimationStyle::Fade,
+                duration: TimeSpan::from_milliseconds(500),
+            },
+        )
+        .unwrap();
+        let mut session = EditSession::new(with_title).unwrap();
+        let music_id = session
+            .execute(ImportMedia::new(MediaAssetDescription {
+                file_path: "music.mp3".into(),
+                display_name: "music.mp3".to_string(),
+                kind: MediaKind::Audio,
+                duration: Some(TimeSpan::from_whole_seconds(8)),
+                picture_size: None,
+                frame_rate: None,
+                audio_format: Some(AudioFormat {
+                    sample_rate_in_hertz: 48_000,
+                    channel_count: 2,
+                }),
+            }))
+            .unwrap()
+            .first_media_asset_id()
+            .unwrap();
+        let audio_track_id = session
+            .execute(AddTrack::new(TrackKind::Audio, TrackPosition::Top))
+            .unwrap()
+            .first_track_id()
+            .unwrap();
+        session
+            .execute(AddClip::media(
+                audio_track_id,
+                music_id,
+                Timestamp::ZERO,
+                Timestamp::from_whole_seconds(8),
+                Timestamp::ZERO,
+            ))
+            .unwrap();
+        let look = ColorLut {
+            file_path: "C:/looks/film.cube".into(),
+            strength_fraction: 0.8,
+        };
+
+        let (project, graded_clip_count) =
+            add_color_lut_to_every_picture_clip(session.into_project(), &look).unwrap();
+
+        assert_eq!(graded_clip_count, 2);
+        for (track, clip) in project.timeline().all_clips() {
+            let luts: Vec<_> = clip
+                .effects
+                .iter()
+                .filter_map(|effect| match &effect.kind {
+                    EffectKind::ColorLut(color_lut) => Some(color_lut),
+                    _ => None,
+                })
+                .collect();
+            let is_picture_clip =
+                track.kind == TrackKind::Video && matches!(clip.content, ClipContent::Media(_));
+            if is_picture_clip {
+                assert_eq!(luts, vec![&look]);
+            } else {
+                assert!(luts.is_empty(), "clip {} has a LUT", clip.id);
+            }
+        }
+    }
+
+    #[test]
+    fn a_lut_stronger_than_1_is_refused() {
+        let too_strong = ColorLut {
+            file_path: "film.cube".into(),
+            strength_fraction: 1.5,
+        };
+        let error =
+            add_color_lut_to_every_picture_clip(two_clips_end_to_end(), &too_strong).unwrap_err();
+        assert!(error.to_string().contains("strength"), "{error}");
     }
 
     #[test]

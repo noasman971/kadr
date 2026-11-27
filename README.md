@@ -187,6 +187,14 @@ Add a transition at every cut and an animated title (see
 .\target\release\kadr-cli assemble --output demo.kadr --transition slide-left --title "Hello" --title-animation type-on clip1.mp4 clip2.mp4
 ```
 
+Give every video and image the look of a colour LUT (a `.cube` file exported by
+DaVinci Resolve, Premiere or another grading tool; `--lut-strength 0.8` applies 80 %
+of it; see [docs/rendering.md](docs/rendering.md#colour-luts)):
+
+```powershell
+.\target\release\kadr-cli assemble --output graded.kadr --lut C:\Looks\film.cube --lut-strength 0.8 clip1.mp4 clip2.mp4
+```
+
 Export it to MP4 (rendered on the GPU and encoded in hardware when available;
 `--cpu` to render on the CPU, `--software-encoder` to force libx264, `--fast` for quick
 previews, Ctrl+C to cancel cleanly):
