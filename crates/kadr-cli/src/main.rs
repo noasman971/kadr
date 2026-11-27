@@ -10,6 +10,8 @@
 //! kadr-cli render edit.kadr edit.mp4
 //! kadr-cli blur interview.mp4 --at 2.5 --rect 420,180,160,200 -o blurred.mp4 --debug
 //! kadr-cli remove-silences interview.mp4 -o shorter.mp4 --threshold -45
+//! kadr-cli import-subtitles edit.kadr interview.srt --backdrop box
+//! kadr-cli export-subtitles edit.kadr corrected.srt
 //! ```
 
 mod arguments;
@@ -17,6 +19,7 @@ mod blur;
 mod finishing_touches;
 mod reports;
 mod silences;
+mod subtitles;
 
 use std::error::Error;
 use std::path::Path;
@@ -168,6 +171,24 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
                 cpu,
             },
         ),
+        Command::ImportSubtitles {
+            project,
+            subtitles,
+            offset,
+            backdrop,
+            position,
+        } => subtitles::import_subtitles(&subtitles::SubtitleImportCommand {
+            project,
+            subtitles,
+            offset_in_seconds: offset,
+            backdrop,
+            position,
+        }),
+        Command::ExportSubtitles {
+            project,
+            output,
+            track,
+        } => subtitles::export_subtitles(&project, &output, track),
     }
 }
 

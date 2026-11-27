@@ -591,7 +591,7 @@ fn clip_has_sound(project: &Project, clip: &Clip) -> bool {
         ClipContent::Media(segment) => project
             .media_asset(segment.media_asset_id)
             .is_some_and(|asset| asset.description.has_audio()),
-        ClipContent::Text(_) => false,
+        ClipContent::Text(_) | ClipContent::Subtitle(_) => false,
     }
 }
 

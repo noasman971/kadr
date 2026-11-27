@@ -2,15 +2,15 @@
 //! split and remove clips.
 
 use kadr_core::commands::{
-    AddClip, AddTrack, ClipEdge, CreatedObjectsExt, MoveClip, RemoveClip, RemoveTrack, SplitClip,
-    TrackPosition, TrimClip,
+    AddClip, AddTrack, ClipEdge, CreatedObjectsExt, MoveClip, RemoveClip,
+    RemoveTimeFromSubtitleTracks, RemoveTrack, SplitClip, TrackPosition, TrimClip,
 };
 use kadr_core::error::EditError;
 use kadr_core::history::Transaction;
 use kadr_core::ids::{ClipId, MediaAssetId, TrackId};
 use kadr_core::media_asset::MediaKind;
 use kadr_core::project::Project;
-use kadr_core::time::{TimeSpan, Timestamp};
+use kadr_core::time::{TimeRange, TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -194,6 +194,9 @@ pub(crate) enum TrackKindParameter {
     Video,
     /// Sound only.
     Audio,
+    /// Subtitle cues, all drawn in the track's style (see import_subtitles and
+    /// edit_subtitles).
+    Subtitle,
 }
 
 impl From<TrackKindParameter> for TrackKind {
@@ -201,6 +204,7 @@ impl From<TrackKindParameter> for TrackKind {
         match kind {
             TrackKindParameter::Video => TrackKind::Video,
             TrackKindParameter::Audio => TrackKind::Audio,
+            TrackKindParameter::Subtitle => TrackKind::Subtitle,
         }
     }
 }
@@ -509,8 +513,9 @@ pub(crate) fn create_track(
 
 const REMOVE_CLIP_DESCRIPTION: &str = "\
 Removes a clip from the timeline (the media stays imported; files on disk are never touched). \
-With \"close_gap\": true, the later clips of the same track move earlier to fill the hole \
-(other tracks do not move). One undo brings everything back. \
+With \"close_gap\": true, the later clips of the same track move earlier to fill the hole; \
+other tracks do not move, except subtitle tracks, which lose the same moment so their words stay \
+on the voice. One undo brings everything back. \
 Example: {\"clip_id\": 7, \"close_gap\": true}";
 
 /// Parameters of `remove_clip`.
@@ -533,6 +538,10 @@ fn remove_clip(
     let (track, clip) = project.require_clip(clip_id)?;
     let removed_length = clip.timeline_duration();
     let removed_end = clip.timeline_end();
+    // Subtitles describe what the other tracks show: they close up too.
+    let removed_time_for_subtitles = (parameters.close_gap && track.kind != TrackKind::Subtitle)
+        .then(|| TimeRange::new(clip.timeline_start, removed_end))
+        .flatten();
     let tolerance = snapping_tolerance(project);
     let later_clips: Vec<(ClipId, Timestamp)> = if parameters.close_gap {
         track
@@ -556,6 +565,9 @@ fn remove_clip(
                 .checked_sub(removed_length)
                 .unwrap_or(Timestamp::ZERO);
             transaction.execute(MoveClip::along_track(*later_clip_id, new_start))?;
+        }
+        if let Some(removed_time) = removed_time_for_subtitles {
+            transaction.execute(RemoveTimeFromSubtitleTracks::new(vec![removed_time]))?;
         }
         Ok(())
     })?;

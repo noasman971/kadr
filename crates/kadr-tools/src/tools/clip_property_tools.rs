@@ -376,7 +376,7 @@ fn scale_filling_canvas(
                 .description
                 .picture_size
         }
-        ClipContent::Text(_) => None,
+        ClipContent::Text(_) | ClipContent::Subtitle(_) => None,
     };
     let Some(picture_size) = picture_size else {
         return Err(ToolError::new(format!(
