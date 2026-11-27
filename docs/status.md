@@ -1,7 +1,7 @@
 # Status, and how to resume
 
-Last updated: **2026-11-27**, when the owner moved the work from the desktop PC back
-to the laptop.
+Last updated: **2026-11-27**, on the laptop, after phase 7's last pull requests
+(7d, 7e) and phase 8b were merged.
 
 This page says where every phase stands and how to pick the work up on another
 computer. Each open pull request starts with a **"Status for resuming"** section,
@@ -60,8 +60,8 @@ which is more detailed and is the reference for its phase.
 | 4. Tracking and blur | Done, tagged `v0.5.0` | `main` (#7, #8) | — (owner's real-video test still to do) |
 | 5. MCP server | Done, tagged `v0.6.0` | `main` (#9) | — (owner's Claude Desktop test still to do) |
 | 6. Desktop app | Done, tagged `v0.7.0` | `main` (#6, #10, #14, #15, #16; fix #18 after the tag) | — (owner's edit-and-export test still to do) |
-| 7. Blur and Claude in the app | 7a, 7b, 7c merged (#17, #19, #20); 7d ready in #21; 7e draft #24 | `feature/phase-7d-live-link`, [#21](https://github.com/noasman971/kadr/pull/21); `feature/phase-7e-connect-to-claude`, [#24](https://github.com/noasman971/kadr/pull/24) | Merge #21 once green, then finish #24 (docs) |
-| 8. Features | 8a merged (#11); 8b (silence removal) ready in PR #23 | `feature/phase-8b-silence-removal`, [#23](https://github.com/noasman971/kadr/pull/23) | Merge #23 once green, then the next feature after the owner's go-ahead |
+| 7. Blur and Claude in the app | 7a–7e merged (#17, #19, #20, #21, #24); blur inspector fix in #25 | `main`; `fix/blur-inspector-edit-race`, [#25](https://github.com/noasman971/kadr/pull/25) | Merge #25 once green, then the owner's end test |
+| 8. Features | 8a and 8b merged (#11, #23) | `main` | Owner: which feature next |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -97,20 +97,39 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
      progress and cancel, a Blur section in the inspector.
   3. **7c, checking and correcting** (merged, #20): unsure ranges on the timeline, go
      to the next one, correct the box and re-track.
-  4. **7d, live link** (ready, #21, `feature/phase-7d-live-link`): decision record
-     0030; `kadr-mcp` passes Claude's calls to the open app, which runs them on its
-     own project; *"Claude a modifié le projet"* notice; file mode when the app is
-     closed. CI was re-running when the work moved to the laptop.
-  5. **7e, Connect to Claude** (draft, #24, `feature/phase-7e-connect-to-claude`):
-     decision record 0031; a settings screen that writes the Claude Desktop
-     configuration and manages the allowed folders. Code and tests are done; its
-     docs are not written yet.
-- **Next step:** merge `origin/main` into #21 and merge it once the six checks are
-  green; then merge `main` into #24 and write its docs (its "Status for resuming"
-  lists the rest), then the owner's end test below.
-- **Known issue:** the blur inspector added in 7b has the same race #18 fixed for the
-  other settings (two quick changes, the second undoing the first). To fix in its own
-  PR, the same way as #18.
+  4. **7d, live link** (merged, #21): decision record 0030; `kadr-mcp` passes
+     Claude's calls to the open app, which runs them on its own project; *"Claude a
+     modifié le projet"* notice; file mode when the app is closed.
+  5. **7e, Connect to Claude** (merged, #24): decision record 0031; Settings →
+     Claude writes the Claude Desktop configuration and manages the allowed folders,
+     read by `kadr-mcp --kadr-settings` before every call. Docs in the README,
+     `docs/mcp-server.md`, `docs/ux.md` and `docs/desktop-app.md`.
+- **Fix in review:** #25 (`fix/blur-inspector-edit-race`): the inspector's Blur section
+  had the race #18 fixed for the other settings (two quick changes, the second
+  undoing the first). Blur requests now name only what changes. Merge once green.
+- **Next step: the owner's end test.** Its steps, in French, are below. After it, the
+  owner validates phase 7, and it is tagged `v0.8.0`.
+- **Not done yet (not blocking):** the installer does not ship `kadr-mcp` next to the
+  app (Tauri `externalBin`); the Connect screen's native pickers were not clicked by
+  a person; macOS / Linux configuration paths are untested.
+
+### End test of phase 7 (for the owner, in French)
+
+1. Construire l'app et le serveur côte à côte, depuis le dossier du projet :
+   `cargo build --release -p kadr-mcp`, puis depuis `apps/desktop` :
+   `npx tauri build --no-bundle`. Les deux programmes sont alors dans
+   `target\release\`.
+2. Lancer `target\release\kadr.exe`, ouvrir **Paramètres → Claude →
+   Connecter à Claude…**, ajouter le dossier qui contient `interview.mp4` (une vidéo
+   avec deux personnes) et celui des exports, puis **Connecter Kadr à Claude
+   Desktop**.
+3. Quitter complètement Claude Desktop (aussi depuis l'icône près de l'horloge), le
+   rouvrir, et dans une nouvelle conversation, avec l'app Kadr ouverte : *« floute le
+   visage de la personne à gauche dans interview.mp4 et exporte pour TikTok »*.
+4. Vérifier : Claude regarde une image, donne le rectangle, le suivi tourne dans
+   l'app (le flou apparaît, avec *« Claude a modifié le projet »*), Claude vérifie
+   les moments incertains, et la vidéo exportée (1080 × 1920) garde le visage flouté
+   du début à la fin.
 - **Done when** the owner says in Claude Desktop *« floute le visage de la personne
   à gauche dans interview.mp4 et exporte pour TikTok »* and it works.
 - Decision records 0030–0039 are reserved for phase 7.
@@ -125,14 +144,12 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
 - **8a, transitions and text animations** (merged, #11): entry and exit transitions
   (fade, slide, zoom) and text animations (fade, slide, pop, type-on, word by word),
   file format 2 with a migration, decision record 0050.
-- **8b, silence removal** (ready, PR #23, `feature/phase-8b-silence-removal`): the core
-  command removing parts of a clip and closing the gaps, the engine's plan, the MCP
-  tool `remove_silences`, `kadr-cli remove-silences` and the desktop app part. Checked
-  locally (fmt, clippy, 411 Rust tests with the GPU required, `cargo doc`, the front
-  end's 45 tests, type check and build) and tried with the CLI and in the app. CI was
-  running when the work moved to the laptop.
-- **Next step:** `gh pr checks 23`; merge #23 once green (merge `origin/main` into it
-  first if it conflicts), then ask the owner which feature comes next.
+- **8b, silence removal** (merged, #23): the core command removing parts of a clip and
+  closing the gaps, the engine's plan, the MCP tool `remove_silences`, `kadr-cli
+  remove-silences` and the desktop app part (decision record 0051). Merging it with
+  phases 7d and 7e needed one fix: tools now receive a `ToolCall`, not the
+  `KadrToolbox`.
+- **Next step:** the owner chooses the next feature.
 - **Left, proposed in the specification's order:** LUT `.cube` files for colour grading,
   stabilisation (`kadr-vision`'s optical flow and smoothing), editable keyframes in
   the interface, automatic proxies for heavy 4K videos, SRT subtitles. Also waiting:
