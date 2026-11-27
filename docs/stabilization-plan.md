@@ -10,10 +10,68 @@ Where the work stands is in the pull request's "Status for resuming" and in
 the code disagrees, follow the code and the "Reports of the finished steps" at the
 end, which list every deviation.
 
-**One thing changed since the design was written:** phase 8e (keyframes) merged first
-and took file format 4. This branch must take the next free version when it merges
-`origin/main` (see "File format" below: renumber the version, chain the migration
-after 8e's, and keep both fixtures).
+**Changed since the design was written:** phase 8e (keyframes) merged first and
+took file format 4, so the stabilisation uses **file format 5** (done: migration
+chained after 8e's, `vertical_interview_format_4.kadr` kept as a fixture). Phases
+8f and 8g may merge before this branch too: check `CURRENT_FORMAT_VERSION` on
+`origin/main` again before merging.
+
+## Where the work stands (2026-11-27, 19:30)
+
+Steps 1 to 7 are done, step 8 (the benchmark) is written and run, and the first
+half of step 9 (the composer draws stabilised clips) is committed without its
+tests. Steps 9 (rest) to 14 are left.
+
+### Benchmark results, and what they say to do next
+
+`scripts/generate-stabilization-benchmark.ps1`, then the `stabilize_video` example
+in release, then `scripts/compare-stabilization-with-truth.py`, on the laptop:
+
+| Check | Limit | Measured | |
+|---|---|---|---|
+| 1. Step error, mean | 0.2 px | 0.17 px | ok |
+| 1. Step error, 95th percentile | 0.5 px | 0.70 px | **fails** |
+| 2. Roll error, 95th percentile | 0.02° | 0.035° | **fails** |
+| 3. The cut is seen; other frames not measured | 3 | 2 (frames 628 and 636) | ok |
+| 4. Shake left, RMS | 0.4 px, 5 % | 1.65 px, 13 % | **fails** |
+| 5. Largest jump of the steadied picture | 1.5 px | 11.7 px | **fails** |
+| 6. Enlargement; frames partly corrected | 1.08; 0 | 1.054; 0 | ok |
+| 7. Speed, decoding included | 60 frames/s on the desktop PC | 70 frames/s on the laptop | ok |
+
+Two findings were fixed on the way: FFmpeg's crop filter rounds the window's corner
+to the nearest pixel (the truth first used `floor`), and the motion fit lost the
+camera while a large object crossed a side of the picture (54 frames not measured,
+now 2; see `camera_motion.rs`, steps 3 and 5 of its documentation).
+
+Where the remaining shake is (centre of the frame, high-passed, RMS):
+
+| Part of a shot | Shake left |
+|---|---|
+| Middle of a run, away from its ends | 0.5 px |
+| First and last 20 frames of a run | 4.7 to 6.2 px |
+| While the large object crosses (frames 590 to 700, two breaks) | 2.8 px |
+
+**So the next things to do, in this order:**
+
+1. **Run ends (the main cause).** The smoothing extends a run by point reflection
+   about its end *sample* (`smoothed_pose_in_run` in `camera_path.rs`), which forces
+   the smoothed path through that one shaky sample: the first and last 0.6 s of
+   every run keep most of their shake. Reflect about a value fitted on the run's
+   end instead (a line through the last `σ` seconds, as region tracking's smoothing
+   does since phase 4), and accept that the correction is no longer the identity at
+   a run's ends. Tests to change with it: `the_correction_is_identity_at_both_ends_of_a_run`
+   and `a_run_break_never_makes_the_correction_jump` (vision),
+   `the_first_and_last_frames_are_only_enlarged` (engine, `correction.rs`), and
+   `Run::around`, whose window must hold the samples the fit needs. Re-measure.
+2. **Frames 628 and 636** are still not measured while the large object enters:
+   find which rule of `measure_motion` refuses them (print it), and make a refused
+   frame inside a scene fall back to a shift rather than break the run.
+3. **Noise:** 0.5 px is left in the middle of a run (limit 0.4) and the roll's 95th
+   percentile is 0.035° (limit 0.02°). Try more points per cell or a 5-point
+   sub-pixel refinement; measure before and after.
+4. Then the rest of step 9: `clip_geometry.rs` (`clip_source_placement`), the export
+   warnings in `export/mod.rs`, and the tests listed under "kadr-engine" below
+   (`stabilized_timeline_frames_barely_move` first).
 
 ## The design
 

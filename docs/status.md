@@ -14,7 +14,7 @@ pushed; nothing lives only on the laptop.
 
 | Work | Where | State |
 |---|---|---|
-| 8d, stabilisation | Branch `feature/phase-8d-stabilization` and its draft pull request | Steps 1–5 of 14 are committed (motion measurement, path smoothing, the effect, the renderer). Next: step 6. The design, the steps and the reports of what is done are in [stabilization-plan.md](stabilization-plan.md) |
+| 8d, stabilisation | Branch `feature/phase-8d-stabilization` and its draft pull request (#30) | Steps 1–8 of 14 are done (motion measurement, path smoothing, the effect in file format 5, the renderer, the analysis, the benchmark) and the composer draws stabilised clips. The benchmark does not pass yet: [stabilization-plan.md](stabilization-plan.md), "Where the work stands", gives the numbers and the next things to do |
 | 8f, automatic proxies | Branch `claude/phase-8f-proxies-98d76d` and its pull request | Proxies are made, used by the preview and shown in the app. Docs and the end checks were left: see its "Status for resuming" |
 | 8g, SRT subtitles | Pull request #29 | Code and docs written. One CI job (Ubuntu) failed when work stopped: see its "Status for resuming" |
 | Automatic subtitles | Not started | Approved by the owner, as the step after 8g (below) |
