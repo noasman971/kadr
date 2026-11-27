@@ -93,6 +93,8 @@ into BT.709 YUV frames on the GPU (`wgpu`) or the CPU (reference); `kadr-vision`
 use (it re-exports the media backend types). `kadr-tools` defines the tools Claude can
 call (`KadrToolbox::call_tool`, no MCP dependency); `kadr-mcp` serves them over stdio
 with `rmcp`. Read [docs/mcp-server.md](docs/mcp-server.md) before changing a tool.
+`kadr-app-link` is the local pipe through which `kadr-mcp` passes Claude's calls
+to the open desktop app, which runs them on its own project (decision 0030).
 `kadr-cli` is for testing. The desktop app `apps/desktop` (Tauri 2) has a Svelte front
 end and a Rust back end, the crate `kadr-desktop`, which owns the project and answers
 with project views, frames and sound ([docs/desktop-app.md](docs/desktop-app.md)).
@@ -252,6 +254,12 @@ Details: [docs/architecture.md](docs/architecture.md).
   its own `WEBVIEW2_USER_DATA_FOLDER`, or WebView2 fails with `0x8007139F`.
 - In scripts, `.picture` also matches the library's thumbnails: aim at the preview
   through `svg.surface` (the blur overlay) or `section.preview`.
+- Claude's link to the app: tests must never reach a real Kadr open on the
+  computer. `KadrMcpServer::new` is file mode only; the relay test and the stdio test
+  use their own pipe (`KADR_APP_LINK_ADDRESS`). Git Bash rewrites environment values
+  like `\\.\pipe\…`: set that variable from PowerShell.
+- `open_project` only reads files but changes which project is open: hosts must not
+  run it on a read-only snapshot (`KadrToolbox::only_reads_the_open_project`).
   Computer use may be refused; the script route needs no permission.
 - Svelte components that close while a field is focused: WebView2 fires `blur` (and
   `change`, for an open colour picker) on the field **while it is being removed**, and
