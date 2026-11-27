@@ -1,20 +1,24 @@
-//! Effects applied to a clip: colour adjustment, colour LUT and tracked blur.
+//! Effects applied to a clip: colour adjustment, colour LUT, tracked blur and
+//! stabilisation.
 //!
 //! Effects only *describe* what to do. Rendering them is the job of
 //! `kadr-render`, reading LUT files the job of `kadr-engine`, and computing the
-//! tracked regions the job of `kadr-vision`.
+//! tracked regions and the camera's path the job of `kadr-vision`.
 //!
 //! Whatever the order of a clip's effects list, they apply in a fixed order:
-//! tracked blurs hide their areas on the source picture, then the colour
-//! adjustments apply (in list order), then the colour LUT.
+//! tracked blurs hide their areas on the source picture, then the stabilisation
+//! moves the picture inside the layer's window, then the colour adjustments
+//! apply (in list order), then the colour LUT.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::color::Color;
 use crate::ids::EffectId;
-use crate::time::Timestamp;
+use crate::media_asset::PictureSize;
+use crate::time::{TimeSpan, Timestamp};
 
 /// An effect attached to a clip.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -37,6 +41,8 @@ pub enum EffectKind {
     ColorLut(ColorLut),
     /// Hides a moving region (usually a face) by following it through the clip.
     TrackedBlur(TrackedBlur),
+    /// Steadies a shaky camera: its measured path, smoothed when the clip is drawn.
+    Stabilization(Stabilization),
 }
 
 impl EffectKind {
@@ -46,6 +52,7 @@ impl EffectKind {
             EffectKind::ColorAdjustment(_) => "colour adjustment",
             EffectKind::ColorLut(_) => "colour LUT",
             EffectKind::TrackedBlur(_) => "tracked blur",
+            EffectKind::Stabilization(_) => "stabilisation",
         }
     }
 
@@ -54,7 +61,8 @@ impl EffectKind {
         match self {
             EffectKind::ColorAdjustment(_)
             | EffectKind::ColorLut(_)
-            | EffectKind::TrackedBlur(_) => true,
+            | EffectKind::TrackedBlur(_)
+            | EffectKind::Stabilization(_) => true,
         }
     }
 }
@@ -218,7 +226,8 @@ impl TrackedBlur {
     }
 }
 
-/// A stretch of a tracked blur where the tracker was not confident.
+/// A stretch of a tracked blur where the tracker was not confident, or of a
+/// stabilisation's camera path where the motion could not be measured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnsureRange {
     /// Source time of the first unsure sample.
@@ -372,9 +381,224 @@ pub struct RegionSample {
     pub origin: RegionSampleOrigin,
 }
 
+/// Steadies a shaky camera.
+///
+/// The analysis (`kadr-engine`, with the algorithms of `kadr-vision`) measures
+/// how the camera moved from one frame to the next and stores the **raw**
+/// cumulative path: one [`CameraPathSample`] per analysed frame, indexed by
+/// **source time** like the tracked blur's regions. The path is smoothed when
+/// the clip is drawn, so changing the smoothing needs no new analysis, and a
+/// split, a trim or a speed change never changes how a frame is corrected.
+///
+/// The analysis covers the clip's source range and a margin around it. Frames
+/// outside the analysed part keep no correction (they are only enlarged by the
+/// zoom); [`Stabilization::covers`] tells whether a range was analysed.
+///
+/// The path is shared, not copied, by splits and undo records (an hour of
+/// video at 60 fps holds 216 000 samples); comparing two stabilisations
+/// compares the paths' contents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Stabilization {
+    /// Standard deviation of the Gaussian smoothing the camera's path, in
+    /// seconds of the source file. From
+    /// [`Stabilization::MINIMUM_SMOOTHING_IN_SECONDS`] to
+    /// [`Stabilization::MAXIMUM_SMOOTHING_IN_SECONDS`].
+    pub smoothing_in_seconds: f32,
+    /// How much the steadied picture is enlarged so its moving edges stay
+    /// outside the frame (1 = not enlarged, at most
+    /// [`Stabilization::MAXIMUM_ZOOM_FACTOR`]). Derived from the path and the
+    /// smoothing by `kadr-engine`, never set by hand; the renderer never shows
+    /// an edge, even if it is stale.
+    pub zoom_factor: f32,
+    /// Size of the pictures the path was measured in (the file's picture size),
+    /// in pixels.
+    pub analysed_picture_size: PictureSize,
+    /// The camera's measured path: one sample per analysed frame, in strictly
+    /// increasing source time, never empty. Never simplified or interpolated:
+    /// the small motions it would drop are the shake itself.
+    pub camera_path: Arc<[CameraPathSample]>,
+}
+
+/// Frame starts are rounded up to whole ticks (`FrameRate::timestamp_of_frame`),
+/// so two spacings of the same frame rate can differ by one tick: the end of the
+/// last analysed frame, estimated from the last spacing, can be a tick early.
+const FRAME_START_ROUNDING: TimeSpan = TimeSpan::from_ticks(1);
+
+impl Stabilization {
+    /// The smoothing of a new stabilisation, in seconds.
+    pub const DEFAULT_SMOOTHING_IN_SECONDS: f32 = 0.5;
+    /// The lightest smoothing, in seconds.
+    pub const MINIMUM_SMOOTHING_IN_SECONDS: f32 = 0.1;
+    /// The strongest smoothing, in seconds.
+    pub const MAXIMUM_SMOOTHING_IN_SECONDS: f32 = 10.0;
+    /// The zoom factor of a picture that is not enlarged.
+    pub const MINIMUM_ZOOM_FACTOR: f32 = 1.0;
+    /// The largest enlargement: a shake needing more is only partly corrected.
+    pub const MAXIMUM_ZOOM_FACTOR: f32 = 1.2;
+    /// The smallest size a camera path sample may have, relative to the first frame.
+    pub const MINIMUM_PATH_SCALE_FACTOR: f32 = 0.25;
+    /// The largest size a camera path sample may have, relative to the first frame.
+    pub const MAXIMUM_PATH_SCALE_FACTOR: f32 = 4.0;
+
+    /// The index of the sample whose frame shows at `source_time`: the last
+    /// sample at or before it (the decoder's rule), or the first sample for a
+    /// time before the path starts. Never interpolated: a frame shown twice (a
+    /// slowed-down clip) gets the same correction twice. 0 for an empty path.
+    pub fn sample_index_at(&self, source_time: Timestamp) -> usize {
+        self.camera_path
+            .partition_point(|sample| sample.source_time <= source_time)
+            .saturating_sub(1)
+    }
+
+    /// The moment to decode to show `source_time`: inside the analysed part
+    /// (from the first sample to the end of the last sample's frame), the time
+    /// of the sample whose frame shows then; outside it, `source_time` itself.
+    ///
+    /// The analysis decoded each frame at its sample's time, so decoding at the
+    /// same time shows exactly the frame that was measured, even in files whose
+    /// frames are not evenly spaced.
+    pub fn frame_time_for(&self, source_time: Timestamp) -> Timestamp {
+        let (first_time, _) = self.analysed_range();
+        let is_inside = self
+            .analysed_end()
+            .is_some_and(|analysed_end| first_time <= source_time && source_time < analysed_end);
+        if !is_inside {
+            return source_time;
+        }
+        self.camera_path
+            .get(self.sample_index_at(source_time))
+            .map_or(source_time, |sample| sample.source_time)
+    }
+
+    /// The times of the first and last samples (both zero for an empty path).
+    pub fn analysed_range(&self) -> (Timestamp, Timestamp) {
+        match (self.camera_path.first(), self.camera_path.last()) {
+            (Some(first), Some(last)) => (first.source_time, last.source_time),
+            _ => (Timestamp::ZERO, Timestamp::ZERO),
+        }
+    }
+
+    /// Whether every frame shown from `source_start` to `source_end` (excluded)
+    /// was analysed: the range starts at or after the first sample and ends by
+    /// the end of the last sample's frame.
+    pub fn covers(&self, source_start: Timestamp, source_end: Timestamp) -> bool {
+        let (first_time, _) = self.analysed_range();
+        self.analysed_end().is_some_and(|analysed_end| {
+            first_time <= source_start && source_end <= analysed_end + FRAME_START_ROUNDING
+        })
+    }
+
+    /// The stretches where the camera's motion could not be measured (a cut, a
+    /// frame too blurred or too uniform to follow): the samples after the first
+    /// whose `motion_was_measured` is false, consecutive ones joined, each with
+    /// the confidence [`TrackingConfidence::Lost`].
+    pub fn unmeasured_ranges(&self) -> Vec<UnsureRange> {
+        let mut ranges = Vec::new();
+        let mut current: Option<UnsureRange> = None;
+        for sample in self.camera_path.iter().skip(1) {
+            if sample.motion_was_measured {
+                ranges.extend(current.take());
+                continue;
+            }
+            current = Some(match current {
+                Some(range) => UnsureRange {
+                    last_source_time: sample.source_time,
+                    ..range
+                },
+                None => UnsureRange {
+                    first_source_time: sample.source_time,
+                    last_source_time: sample.source_time,
+                    confidence: TrackingConfidence::Lost,
+                },
+            });
+        }
+        ranges.extend(current);
+        ranges
+    }
+
+    /// Where the last sample's frame ends (excluded), estimated from the spacing
+    /// of the last two samples: the last sample's time for a one-sample path,
+    /// `None` for an empty one.
+    fn analysed_end(&self) -> Option<Timestamp> {
+        let last = self.camera_path.last()?;
+        let last_spacing = match self.camera_path.last_chunk::<2>() {
+            Some([before_last, last]) => last
+                .source_time
+                .span_since(before_last.source_time)
+                .unwrap_or(TimeSpan::ZERO),
+            None => TimeSpan::ZERO,
+        };
+        Some(last.source_time + last_spacing)
+    }
+}
+
+/// Where the camera was at one analysed frame, relative to the path's first
+/// frame, about the centre of the picture, in the pixels of
+/// [`Stabilization::analysed_picture_size`].
+///
+/// A point of the content seen in the path's first frame at `u` is at
+/// `C + scale · R(rotation) · (u − C) + shift` in this frame, `C` being the
+/// picture's centre and `R` a clockwise rotation (y downwards).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CameraPathSample {
+    /// Start of the analysed frame in the file: the time the analysis decoded
+    /// it at (`FrameRate::timestamp_of_frame` of its index).
+    pub source_time: Timestamp,
+    /// How far the content moved right (positive) since the path's first
+    /// frame, in source pixels.
+    pub shift_x_in_pixels: f32,
+    /// How far the content moved down (positive) since the path's first frame,
+    /// in source pixels.
+    pub shift_y_in_pixels: f32,
+    /// How much the content turned clockwise (y downwards) since the path's
+    /// first frame, in degrees.
+    pub rotation_in_degrees: f32,
+    /// The content's size relative to the path's first frame (1 = same size).
+    pub scale_factor: f32,
+    /// Whether the motion since the previous sample was measured. False on the
+    /// first sample, and after a cut or a frame that could not be followed: the
+    /// smoothing restarts there.
+    pub motion_was_measured: bool,
+}
+
+#[cfg(test)]
+pub(crate) mod test_samples {
+    //! Ready-made stabilisations for the tests of every module.
+
+    use super::*;
+    use crate::time::FrameRate;
+
+    /// A stabilisation of a 1080p, 30 fps file whose path has one sample per
+    /// frame from `first_frame` to `last_frame` (included), drifting right by a
+    /// pixel per frame, every motion measured.
+    pub(crate) fn stabilization_of_frames(first_frame: u64, last_frame: u64) -> Stabilization {
+        let camera_path: Vec<CameraPathSample> = (first_frame..=last_frame)
+            .map(|frame_index| CameraPathSample {
+                source_time: FrameRate::FPS_30.timestamp_of_frame(frame_index),
+                shift_x_in_pixels: (frame_index - first_frame) as f32,
+                shift_y_in_pixels: 0.0,
+                rotation_in_degrees: 0.0,
+                scale_factor: 1.0,
+                motion_was_measured: frame_index != first_frame,
+            })
+            .collect();
+        Stabilization {
+            smoothing_in_seconds: Stabilization::DEFAULT_SMOOTHING_IN_SECONDS,
+            zoom_factor: 1.05,
+            analysed_picture_size: PictureSize {
+                width_in_pixels: 1920,
+                height_in_pixels: 1080,
+            },
+            camera_path: camera_path.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_samples::stabilization_of_frames;
     use super::*;
+    use crate::time::FrameRate;
 
     fn region(left: f32, top: f32, width: f32, height: f32) -> PixelRegion {
         PixelRegion {
@@ -502,5 +726,154 @@ mod tests {
             unsure.hidden_area_at(Timestamp::ZERO).unwrap(),
             region(85.0, 85.0, 130.0, 130.0),
         );
+    }
+
+    fn one_tick_before(time: Timestamp) -> Timestamp {
+        time.checked_sub(TimeSpan::from_ticks(1)).unwrap()
+    }
+
+    #[test]
+    fn stabilization_lookup_is_a_step() {
+        // At 2997/100 fps (how some files give 29.97), frames do not start on
+        // whole ticks: the lookup must still find each frame's own sample at its
+        // start, and the previous one a tick before.
+        let frame_rate = FrameRate::new(2_997, 100).unwrap();
+        let camera_path: Vec<CameraPathSample> = (30..=40)
+            .map(|frame_index| CameraPathSample {
+                source_time: frame_rate.timestamp_of_frame(frame_index),
+                ..stabilization_of_frames(0, 0).camera_path[0]
+            })
+            .collect();
+        let stabilization = Stabilization {
+            camera_path: camera_path.into(),
+            ..stabilization_of_frames(0, 0)
+        };
+        for frame_index in 31..=40 {
+            let frame_start = frame_rate.timestamp_of_frame(frame_index);
+            let expected_index = (frame_index - 30) as usize;
+            assert_eq!(stabilization.sample_index_at(frame_start), expected_index);
+            assert_eq!(
+                stabilization.sample_index_at(one_tick_before(frame_start)),
+                expected_index - 1
+            );
+        }
+        assert_eq!(stabilization.sample_index_at(Timestamp::ZERO), 0);
+        assert_eq!(
+            stabilization.sample_index_at(Timestamp::from_whole_seconds(60)),
+            10
+        );
+    }
+
+    #[test]
+    fn frame_time_snaps_only_inside_the_analysed_range() {
+        let frame_start = |frame_index| FrameRate::FPS_30.timestamp_of_frame(frame_index);
+        let stabilization = stabilization_of_frames(30, 40);
+        assert_eq!(
+            stabilization.analysed_range(),
+            (frame_start(30), frame_start(40))
+        );
+
+        let inside_frame_35 = frame_start(35) + TimeSpan::from_milliseconds(10);
+        assert_eq!(
+            stabilization.frame_time_for(inside_frame_35),
+            frame_start(35)
+        );
+        // The last sample's frame lasts until the next frame would start.
+        let inside_frame_40 = one_tick_before(frame_start(41));
+        assert_eq!(
+            stabilization.frame_time_for(inside_frame_40),
+            frame_start(40)
+        );
+        // Outside the analysed part, times are decoded as they are.
+        for outside in [
+            frame_start(41),
+            frame_start(41) + TimeSpan::from_milliseconds(10),
+            one_tick_before(frame_start(30)),
+            Timestamp::ZERO,
+        ] {
+            assert_eq!(stabilization.frame_time_for(outside), outside);
+        }
+    }
+
+    #[test]
+    fn a_path_covers_its_frames_up_to_the_end_of_the_last_one() {
+        let frame_start = |frame_index| FrameRate::FPS_30.timestamp_of_frame(frame_index);
+        let stabilization = stabilization_of_frames(30, 40);
+        assert!(stabilization.covers(frame_start(30), frame_start(41)));
+        assert!(stabilization.covers(frame_start(32), frame_start(35)));
+        assert!(!stabilization.covers(frame_start(29), frame_start(35)));
+        assert!(!stabilization.covers(frame_start(32), frame_start(42)));
+
+        // When frames do not start on whole ticks, the last spacing can be a
+        // tick shorter than the next one: a range ending at the next frame's
+        // start is still covered.
+        let frame_rate = FrameRate::new(2_997, 100).unwrap();
+        for last_frame in 1..40 {
+            let camera_path: Vec<CameraPathSample> = (0..=last_frame)
+                .map(|frame_index| CameraPathSample {
+                    source_time: frame_rate.timestamp_of_frame(frame_index),
+                    ..stabilization.camera_path[0]
+                })
+                .collect();
+            let ntsc_stabilization = Stabilization {
+                camera_path: camera_path.into(),
+                ..stabilization.clone()
+            };
+            assert!(
+                ntsc_stabilization.covers(
+                    Timestamp::ZERO,
+                    frame_rate.timestamp_of_frame(last_frame + 1)
+                ),
+                "{last_frame}"
+            );
+        }
+    }
+
+    #[test]
+    fn unmeasured_ranges_skip_the_first_sample() {
+        let measured = [false, true, false, false, true, false];
+        let base = stabilization_of_frames(0, 5);
+        let camera_path: Vec<CameraPathSample> = base
+            .camera_path
+            .iter()
+            .zip(measured)
+            .map(|(sample, motion_was_measured)| CameraPathSample {
+                motion_was_measured,
+                ..*sample
+            })
+            .collect();
+        let stabilization = Stabilization {
+            camera_path: camera_path.into(),
+            ..base
+        };
+        let frame_start = |frame_index| FrameRate::FPS_30.timestamp_of_frame(frame_index);
+        assert_eq!(
+            stabilization.unmeasured_ranges(),
+            vec![
+                UnsureRange {
+                    first_source_time: frame_start(2),
+                    last_source_time: frame_start(3),
+                    confidence: TrackingConfidence::Lost,
+                },
+                UnsureRange {
+                    first_source_time: frame_start(5),
+                    last_source_time: frame_start(5),
+                    confidence: TrackingConfidence::Lost,
+                },
+            ]
+        );
+        assert!(stabilization_of_frames(0, 5).unmeasured_ranges().is_empty());
+    }
+
+    #[test]
+    fn a_stabilization_reads_back_from_json_with_its_path() {
+        let stabilization = EffectKind::Stabilization(stabilization_of_frames(0, 2));
+        let json_text = serde_json::to_string(&stabilization).unwrap();
+        assert!(
+            json_text.starts_with(r#"{"type":"stabilization","#),
+            "{json_text}"
+        );
+        let read_back: EffectKind = serde_json::from_str(&json_text).unwrap();
+        assert_eq!(read_back, stabilization);
     }
 }

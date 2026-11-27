@@ -7,6 +7,57 @@ This page says where every phase stands and how to pick the work up on another
 computer. Each open pull request starts with a **"Status for resuming"** section,
 which is more detailed and is the reference for its phase.
 
+## Work in progress on 2026-11-27 (read this first)
+
+Work stopped on the laptop when the owner's usage limit came near. Everything is
+pushed; nothing lives only on the laptop.
+
+| Work | Where | State |
+|---|---|---|
+| 8d, stabilisation | Branch `feature/phase-8d-stabilization` and its draft pull request (#30) | Steps 1–8 of 14 are done (motion measurement, path smoothing, the effect in file format 5, the renderer, the analysis, the benchmark) and the composer draws stabilised clips. On the benchmark the centre of the picture is steady to half a pixel; the roll is measured less well. [stabilization-plan.md](stabilization-plan.md), "Where the work stands", gives the numbers and the next things to do |
+| 8f, automatic proxies | Branch `claude/phase-8f-proxies-98d76d` and its pull request | Proxies are made, used by the preview and shown in the app. Docs and the end checks were left: see its "Status for resuming" |
+| 8g, SRT subtitles | Pull request #29 | Code and docs written. One CI job (Ubuntu) failed when work stopped: see its "Status for resuming" |
+| CI fix | Pull request #32 (auto-merge on) | The Linux CI job crashed now and then in the GPU tests (`gpu_matches_cpu`, software GPU), on `main` too since #28, which blocks the auto-merge of #29 and #31. #32 makes those tests render one at a time. Once it is merged, merge `origin/main` into the open pull requests |
+| Automatic subtitles | Not started | Approved by the owner, as the step after 8g (below) |
+
+To resume 8d: *"Resume phase 8d of Kadr (stabilisation): read CLAUDE.md,
+docs/status.md, docs/stabilization-plan.md and the 'Status for resuming' section of
+the draft pull request of `feature/phase-8d-stabilization`, then continue with its
+next step."*
+
+**The owner's decisions of 2026-11-27 that are written nowhere else:**
+
+- **Work faster.** Keep the tests, the quality benchmarks, CI and the end-of-phase
+  checklist. Write the code directly rather than through large multi-agent
+  workflows, review once before the pull request, and move non-essential polish to
+  "Later steps".
+- **Automatic subtitles are approved**, as their own pull request after 8g: speech
+  recognition on the computer with whisper.cpp through a Rust binding, the model
+  downloaded on demand and never shipped, nothing sent anywhere. 8g was asked to keep
+  one function from (start, end, text) cues to the subtitle track and one command
+  that inserts a batch of cues. Building whisper.cpp needs CMake on the `PATH`:
+  `winget install Kitware.CMake` (Visual Studio Build Tools ship one, but not on the
+  `PATH`); add it to `scripts/setup-windows.ps1`. Use the next free decision record
+  number (0057).
+- **Phase 9 (Android) resumes only after all of phase 8**, automatic subtitles
+  included. It starts with a half-day trial: a minimal Tauri 2 Android app showing
+  the engine's preview frames, measured on the owner's phone. If it is not smooth,
+  the mobile interface moves to Flutter with `flutter_rust_bridge` (or Kotlin) on the
+  same engine.
+- **A friend of the owner with a Mac may contribute to phase 10 (iOS).** The owner
+  has the prompt to give them. Decision records 0060–0069 are reserved for phase 10.
+  The owner reviews and merges that contributor's pull requests; Claude never does.
+  Open question for the owner: Kadr is GPL, which is widely considered incompatible
+  with the App Store, so outside contributions may need a contributor agreement
+  first.
+- **Auto-merge is allowed on the repository** (`gh pr merge --auto --merge`), for
+  the pull requests Claude opened with the owner.
+
+**The laptop's disk is nearly full** (about 8 GB free on 2026-11-27). The build
+folders take about 150 GB: `target/` of the main checkout (68 GB) and of each
+worktree under `.claude/worktrees/`. Those of finished sessions (8e, then 8f and 8g
+once merged) can be deleted with the owner's OK; nothing builds until then.
+
 ## Resuming on another computer
 
 1. **Install the tools.** In PowerShell, from a copy of the repository:

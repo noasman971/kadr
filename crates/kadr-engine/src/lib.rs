@@ -12,6 +12,8 @@
 //! - [`quick_assembly`]: build a simple project from a list of files;
 //! - [`region_tracking`]: follow a selected region through a clip, forwards and
 //!   backwards, to fill a tracked blur (the face blur);
+//! - [`stabilization`]: measure a clip's camera path, and the correction that
+//!   steadies each frame;
 //! - [`preview`]: pictures of the timeline at any time, at an interface's size;
 //! - [`timeline_sound`]: the mixed sound of any range of the timeline, for playback;
 //! - [`media_overview`]: thumbnails and waveforms of media files;
@@ -36,6 +38,7 @@ pub mod clip_geometry;
 pub mod color_grading;
 pub mod export;
 pub mod export_presets;
+mod frame_reading;
 pub mod media_overview;
 pub mod picture_scaling;
 pub mod preview;
@@ -44,6 +47,7 @@ pub mod quick_assembly;
 pub mod region_tracking;
 pub mod silence_analysis;
 pub mod silence_removal;
+pub mod stabilization;
 pub mod still_frames;
 pub mod timeline_sound;
 
@@ -53,8 +57,13 @@ pub use export::{
 pub use kadr_media::{
     EncodingSpeed, FfmpegBackend, MediaBackend, MediaError, VideoEncoderPreference,
 };
-pub use kadr_render::RendererPreference;
+pub use kadr_render::{RendererPreference, SourceCorrection};
 pub use region_tracking::{
     RegionTrackingError, RegionTrackingReport, RegionTrackingRequest, TrackingCancellation,
     TrackingProgress, corrected_tracked_blur, find_tracked_blur, track_region,
+};
+pub use stabilization::{
+    CameraPathReport, FrameCorrection, StabilizationError, StabilizationRequest,
+    StabilizationSummary, analyse_camera_path, stabilization_correction_at, stabilization_summary,
+    stabilization_with_smoothing,
 };

@@ -1,6 +1,6 @@
 [package]
 name = "kadr-vision"
-description = "Kadr classic computer vision: region tracking for face blur, optical flow, silence detection. No AI."
+description = "Kadr classic computer vision: region tracking for face blur, optical flow, camera motion for stabilisation, silence detection. No AI."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,6 +19,10 @@ criterion.workspace = true
 
 [[bench]]
 name = "track_region"
+harness = false
+
+[[bench]]
+name = "camera_motion"
 harness = false
 
 [lints]

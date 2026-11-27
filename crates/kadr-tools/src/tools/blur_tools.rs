@@ -612,7 +612,9 @@ fn blur_views_of_clip(clip: &Clip) -> Vec<TrackedBlurView> {
                     .filter_map(|range| range_on_timeline(clip, range))
                     .collect(),
             }),
-            EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => None,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::ColorLut(_)
+            | EffectKind::Stabilization(_) => None,
         })
         .collect()
 }

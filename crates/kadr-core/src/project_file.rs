@@ -32,7 +32,8 @@ use crate::validation::{ValidationError, validate_project};
 /// | 2 | Transitions on clips, animations on texts (phase 8) |
 /// | 3 | Colour LUT effects on clips (phase 8c) |
 /// | 4 | Keyframe curves: ease in, ease out and cubic Bézier (phase 8e) |
-pub const CURRENT_FORMAT_VERSION: u32 = 4;
+/// | 5 | Stabilisation effects on clips (phase 8d) |
+pub const CURRENT_FORMAT_VERSION: u32 = 5;
 
 /// The recommended file extension, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
@@ -108,6 +109,10 @@ pub const MIGRATIONS: &[Migration] = &[
         from_version: 3,
         upgrade_document: allow_more_keyframe_curves,
     },
+    Migration {
+        from_version: 4,
+        upgrade_document: allow_stabilization,
+    },
 ];
 
 /// Version 1 → 2: every clip gets `entry_transition` and `exit_transition`, and
@@ -152,6 +157,14 @@ fn allow_color_luts(_document: &mut Value) -> Result<(), String> {
 /// Kadr opening a file with a new curve says "please update Kadr" instead of
 /// "the file is damaged".
 fn allow_more_keyframe_curves(_document: &mut Value) -> Result<(), String> {
+    Ok(())
+}
+
+/// Version 4 → 5: a new effect, the stabilisation. A version 4 file has none, so
+/// nothing changes; the version goes up so that an older Kadr opening a file
+/// with a stabilisation says "please update Kadr" instead of "the file is
+/// damaged".
+fn allow_stabilization(_document: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
@@ -245,7 +258,7 @@ mod tests {
     fn an_empty_project_round_trips() {
         let project = Project::new(ProjectSettings::vertical_1080x1920());
         let json_text = save_project_to_json(&project).unwrap();
-        assert!(json_text.contains("\"format_version\": 4"));
+        assert!(json_text.contains("\"format_version\": 5"));
         assert_eq!(load_project_from_json(&json_text).unwrap(), project);
     }
 
@@ -298,7 +311,7 @@ mod tests {
         });
         assert!(!has_a_lut);
         let saved_again = save_project_to_json(&project).unwrap();
-        assert!(saved_again.contains("\"format_version\": 4"));
+        assert!(saved_again.contains("\"format_version\": 5"));
         assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
     }
 
@@ -319,7 +332,29 @@ mod tests {
             .collect();
         assert_eq!(curves, [Interpolation::EaseInOut, Interpolation::EaseInOut]);
         let saved_again = save_project_to_json(&project).unwrap();
-        assert!(saved_again.contains("\"format_version\": 4"));
+        assert!(saved_again.contains("\"format_version\": 5"));
+        assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
+    }
+
+    /// A version 4 file (phase 8e), kept from the editing scenario's snapshot
+    /// before stabilisation changed the format.
+    const VERSION_4_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_4.kadr");
+
+    #[test]
+    fn version_4_files_are_upgraded_without_stabilization() {
+        let project = load_project_from_json(VERSION_4_FILE).unwrap();
+        let effect_kinds: Vec<&str> = project
+            .timeline()
+            .all_clips()
+            .flat_map(|(_, clip)| clip.effects.iter())
+            .map(|effect| effect.kind.display_name())
+            .collect();
+        assert_eq!(
+            effect_kinds,
+            ["tracked blur", "colour adjustment", "colour LUT"]
+        );
+        let saved_again = save_project_to_json(&project).unwrap();
+        assert!(saved_again.contains("\"format_version\": 5"));
         assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
     }
 

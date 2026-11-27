@@ -454,7 +454,9 @@ fn color_lut_of(
     let (_, clip) = find_clip(project, clip_id)?;
     Ok(clip.effects.iter().find_map(|effect| match &effect.kind {
         EffectKind::ColorLut(color_lut) => Some((effect.id, color_lut.clone())),
-        EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+        EffectKind::ColorAdjustment(_)
+        | EffectKind::TrackedBlur(_)
+        | EffectKind::Stabilization(_) => None,
     }))
 }
 

@@ -18,8 +18,8 @@ use kadr_core::commands::{
     SetTextAnimation, SplitClip, TrackPosition, TrimClip,
 };
 use kadr_core::effect::{
-    BlurShape, BlurStyle, ColorAdjustment, ColorLut, EffectKind, PixelRegion, RegionSample,
-    RegionSampleOrigin, TrackedBlur, TrackingConfidence,
+    BlurShape, BlurStyle, CameraPathSample, ColorAdjustment, ColorLut, EffectKind, PixelRegion,
+    RegionSample, RegionSampleOrigin, Stabilization, TrackedBlur, TrackingConfidence,
 };
 use kadr_core::history::EditSession;
 use kadr_core::ids::{ClipId, TrackId};
@@ -71,9 +71,49 @@ fn background_music() -> MediaAssetDescription {
 
 /// Builds a short vertical video the way a user (or Claude) would:
 /// two cuts of an interview, a speed-up, a blurred face, a fading title and music,
-/// then (with phase 8) transitions, a text animation, a colour LUT and a title
-/// sliding in on eased keyframes.
+/// then (with phase 8) transitions, a text animation, a colour LUT, a title
+/// sliding in on eased keyframes and a stabilisation.
 fn edit_a_vertical_interview(session: &mut EditSession) {
+    edit_a_vertical_interview_before_phase_8d(session);
+    // The first part of the interview was filmed by hand: steady it. A real
+    // analysis stores one sample per frame of the clip and a second around it;
+    // three hand-written frames are enough for the file format. The third frame
+    // follows a cut, so its motion is not measured.
+    let first_interview_clip_id = session.project().timeline().tracks()[0].clips()[0].id;
+    let camera_sample =
+        |frame_index: u64, shift_in_pixels: (f32, f32), rotation_in_degrees, scale_factor| {
+            CameraPathSample {
+                source_time: FrameRate::FPS_30.timestamp_of_frame(frame_index),
+                shift_x_in_pixels: shift_in_pixels.0,
+                shift_y_in_pixels: shift_in_pixels.1,
+                rotation_in_degrees,
+                scale_factor,
+                motion_was_measured: frame_index == 61,
+            }
+        };
+    let camera_path = vec![
+        camera_sample(60, (0.0, 0.0), 0.0, 1.0),
+        camera_sample(61, (1.25, -0.5), 0.125, 1.0001),
+        camera_sample(62, (2.5, -1.0), 0.25, 1.0002),
+    ];
+    session
+        .execute(AddEffect::new(
+            first_interview_clip_id,
+            EffectKind::Stabilization(Stabilization {
+                smoothing_in_seconds: Stabilization::DEFAULT_SMOOTHING_IN_SECONDS,
+                zoom_factor: 1.05,
+                analysed_picture_size: PictureSize {
+                    width_in_pixels: 1920,
+                    height_in_pixels: 1080,
+                },
+                camera_path: camera_path.into(),
+            }),
+        ))
+        .unwrap();
+}
+
+/// The same edit as it was possible before phase 8d (format 4).
+fn edit_a_vertical_interview_before_phase_8d(session: &mut EditSession) {
     edit_a_vertical_interview_before_phase_8e(session);
     // The title slides in from the left, slowing down as it arrives, and grows
     // slightly along a hand-drawn curve: one undo step.
@@ -392,8 +432,9 @@ fn a_full_edit_can_be_undone_and_redone_step_by_step() {
     assert_eq!(session.project(), &empty_project);
     // 2 imports, 3 tracks, 1 clip, 2 splits, 1 removal, 1 move, 1 speed change,
     // 3 effect changes, 1 grouped title (with its 2 keyframes), 1 music clip, 1 volume,
-    // 3 transitions, 1 text animation, 1 colour LUT, 1 grouped slide-in (4 keyframes).
-    assert_eq!(undone_step_count, 23);
+    // 3 transitions, 1 text animation, 1 colour LUT, 1 grouped slide-in (4 keyframes),
+    // 1 stabilisation.
+    assert_eq!(undone_step_count, 24);
 
     while session.can_redo() {
         session.redo().unwrap();
@@ -471,6 +512,21 @@ fn a_format_3_file_is_upgraded_to_the_same_project() {
     assert!(format_3_file.contains("\"format_version\": 3"));
     assert_eq!(
         &load_project_from_json(format_3_file).unwrap(),
+        session.project()
+    );
+}
+
+#[test]
+fn a_format_4_file_is_upgraded_to_the_same_project() {
+    let mut session =
+        EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+    edit_a_vertical_interview_before_phase_8d(&mut session);
+
+    // The snapshot of this edit saved before phase 8d changed the format.
+    let format_4_file = include_str!("fixtures/vertical_interview_format_4.kadr");
+    assert!(format_4_file.contains("\"format_version\": 4"));
+    assert_eq!(
+        &load_project_from_json(format_4_file).unwrap(),
         session.project()
     );
 }

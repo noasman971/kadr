@@ -22,7 +22,8 @@ flowchart LR
 - Other YUV layouts (4:2:2, 10-bit…) are converted to 8-bit 4:2:0 by swscale.
 - RGB and transparent pictures become RGBA.
 - **Pass-through**: a single opaque video already at the canvas size and in BT.709 is
-  handed to the encoder untouched — nothing is drawn at all.
+  handed to the encoder untouched — nothing is drawn at all. A colour effect or a
+  stabilisation's correction turns this off.
 
 ## Colours
 
@@ -54,7 +55,8 @@ Runs on Vulkan, DirectX 12, Metal or OpenGL ES, chosen by `wgpu`.
    Textures are reused from frame to frame.
 2. Each layer is drawn onto an RGBA canvas as a quad. Its four corners come from the
    same `LayerGeometry` as the CPU renderer (fit, scale, rotation, position), the crop
-   gives the texture coordinates, and straight-alpha blending does the rest.
+   moved through the inverse of the source correction gives the texture coordinates,
+   and straight-alpha blending does the rest.
 3. Two passes turn the canvas into the Y plane and, with two render targets at once,
    the U and V planes (each from the average colour of its 2×2 block).
 4. The three planes are copied back to the CPU for the encoder.
@@ -67,9 +69,10 @@ Validation errors from the GPU are captured per frame and returned as
 ### CPU (reference)
 
 Inverse mapping: for each canvas pixel the layer may cover, find the source point
-(undoing position, rotation, scale and crop), sample it bilinearly, blend it. Rows run
-in parallel. YUV layers are converted to RGBA first and the result is converted to
-BT.709 YUV at the end. The CPU renderer is the **reference**: the GPU must match it.
+(undoing position, rotation, scale, crop and the source correction), sample it
+bilinearly, blend it. Rows run in parallel. YUV layers are converted to RGBA first
+and the result is converted to BT.709 YUV at the end. The CPU renderer is the
+**reference**: the GPU must match it.
 
 ## Text
 
@@ -91,6 +94,24 @@ before the clip's own scale. Videos and images keep `FitInsideCanvas`.
   style stay the same.
 
 ## Effects
+
+### Order
+
+Each pixel of a layer goes through these steps in this order, whatever the order of
+the clip's effects list:
+
+1. The frame is decoded (a stabilised clip's at the time of its camera path's sample,
+   so that the analysis and the render decode the same frame).
+2. Tracked blurs hide their areas in the raw source picture (`hide_regions`), so they
+   stay on the face.
+3. The stabilisation's correction and zoom move the picture inside the layer's window.
+4. The window (the crop) is fitted, scaled, rotated and moved, keyframes included.
+5. Transition motion moves the layer on the canvas.
+6. The picture is sampled (bilinear interpolation).
+7. Colour adjustments, then the LUT.
+8. Opacity and blending.
+
+Steps 3 to 5 are one affine map from canvas pixels to source pixels.
 
 ### Colour adjustment
 
@@ -172,6 +193,43 @@ renderers draw the same result.
 - A tracked blur without any region yet is reported by the export (tracking itself
   arrives in phase 4).
 
+### Stabilisation: the source correction
+
+A stabilisation moves the source picture inside its layer's window to cancel the
+camera's shake. The renderer only receives the result for one frame: a
+`SourceCorrection` in the layer's `LayerPlacement`, which the engine computes from the
+effect's measured camera path at the frame's source time.
+
+- **What it is.** A shift, a clockwise rotation (y down) and an enlargement around the
+  **picture's centre**, in the decoded picture's pixels: source point v is drawn at
+  C + s·R(r)·(v − C) + t. `SourceCorrection::IDENTITY` changes nothing; texts always
+  have it.
+- **The crop is a window on the steadied picture.** The correction is centred on the
+  picture, never on the crop, so it does not depend on the crop. The window, its fit,
+  scale, rotation and position, and transitions stay where they are: only the picture
+  moves under them. (`LayerMotion` would move the whole layer, borders included.)
+- **One map on both renderers.** `LayerGeometry` keeps the inverse of the correction as
+  `window_to_source`, an affine map in SVG order.
+  - CPU: `source_point_for` tests the window point against the crop, then returns the
+    source point that `window_to_source` gives for it.
+  - GPU: the quad does not change; its four texture coordinates are the crop's corners
+    moved through `window_to_source`. The canvas-to-source map is affine and w = 1, so
+    interpolating them over the quad's two triangles reproduces it exactly. The
+    shaders, the uniforms and the sampler do not change, and the YUV colour planes use
+    the same normalised coordinates.
+- **Edges.** A corrected layer may read any pixel of the picture, not only its crop.
+  Points beyond the picture repeat its edge pixels: the GPU's clamp-to-edge sampler
+  does it, and the CPU clamps its bilinear neighbours to the whole picture (to the
+  crop's pixels without a correction). The stabilisation's zoom normally keeps such
+  points out of view.
+- **Shortcuts.** A correction other than the identity turns off the pass-through and
+  the CPU's one-to-one copy (`maps_pixels_one_to_one`), as colour effects do through
+  `changes_colors`.
+- **Overlays.** `LayerPlacement::source_to_canvas_mapping` includes the correction, so
+  the boxes and pointer positions drawn over a clip follow the steadied picture. Its
+  `visible_source` becomes the bounding box of the source area seen through the window
+  (turned when the correction turns), kept inside the picture.
+
 ## Transitions and text animations
 
 Transitions (fade, slide, zoom) and text animations (fade, slide, pop, type-on, word
@@ -186,7 +244,9 @@ underneath, its picture continuing past its cut. Details:
 `crates/kadr-render/tests/gpu_matches_cpu.rs` renders the same scenes on both and
 compares the Y, U and V planes: mean difference under 1.5 and fewer than 2 % of values
 off by more than 10. Scenes include colour adjustments, colour LUTs, dissolves,
-pushes, zooms and animated texts. Remaining differences are expected: the GPU
+pushes, zooms, animated texts and stabilised videos. Two stricter tests draw a smooth
+RGBA gradient of the canvas size with a LUT, one of them stabilised, and allow a
+difference of at most 2. Remaining differences are expected: the GPU
 interpolates colour planes smoothly where the CPU reuses each 2×2 block's colour, and
 the edges of rotated layers round differently.
 

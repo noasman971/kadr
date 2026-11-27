@@ -1,49 +1,61 @@
-//! Reading a video's frames as the small grey images the tracker works on.
+//! Reading a video's frames as the small grey images the analyses work on
+//! (region tracking and stabilisation).
 
-use kadr_media::{MediaBackend, VideoFrame, VideoFrameSource};
+use std::path::Path;
+
+use kadr_core::time::FrameRate;
+use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_vision::GreyImage;
 
-use super::{RegionTrackingError, RegionTrackingRequest};
+/// Why a frame could not be read as a grey image.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FrameReadingError {
+    /// The video's pictures changed size after the first frame.
+    #[error("the video's pictures change size")]
+    SizeChanged,
+    /// Reading the video failed.
+    #[error(transparent)]
+    Media(#[from] MediaError),
+}
 
 /// BT.709 weights of red, green and blue in brightness, for RGBA frames.
 const LUMA_WEIGHTS: [f32; 3] = [0.2126, 0.7152, 0.0722];
 
-/// Decodes frames by index and shrinks their brightness for tracking.
-pub(super) struct FrameReader {
+/// Decodes frames by index and shrinks their brightness for an analysis.
+pub(crate) struct FrameReader {
     source: Box<dyn VideoFrameSource>,
-    frame_rate: kadr_core::time::FrameRate,
+    frame_rate: FrameRate,
     shrink_factor: usize,
 }
 
 impl FrameReader {
-    /// Opens the request's video.
-    pub(super) fn open(
+    /// Opens the video at `video_path`, whose frames follow `frame_rate`. It must
+    /// be called on the thread that reads the frames: a source is not `Send`.
+    pub(crate) fn open(
         backend: &dyn MediaBackend,
-        request: &RegionTrackingRequest,
+        video_path: &Path,
+        frame_rate: FrameRate,
         shrink_factor: usize,
-    ) -> Result<Self, RegionTrackingError> {
+    ) -> Result<Self, MediaError> {
         Ok(Self {
-            source: backend.open_video_source(&request.video_path)?,
-            frame_rate: request.frame_rate,
+            source: backend.open_video_source(video_path)?,
+            frame_rate,
             shrink_factor,
         })
     }
 
     /// Frame number `frame_index` of the file, as a shrunk grey image.
-    pub(super) fn grey_frame(
-        &mut self,
-        frame_index: u64,
-    ) -> Result<GreyImage, RegionTrackingError> {
+    pub(crate) fn grey_frame(&mut self, frame_index: u64) -> Result<GreyImage, FrameReadingError> {
         let frame = self
             .source
             .frame_at(self.frame_rate.timestamp_of_frame(frame_index))?;
-        grey_image_of(&frame, self.shrink_factor).ok_or(RegionTrackingError::VideoSizeChanged)
+        grey_image_of(&frame, self.shrink_factor).ok_or(FrameReadingError::SizeChanged)
     }
 }
 
 /// The brightness of `frame`, shrunk by `shrink_factor`. YUV frames give their Y
 /// plane as is; RGBA frames are converted with the BT.709 weights.
-pub(super) fn grey_image_of(frame: &VideoFrame, shrink_factor: usize) -> Option<GreyImage> {
+pub(crate) fn grey_image_of(frame: &VideoFrame, shrink_factor: usize) -> Option<GreyImage> {
     let (width, height) = (frame.width() as usize, frame.height() as usize);
     match frame {
         VideoFrame::Yuv420(picture) => {

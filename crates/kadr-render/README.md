@@ -12,6 +12,8 @@ preview and the export.
   (`assets/fonts/`, SIL Open Font License 1.1).
 - Effects: colour adjustment (in both renderers) and `hide_regions` for tracked blurs
   (gaussian, pixelate, solid fill; rectangle or ellipse with soft edges).
+- `SourceCorrection` (in `LayerPlacement`) shifts, turns and enlarges the source picture
+  inside its layer's window, for video stabilisation, the same way in both renderers.
 - Transitions and text animations: `transition_motion` and `text_animation_frame` move
   layers; `TextRasterizer::rasterize_revealed` draws part of a text (type-on).
 - Benchmarks: `cargo bench -p kadr-render`.

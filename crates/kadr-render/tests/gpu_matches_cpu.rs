@@ -7,6 +7,9 @@
 // Test helpers panic with the error on failure, which is how a test should fail.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::cell::RefCell;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use image::{Rgba, RgbaImage};
 use kadr_core::clip::{CropInsets, TextStyle};
 use kadr_core::color::Color;
@@ -17,12 +20,34 @@ use kadr_core::transition::{EdgePhase, SlideDirection, TransitionStyle, ZoomDire
 use kadr_media::{VideoFrame, YuvColorSpace, YuvMatrix, YuvPicture, YuvRange};
 use kadr_render::{
     CanvasDescription, ColorLookupTable, CpuRenderer, FrameRenderer, GpuRenderer, LayerColorLut,
-    LayerPlacement, LayerSizing, LookupTableShape, TextRasterizer, TransitionRole, VisualLayer,
-    text_animation_frame, transition_motion,
+    LayerPlacement, LayerSizing, LookupTableShape, SourceCorrection, TextRasterizer,
+    TransitionRole, VisualLayer, text_animation_frame, transition_motion,
 };
+
+/// Makes the tests of this file render one at a time: the calling test waits for
+/// its turn, and keeps it until its thread ends.
+///
+/// Software GPUs (WARP on Windows, lavapipe on Linux) crash now and then when
+/// several tests render at once (an access violation on the owner's computers,
+/// a segmentation fault on CI's Linux, more often as tests were added). Real
+/// GPUs never did, but taking turns costs them next to nothing.
+fn wait_for_a_turn_on_the_gpu() {
+    static TURN: Mutex<()> = Mutex::new(());
+    thread_local! {
+        static HELD_TURN: RefCell<Option<MutexGuard<'static, ()>>> = const { RefCell::new(None) };
+    }
+    HELD_TURN.with(|held_turn| {
+        let mut held_turn = held_turn.borrow_mut();
+        if held_turn.is_none() {
+            // A test that failed while holding the turn must not fail the others.
+            *held_turn = Some(TURN.lock().unwrap_or_else(PoisonError::into_inner));
+        }
+    });
+}
 
 /// The GPU renderer, or `None` (test skipped) when there is no GPU and it is not required.
 fn gpu_renderer() -> Option<GpuRenderer> {
+    wait_for_a_turn_on_the_gpu();
     match GpuRenderer::new() {
         Ok(renderer) => Some(renderer),
         Err(error) if std::env::var("KADR_REQUIRE_GPU").is_ok_and(|value| value == "1") => {
@@ -340,6 +365,53 @@ fn colour_lut_layers_match() {
     assert_gpu_matches_cpu("colour LUTs", &canvas(640, 360), &layers);
 }
 
+/// A small RGBA picture whose colours change smoothly in every direction.
+fn small_rgba_gradient() -> VideoFrame {
+    VideoFrame::Rgba(RgbaImage::from_fn(64, 32, |x, y| {
+        Rgba([(x * 4) as u8, (y * 8) as u8, (255 - x * 4) as u8, 255])
+    }))
+}
+
+/// A 3D LUT swapping red and blue: an axis mix-up would show at once.
+fn red_and_blue_swapped() -> ColorLookupTable {
+    let size = 9;
+    let last = (size - 1) as f32;
+    let entries = (0..size * size * size)
+        .map(|index| {
+            let red = (index % size) as f32 / last;
+            let green = (index / size % size) as f32 / last;
+            let blue = (index / (size * size)) as f32 / last;
+            [blue, green * 0.9, red]
+        })
+        .collect();
+    ColorLookupTable::from_entries(LookupTableShape::ThreeDimensional, size, entries).unwrap()
+}
+
+/// The largest difference between the renderers' Y, U and V values for the
+/// same scene.
+fn largest_difference_between_renderers(
+    gpu_renderer: &mut GpuRenderer,
+    canvas: &CanvasDescription,
+    layers: &[VisualLayer<'_>],
+) -> u8 {
+    let cpu_frame = CpuRenderer.render_frame(canvas, layers).unwrap();
+    let gpu_frame = gpu_renderer.render_frame(canvas, layers).unwrap();
+    let (VideoFrame::Yuv420(cpu_picture), VideoFrame::Yuv420(gpu_picture)) =
+        (&cpu_frame, &gpu_frame)
+    else {
+        panic!("both renderers must return YUV");
+    };
+    cpu_picture
+        .y_plane()
+        .iter()
+        .zip(gpu_picture.y_plane())
+        .chain(cpu_picture.u_plane().iter().zip(gpu_picture.u_plane()))
+        .chain(cpu_picture.v_plane().iter().zip(gpu_picture.v_plane()))
+        .map(|(cpu, gpu)| cpu.abs_diff(*gpu))
+        .max()
+        .unwrap()
+}
+
 /// An RGBA picture of the canvas size is read texel for texel by both
 /// renderers, so their colours only differ by rounding: this checks the
 /// shader's interpolation and the order of the table's axes closely.
@@ -348,24 +420,8 @@ fn a_colour_lut_gives_the_same_colours_on_both_renderers() {
     let Some(mut gpu_renderer) = gpu_renderer() else {
         return;
     };
-    let gradient = VideoFrame::Rgba(RgbaImage::from_fn(64, 32, |x, y| {
-        Rgba([(x * 4) as u8, (y * 8) as u8, (255 - x * 4) as u8, 255])
-    }));
-    // Red and blue swapped: an axis mix-up would show at once.
-    let swapped = {
-        let size = 9;
-        let last = (size - 1) as f32;
-        let entries = (0..size * size * size)
-            .map(|index| {
-                let red = (index % size) as f32 / last;
-                let green = (index / size % size) as f32 / last;
-                let blue = (index / (size * size)) as f32 / last;
-                [blue, green * 0.9, red]
-            })
-            .collect();
-        ColorLookupTable::from_entries(LookupTableShape::ThreeDimensional, size, entries).unwrap()
-    };
-    for (name, table) in [("3D", &swapped), ("1D", &s_curve(40))] {
+    let gradient = small_rgba_gradient();
+    for (name, table) in [("3D", &red_and_blue_swapped()), ("1D", &s_curve(40))] {
         let layers = [VisualLayer {
             picture: &gradient,
             placement: LayerPlacement::FITTED,
@@ -375,23 +431,8 @@ fn a_colour_lut_gives_the_same_colours_on_both_renderers() {
                 strength_fraction: 0.8,
             }),
         }];
-        let canvas = canvas(64, 32);
-        let cpu_frame = CpuRenderer.render_frame(&canvas, &layers).unwrap();
-        let gpu_frame = gpu_renderer.render_frame(&canvas, &layers).unwrap();
-        let (VideoFrame::Yuv420(cpu_picture), VideoFrame::Yuv420(gpu_picture)) =
-            (&cpu_frame, &gpu_frame)
-        else {
-            panic!("both renderers must return YUV");
-        };
-        let largest_difference = cpu_picture
-            .y_plane()
-            .iter()
-            .zip(gpu_picture.y_plane())
-            .chain(cpu_picture.u_plane().iter().zip(gpu_picture.u_plane()))
-            .chain(cpu_picture.v_plane().iter().zip(gpu_picture.v_plane()))
-            .map(|(cpu, gpu)| cpu.abs_diff(*gpu))
-            .max()
-            .unwrap();
+        let largest_difference =
+            largest_difference_between_renderers(&mut gpu_renderer, &canvas(64, 32), &layers);
         assert!(
             largest_difference <= 2,
             "{name} LUT: values differ by up to {largest_difference}"
@@ -578,4 +619,103 @@ fn an_animated_text_matches() {
         ];
         assert_gpu_matches_cpu(scene_name, &scene_canvas, &layers);
     }
+}
+
+/// A stabilisation's correction: a shift, a slight turn and an enlargement
+/// large enough to keep the picture's edges outside a canvas-sized window.
+const SHAKE_CORRECTION: SourceCorrection = SourceCorrection {
+    shift_x_in_pixels: 7.3,
+    shift_y_in_pixels: -4.1,
+    rotation_in_degrees: 0.8,
+    scale_factor: 1.06,
+};
+
+/// A stabilised video of the canvas size: without the correction it would be
+/// passed through, with it both renderers warp it the same way.
+#[test]
+fn stabilized_video() {
+    let video = checkerboard_video_picture(1920, 1080);
+    let layers = [VisualLayer {
+        picture: &video,
+        placement: LayerPlacement {
+            source_correction: SHAKE_CORRECTION,
+            ..LayerPlacement::FITTED
+        },
+        color_adjustments: &[],
+        color_lut: None,
+    }];
+    assert_gpu_matches_cpu("stabilized video", &canvas(1920, 1080), &layers);
+}
+
+/// The correction moves the picture inside a cropped, scaled, turned and moved
+/// window, far enough to show pixels beyond the crop and to repeat the
+/// picture's edge pixels.
+#[test]
+fn stabilized_cropped_scaled_and_rotated_video() {
+    let video = gradient_video_picture(320, 240, YuvColorSpace::BT709_LIMITED);
+    let layers = [VisualLayer {
+        picture: &video,
+        placement: LayerPlacement {
+            crop: CropInsets {
+                left_fraction: 0.1,
+                top_fraction: 0.05,
+                right_fraction: 0.2,
+                bottom_fraction: 0.0,
+            },
+            rotation_in_degrees: 12.0,
+            scale_factor: 0.9,
+            offset_x_in_pixels: 15.0,
+            offset_y_in_pixels: -10.0,
+            source_correction: SourceCorrection {
+                shift_x_in_pixels: -12.5,
+                shift_y_in_pixels: 18.0,
+                rotation_in_degrees: -2.5,
+                scale_factor: 1.04,
+            },
+            ..LayerPlacement::FITTED
+        },
+        color_adjustments: &[],
+        color_lut: None,
+    }];
+    assert_gpu_matches_cpu(
+        "stabilized, cropped and turned video",
+        &canvas(400, 300),
+        &layers,
+    );
+}
+
+/// A smooth gradient of the canvas size, steadied and graded with a LUT: both
+/// renderers interpolate it, so their colours still only differ by rounding.
+/// A renderer warping the picture differently from the other (another sign,
+/// centre or direction) moves the gradient by several values.
+#[test]
+fn stabilized_gradient_with_a_lut_matches_strictly() {
+    let Some(mut gpu_renderer) = gpu_renderer() else {
+        return;
+    };
+    let gradient = small_rgba_gradient();
+    let swapped = red_and_blue_swapped();
+    let layers = [VisualLayer {
+        picture: &gradient,
+        placement: LayerPlacement {
+            source_correction: SourceCorrection {
+                shift_x_in_pixels: 3.3,
+                shift_y_in_pixels: -2.1,
+                rotation_in_degrees: 2.0,
+                scale_factor: 1.15,
+            },
+            ..LayerPlacement::FITTED
+        },
+        color_adjustments: &[],
+        color_lut: Some(LayerColorLut {
+            table: &swapped,
+            strength_fraction: 0.8,
+        }),
+    }];
+    let largest_difference =
+        largest_difference_between_renderers(&mut gpu_renderer, &canvas(64, 32), &layers);
+    assert!(
+        largest_difference <= 2,
+        "values differ by up to {largest_difference}"
+    );
 }

@@ -76,7 +76,7 @@ const MAXIMUM_FORWARD_BACKWARD_ERROR_IN_PIXELS: f32 = 1.0;
 /// Smallest eigenvalue of the slope matrix, per window pixel, for a point to be
 /// followed. Below it, the window is uniform or a straight edge: its motion is
 /// ambiguous.
-const MINIMUM_TEXTURE_PER_PIXEL: f32 = 0.5;
+pub(crate) const MINIMUM_TEXTURE_PER_PIXEL: f32 = 0.5;
 
 /// Fewest well-followed points for the motion to be trusted.
 const MINIMUM_RELIABLE_POINTS: usize = 4;
@@ -122,30 +122,13 @@ pub(crate) fn estimate_region_motion(
     let coarsest_level = coarsest_level_for(region)
         .min(previous.level_count() - 1)
         .min(current.level_count() - 1);
-    let mut followed_points: Vec<(Point, Point)> = Vec::new();
-    for point in grid_points(region) {
-        let Some(forward) = follow_point(previous, current, point, expected_motion, coarsest_level)
-        else {
-            continue;
-        };
-        let arrival = Point {
-            x: point.x + forward.0,
-            y: point.y + forward.1,
-        };
-        let Some(backward) = follow_point(
-            current,
-            previous,
-            arrival,
-            (-forward.0, -forward.1),
-            coarsest_level,
-        ) else {
-            continue;
-        };
-        let round_trip_error = (forward.0 + backward.0).hypot(forward.1 + backward.1);
-        if round_trip_error <= MAXIMUM_FORWARD_BACKWARD_ERROR_IN_PIXELS {
-            followed_points.push((point, arrival));
-        }
-    }
+    let followed_points = follow_points_both_ways(
+        previous,
+        current,
+        &grid_points(region),
+        expected_motion,
+        coarsest_level,
+    );
     if followed_points.len() < MINIMUM_RELIABLE_POINTS {
         return None;
     }
@@ -181,6 +164,45 @@ pub(crate) fn estimate_region_motion(
         motion_y,
         scale_change,
     })
+}
+
+/// Follows each of `points` from `previous` to `current`, coarse to fine from
+/// `coarsest_level` and starting from `expected_motion`, then back. Returns where
+/// each point started and where it arrived, for the points that came back within
+/// [`MAXIMUM_FORWARD_BACKWARD_ERROR_IN_PIXELS`] of where they started, in the
+/// order of `points`.
+pub(crate) fn follow_points_both_ways(
+    previous: &ImagePyramid,
+    current: &ImagePyramid,
+    points: &[Point],
+    expected_motion: (f32, f32),
+    coarsest_level: usize,
+) -> Vec<(Point, Point)> {
+    let mut followed_points: Vec<(Point, Point)> = Vec::new();
+    for &point in points {
+        let Some(forward) = follow_point(previous, current, point, expected_motion, coarsest_level)
+        else {
+            continue;
+        };
+        let arrival = Point {
+            x: point.x + forward.0,
+            y: point.y + forward.1,
+        };
+        let Some(backward) = follow_point(
+            current,
+            previous,
+            arrival,
+            (-forward.0, -forward.1),
+            coarsest_level,
+        ) else {
+            continue;
+        };
+        let round_trip_error = (forward.0 + backward.0).hypot(forward.1 + backward.1);
+        if round_trip_error <= MAXIMUM_FORWARD_BACKWARD_ERROR_IN_PIXELS {
+            followed_points.push((point, arrival));
+        }
+    }
+    followed_points
 }
 
 /// The median change of distance over the pairs, when the pairs agree on it
@@ -328,7 +350,9 @@ fn refine_motion(
         .filter(|motion| motion.1.is_finite())
 }
 
-fn median(values: &mut [f32]) -> f32 {
+/// The median of `values` (the mean of the two middle ones for an even count),
+/// sorting them in place. `values` must not be empty.
+pub(crate) fn median(values: &mut [f32]) -> f32 {
     values.sort_by(f32::total_cmp);
     let middle = values.len() / 2;
     if values.len().is_multiple_of(2) {

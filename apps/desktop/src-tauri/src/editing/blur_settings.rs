@@ -180,11 +180,13 @@ pub fn tracked_blur_of(
         })?;
     match &effect.kind {
         EffectKind::TrackedBlur(blur) => Ok(blur),
-        EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => Err(invalid_blur(
-            clip_id,
-            effect_id,
-            "it is not a tracked blur".to_string(),
-        )),
+        EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) | EffectKind::Stabilization(_) => {
+            Err(invalid_blur(
+                clip_id,
+                effect_id,
+                "it is not a tracked blur".to_string(),
+            ))
+        }
     }
 }
 

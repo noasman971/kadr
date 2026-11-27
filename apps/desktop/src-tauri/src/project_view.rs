@@ -563,7 +563,9 @@ fn tracked_blurs_of(project: &Project, clip: &Clip) -> Vec<TrackedBlurView> {
                     .count(),
                 unsure_ranges: unsure_ranges_on_timeline(project, clip, blur),
             }),
-            EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => None,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::ColorLut(_)
+            | EffectKind::Stabilization(_) => None,
         })
         .collect()
 }
@@ -620,7 +622,7 @@ fn first_color_adjustment_of(clip: &Clip) -> Option<ColorAdjustmentView> {
             saturation: adjustment.saturation_multiplier,
             temperature: adjustment.temperature_shift,
         }),
-        EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => None,
+        EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) | EffectKind::Stabilization(_) => None,
     })
 }
 
@@ -637,6 +639,8 @@ fn first_color_lut_of(clip: &Clip) -> Option<ColorLutView> {
             strength: color_lut.strength_fraction,
             is_missing: !color_lut.file_path.is_file(),
         }),
-        EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+        EffectKind::ColorAdjustment(_)
+        | EffectKind::TrackedBlur(_)
+        | EffectKind::Stabilization(_) => None,
     })
 }

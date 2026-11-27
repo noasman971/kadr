@@ -752,7 +752,7 @@ fn existing_color_adjustment(
     let effect = existing_effect(clip, effect_id)?;
     match &effect.kind {
         EffectKind::ColorAdjustment(adjustment) => Ok((effect_id, *adjustment)),
-        EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => {
+        EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) | EffectKind::Stabilization(_) => {
             Err(not_an_effect_of_kind(clip, effect, "colour adjustment"))
         }
     }
@@ -867,9 +867,9 @@ fn existing_color_lut(clip: &Clip, effect_id: EffectId) -> Result<(EffectId, Col
     let effect = existing_effect(clip, effect_id)?;
     match &effect.kind {
         EffectKind::ColorLut(color_lut) => Ok((effect_id, color_lut.clone())),
-        EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => {
-            Err(not_an_effect_of_kind(clip, effect, "colour LUT"))
-        }
+        EffectKind::ColorAdjustment(_)
+        | EffectKind::TrackedBlur(_)
+        | EffectKind::Stabilization(_) => Err(not_an_effect_of_kind(clip, effect, "colour LUT")),
     }
 }
 

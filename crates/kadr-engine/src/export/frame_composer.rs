@@ -30,18 +30,20 @@ use std::sync::Arc;
 use kadr_core::clip::{Clip, ClipContent, TextContent};
 use kadr_core::effect::{ColorAdjustment, EffectKind};
 use kadr_core::ids::ClipId;
-use kadr_core::media_asset::MediaKind;
+use kadr_core::media_asset::{MediaKind, PictureSize};
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
 use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_render::{
     CanvasDescription, ColorLookupTable, FrameRenderer, HiddenRegion, LayerColorLut,
-    LayerPlacement, RenderError, TextRasterizer, TextReveal, VisualLayer, hide_regions,
+    LayerPlacement, RenderError, SourceCorrection, TextRasterizer, TextReveal, VisualLayer,
+    hide_regions,
 };
 
 use super::clip_layers::plan_track_layers;
 use crate::color_grading::{ColorTableError, ColorTableLibrary, applied_color_lut_of};
+use crate::stabilization::{applied_stabilization_of, stabilization_correction_at};
 
 /// The decoder of one clip, with the file it reads.
 struct OpenVideoSource {
@@ -122,9 +124,15 @@ impl FrameComposer {
                     timeline_time,
                     planned_layer.text_reveal,
                 )?;
-                if let Some(picture) = picture {
-                    let placement = LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
-                        .moved_by(planned_layer.motion);
+                if let Some(SourcePicture {
+                    picture,
+                    source_correction,
+                }) = picture
+                {
+                    let mut placement =
+                        LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
+                            .moved_by(planned_layer.motion);
+                    placement.source_correction = source_correction;
                     prepared_layers.push(PreparedLayer {
                         picture,
                         placement,
@@ -172,6 +180,12 @@ impl FrameComposer {
     /// The source picture a clip shows at `timeline_time`, or `None` if the clip
     /// shows no picture (sound only). Outside the clip (under a transition of
     /// the clip touching it), the source continues past the clip's cut.
+    ///
+    /// A stabilised clip's frame is decoded at the time of its camera path
+    /// sample, the same time the analysis decoded it at: the picture and its
+    /// correction then always belong together, whatever the file's real frame
+    /// times are. Tracked blurs are applied at that time too, on the raw
+    /// picture, so they stay on what they hide.
     fn source_picture_of(
         &mut self,
         project: &Project,
@@ -179,15 +193,15 @@ impl FrameComposer {
         clip: &Clip,
         timeline_time: Timestamp,
         text_reveal: TextReveal,
-    ) -> Result<Option<Arc<VideoFrame>>, MediaError> {
+    ) -> Result<Option<SourcePicture>, MediaError> {
         let segment = match &clip.content {
             ClipContent::Media(segment) => segment,
             ClipContent::Text(text_content) => {
-                return Ok(Some(self.text_picture_of(
+                return Ok(Some(SourcePicture::as_it_is(self.text_picture_of(
                     clip.id,
                     text_content,
                     text_reveal,
-                )));
+                ))));
             }
         };
         let Some(media_asset) = project.media_asset(segment.media_asset_id) else {
@@ -196,12 +210,18 @@ impl FrameComposer {
         if !media_asset.description.has_picture() {
             return Ok(None);
         }
-        let source_time = if media_asset.description.kind == MediaKind::Image {
+        let is_still_image = media_asset.description.kind == MediaKind::Image;
+        let stabilization = applied_stabilization_of(clip).filter(|_| !is_still_image);
+        let source_time = if is_still_image {
             Timestamp::ZERO
         } else {
             match clip.source_time_continued_at(timeline_time) {
                 Some(source_time) => {
-                    held_inside_file(source_time, media_asset.description.duration)
+                    let source_time =
+                        held_inside_file(source_time, media_asset.description.duration);
+                    stabilization.map_or(source_time, |stabilization| {
+                        stabilization.frame_time_for(source_time)
+                    })
                 }
                 None => return Ok(None),
             }
@@ -209,11 +229,23 @@ impl FrameComposer {
         let picture = self
             .video_source_of(backend, clip.id, &media_asset.description.file_path)?
             .frame_at(source_time)?;
+        let source_correction = stabilization.map_or(SourceCorrection::IDENTITY, |stabilization| {
+            let picture_size = PictureSize {
+                width_in_pixels: picture.width(),
+                height_in_pixels: picture.height(),
+            };
+            stabilization_correction_at(stabilization, source_time, picture_size).source_correction
+        });
         let hidden_regions = hidden_regions_of(clip, source_time);
-        if hidden_regions.is_empty() {
-            return Ok(Some(picture));
-        }
-        Ok(Some(Arc::new(hide_regions(&picture, &hidden_regions))))
+        let picture = if hidden_regions.is_empty() {
+            picture
+        } else {
+            Arc::new(hide_regions(&picture, &hidden_regions))
+        };
+        Ok(Some(SourcePicture {
+            picture,
+            source_correction,
+        }))
     }
 
     /// The decoder of `clip_id`, opened (or opened again) if it does not read `file_path`.
@@ -268,6 +300,22 @@ impl FrameComposer {
     }
 }
 
+/// The picture a clip shows, and how stabilisation moves it inside its layer.
+struct SourcePicture {
+    picture: Arc<VideoFrame>,
+    source_correction: SourceCorrection,
+}
+
+impl SourcePicture {
+    /// A picture no stabilisation moves.
+    fn as_it_is(picture: Arc<VideoFrame>) -> Self {
+        Self {
+            picture,
+            source_correction: SourceCorrection::IDENTITY,
+        }
+    }
+}
+
 /// `source_time`, moved back inside a file lasting `file_duration` if it is past
 /// its end, so the last frame is held. Files without a duration (still images)
 /// are left alone.
@@ -288,7 +336,9 @@ fn enabled_color_adjustments(clip: &Clip) -> Vec<ColorAdjustment> {
         .filter(|effect| effect.is_enabled)
         .filter_map(|effect| match &effect.kind {
             EffectKind::ColorAdjustment(adjustment) => Some(*adjustment),
-            EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => None,
+            EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) | EffectKind::Stabilization(_) => {
+                None
+            }
         })
         .collect()
 }
@@ -309,7 +359,9 @@ pub(crate) fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<Hidd
                         edge_softness_in_pixels: tracked_blur.edge_softness_in_pixels,
                     })
             }
-            EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => None,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::ColorLut(_)
+            | EffectKind::Stabilization(_) => None,
         })
         .collect()
 }
