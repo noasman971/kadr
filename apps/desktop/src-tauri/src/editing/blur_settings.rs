@@ -3,6 +3,10 @@
 //!
 //! The region samples are never touched here: only the tracking analysis
 //! (`tracking_job.rs`) writes them.
+//!
+//! A change names only the settings it changes ([`BlurChanges`]): the others are
+//! read from the project as it is when the change is applied, so two quick
+//! changes never undo each other (the same rule as `clip_settings.rs`).
 
 use kadr_core::color::{Color, ColorParseError};
 use kadr_core::commands::{RemoveEffect, ReplaceEffect, SetEffectEnabled};
@@ -61,6 +65,37 @@ pub struct BlurSettings {
     pub shape: BlurShapeChoice,
     /// Extra hidden space around the box, in percent of its size.
     pub margin_in_percent: f32,
+}
+
+/// A change of some of a blur's settings; the others stay as they are in the
+/// project. Unknown fields are refused, so a misspelt setting is not silently
+/// ignored.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BlurChanges {
+    /// Blur, pixels or mask.
+    pub style: Option<BlurStyleChoice>,
+    /// Blur radius or square size, in source pixels.
+    pub strength: Option<f32>,
+    /// The mask's colour, `#RRGGBB`.
+    pub mask_color: Option<String>,
+    /// Ellipse or rectangle.
+    pub shape: Option<BlurShapeChoice>,
+    /// Extra hidden space around the box, in percent of its size.
+    pub margin_in_percent: Option<f32>,
+}
+
+impl BlurChanges {
+    /// `settings` with these changes.
+    fn applied_to(&self, settings: BlurSettings) -> BlurSettings {
+        BlurSettings {
+            style: self.style.unwrap_or(settings.style),
+            strength: self.strength.unwrap_or(settings.strength),
+            mask_color: self.mask_color.clone().unwrap_or(settings.mask_color),
+            shape: self.shape.unwrap_or(settings.shape),
+            margin_in_percent: self.margin_in_percent.unwrap_or(settings.margin_in_percent),
+        }
+    }
 }
 
 /// The strength shown for a mask, which has none: the blur radius it gets back
@@ -161,7 +196,8 @@ fn invalid_blur(clip_id: ClipId, effect_id: EffectId, reason: String) -> EditErr
     })
 }
 
-/// Changes a blur's style, strength, shape and margin (one undo step).
+/// Changes some of a blur's settings (one undo step); the others are read from
+/// the project now, not from what the interface last showed.
 ///
 /// # Errors
 ///
@@ -170,10 +206,12 @@ pub fn set_blur_settings(
     session: &mut EditSession,
     clip_id: ClipId,
     effect_id: EffectId,
-    settings: &BlurSettings,
+    changes: &BlurChanges,
 ) -> Result<EditOutcome, EditError> {
-    let changed = settings
-        .applied_to(tracked_blur_of(session.project(), clip_id, effect_id)?)
+    let blur = tracked_blur_of(session.project(), clip_id, effect_id)?;
+    let changed = changes
+        .applied_to(BlurSettings::of(blur))
+        .applied_to(blur)
         .map_err(|error| invalid_blur(clip_id, effect_id, error.to_string()))?;
     session.transaction("changeBlur", |transaction| {
         transaction.execute(ReplaceEffect::new(
@@ -262,5 +300,32 @@ mod tests {
         .applied_to(&blur)
         .unwrap();
         assert_eq!(BlurSettings::of(&mask).mask_color, "#FF8800");
+    }
+
+    #[test]
+    fn a_change_keeps_the_settings_it_does_not_name() {
+        let settings = BlurSettings::of(&TrackedBlur::with_default_style());
+        let wider = BlurChanges {
+            margin_in_percent: Some(40.0),
+            ..BlurChanges::default()
+        }
+        .applied_to(settings.clone());
+        assert_eq!(wider.margin_in_percent, 40.0);
+        assert_eq!(
+            BlurSettings {
+                margin_in_percent: settings.margin_in_percent,
+                ..wider
+            },
+            settings
+        );
+    }
+
+    #[test]
+    fn misspelt_settings_are_refused() {
+        let misspelt = serde_json::from_value::<BlurChanges>(serde_json::json!({ "margin": 40 }));
+        assert!(misspelt.is_err());
+        let fine: BlurChanges =
+            serde_json::from_value(serde_json::json!({ "marginInPercent": 40 })).unwrap();
+        assert_eq!(fine.margin_in_percent, Some(40.0));
     }
 }

@@ -254,7 +254,7 @@ export type EditRequest =
   | { type: "resetClipColor"; clipId: number }
   | { type: "setClipText"; clipId: number; changes: Partial<TextSettings> }
   | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle }
-  | { type: "setBlurSettings"; clipId: number; effectId: number; settings: BlurSettings }
+  | { type: "setBlurSettings"; clipId: number; effectId: number; changes: Partial<BlurSettings> }
   | { type: "setBlurEnabled"; clipId: number; effectId: number; isEnabled: boolean }
   | { type: "removeBlur"; clipId: number; effectId: number }
   /** Cuts the parts the silence dialog found and closes the gaps on the clip's track. */

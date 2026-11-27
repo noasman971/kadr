@@ -28,7 +28,9 @@ mod silences;
 mod titles;
 
 pub use arrangement::TrimEdge;
-pub use blur_settings::{BlurSettings, BlurShapeChoice, BlurStyleChoice, tracked_blur_of};
+pub use blur_settings::{
+    BlurChanges, BlurSettings, BlurShapeChoice, BlurStyleChoice, tracked_blur_of,
+};
 pub use clip_settings::{ClipValue, ColorChanges, CropChanges, TextAlignmentChoice, TextChanges};
 pub use silences::TickRange;
 pub use titles::{TITLE_DURATION, TITLES_TRACK_NAME, TitleStyle};
@@ -200,14 +202,15 @@ pub enum EditRequest {
         /// New height in pixels (made even, within the engine's limits).
         height: u32,
     },
-    /// Changes a tracked blur's style, strength, shape and margin.
+    /// Changes some of a tracked blur's settings (style, strength, mask colour,
+    /// shape, margin): only the ones named.
     SetBlurSettings {
         /// The clip.
         clip_id: ClipId,
         /// The blur.
         effect_id: EffectId,
-        /// Its new settings.
-        settings: BlurSettings,
+        /// The settings that change.
+        changes: BlurChanges,
     },
     /// Turns a tracked blur off (kept, not drawn) or back on.
     SetBlurEnabled {
@@ -366,8 +369,8 @@ pub fn apply_edit_request(
         EditRequest::SetBlurSettings {
             clip_id,
             effect_id,
-            settings,
-        } => blur_settings::set_blur_settings(session, *clip_id, *effect_id, settings),
+            changes,
+        } => blur_settings::set_blur_settings(session, *clip_id, *effect_id, changes),
         EditRequest::SetBlurEnabled {
             clip_id,
             effect_id,
@@ -1465,6 +1468,65 @@ mod tests {
         assert_eq!(text.style, style_before);
         session.undo().unwrap();
         assert_eq!(text_of(&session, title).text, "Titre");
+    }
+
+    #[test]
+    fn quick_blur_changes_each_keep_the_other() {
+        use kadr_core::commands::{AddEffect, CreatedObjectsExt};
+        use kadr_core::effect::{BlurShape, EffectKind, TrackedBlur};
+
+        let (mut session, clip_ids) = arranged_session();
+        let clip_id = clip_ids[0];
+        let effect_id = session
+            .execute(AddEffect::new(
+                clip_id,
+                EffectKind::TrackedBlur(TrackedBlur::with_default_style()),
+            ))
+            .unwrap()
+            .first_effect_id()
+            .unwrap();
+        let blur_of = |session: &EditSession| {
+            BlurSettings::of(tracked_blur_of(session.project(), clip_id, effect_id).unwrap())
+        };
+        let before = blur_of(&session);
+        // Sent before the answer to the first one arrived: neither names the other.
+        for changes in [
+            BlurChanges {
+                margin_in_percent: Some(45.0),
+                ..BlurChanges::default()
+            },
+            BlurChanges {
+                shape: Some(BlurShapeChoice::Rectangle),
+                ..BlurChanges::default()
+            },
+        ] {
+            apply(
+                &mut session,
+                EditRequest::SetBlurSettings {
+                    clip_id,
+                    effect_id,
+                    changes,
+                },
+            )
+            .unwrap();
+        }
+        let after = blur_of(&session);
+        assert_eq!(after.margin_in_percent, 45.0);
+        assert_eq!(after.shape, BlurShapeChoice::Rectangle);
+        assert_eq!(
+            (after.style, after.strength),
+            (before.style, before.strength)
+        );
+        assert_eq!(
+            tracked_blur_of(session.project(), clip_id, effect_id)
+                .unwrap()
+                .shape,
+            BlurShape::Rectangle
+        );
+        // One undo step per change.
+        session.undo().unwrap();
+        assert_eq!(blur_of(&session).margin_in_percent, 45.0);
+        assert_eq!(blur_of(&session).shape, before.shape);
     }
 
     #[test]
