@@ -20,7 +20,9 @@
 //!   contact sheets of thumbnails;
 //! - [`silence_analysis`]: the silent parts of a file's sound;
 //! - [`silence_removal`]: the silences of a clip shortened to short pauses, in
-//!   one undoable change.
+//!   one undoable change;
+//! - [`subtitle_files`]: `.srt` files read into a subtitle track, and subtitle
+//!   tracks written back.
 //!
 //! ## Rules for this crate
 //!
@@ -45,6 +47,7 @@ pub mod region_tracking;
 pub mod silence_analysis;
 pub mod silence_removal;
 pub mod still_frames;
+pub mod subtitle_files;
 pub mod timeline_sound;
 
 pub use export::{

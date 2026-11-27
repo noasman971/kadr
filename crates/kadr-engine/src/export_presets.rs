@@ -10,7 +10,9 @@
 
 use kadr_core::animation::Keyframe;
 use kadr_core::clip::{AnimatableProperty, ClipContent};
-use kadr_core::commands::{ChangeProjectSettings, SetClipPropertyValue, SetClipText, SetKeyframe};
+use kadr_core::commands::{
+    ChangeProjectSettings, SetClipPropertyValue, SetClipText, SetKeyframe, SetSubtitleStyle,
+};
 use kadr_core::error::EditError;
 use kadr_core::history::{EditSession, Transaction};
 use kadr_core::media_asset::PictureSize;
@@ -128,6 +130,8 @@ fn project_scaled_to_canvas(
 /// their place on the picture and still fit, like videos (which are fitted to the
 /// canvas whatever its size). Video scales are relative to the canvas, blur
 /// regions are in source pixels and crops are fractions: they stay as they are.
+/// Subtitle styles are refitted with
+/// [`SubtitleStyle::refitted_from_canvas_to_canvas`](kadr_core::subtitle::SubtitleStyle::refitted_from_canvas_to_canvas).
 ///
 /// Call it inside the transaction that changes the canvas size.
 ///
@@ -173,6 +177,18 @@ pub fn refit_clips_to_canvas(
             transaction
                 .execute(SetClipText::new(clip.id, text_content.text.clone()).with_style(style))?;
         }
+    }
+    // Subtitles keep their size and margin relative to the defaults of the
+    // canvas: on a vertical canvas they move clear of the apps' buttons.
+    let subtitle_styles: Vec<_> = transaction
+        .project()
+        .timeline()
+        .subtitle_tracks()
+        .filter_map(|track| Some((track.id, track.subtitle_style.clone()?)))
+        .collect();
+    for (track_id, style) in subtitle_styles {
+        let refitted = style.refitted_from_canvas_to_canvas(old_size, new_size);
+        transaction.execute(SetSubtitleStyle::new(track_id, refitted))?;
     }
     Ok(())
 }

@@ -80,6 +80,7 @@ fn plan_clip_layer(
                 text_animation_frame(style, phase, text_content.style.font_size_in_pixels)
             },
         ),
+        ClipContent::Subtitle(_) => (LayerMotion::NONE, TextReveal::Everything),
         ClipContent::Media(_) => {
             let motion =
                 clip.transition_at(time_in_clip)

@@ -18,9 +18,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::clip::ClipContent;
 use crate::color::Color;
 use crate::media_asset::PictureSize;
 use crate::time::{TimeSpan, Timestamp};
+use crate::timeline::Track;
 
 /// A cue: words shown for some time. The track's [`SubtitleStyle`] says how.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +58,23 @@ pub struct TimedSubtitleCue {
     pub end: Timestamp,
     /// Its text, with line breaks and `<i>` / `<b>` tags.
     pub text: String,
+}
+
+/// The cues of a subtitle track with their times, in order (empty for other
+/// tracks).
+pub fn timed_cues_of(track: &Track) -> Vec<TimedSubtitleCue> {
+    track
+        .clips()
+        .iter()
+        .filter_map(|clip| match &clip.content {
+            ClipContent::Subtitle(cue) => Some(TimedSubtitleCue {
+                start: clip.timeline_start,
+                end: clip.timeline_end(),
+                text: cue.text.clone(),
+            }),
+            ClipContent::Media(_) | ClipContent::Text(_) => None,
+        })
+        .collect()
 }
 
 /// What is drawn behind the letters so they read on any picture.

@@ -25,6 +25,7 @@ use kadr_core::error::EditError;
 use kadr_core::ids::{ClipId, MediaAssetId};
 use kadr_core::media_asset::MediaKind;
 use kadr_core::project::Project;
+use kadr_core::subtitle::SubtitleStyle;
 use kadr_core::time::Timestamp;
 use kadr_media::{MediaBackend, MediaError};
 use kadr_render::{
@@ -156,6 +157,21 @@ pub fn clip_pictures_at(
     let segment = match &clip.content {
         ClipContent::Text(text_content) => {
             let picture = TextRasterizer::new().rasterize(&text_content.text, &text_content.style);
+            let pictures = timeline_times.iter().map(|_| ClipPicture {
+                picture: picture.clone(),
+                source_time: None,
+            });
+            return Ok(pictures.collect());
+        }
+        ClipContent::Subtitle(cue) => {
+            let style = project
+                .timeline()
+                .find_clip(clip_id)
+                .and_then(|(track, _)| track.subtitle_style.clone())
+                .unwrap_or_else(|| SubtitleStyle::for_canvas(project.settings().canvas_size));
+            let picture = TextRasterizer::new()
+                .rasterize_subtitle(&cue.text, &style, project.settings().canvas_size)
+                .picture;
             let pictures = timeline_times.iter().map(|_| ClipPicture {
                 picture: picture.clone(),
                 source_time: None,
