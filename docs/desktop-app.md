@@ -72,6 +72,11 @@ doing it:
   answer. Every call goes through `fetch("http://ipc.localhost/<command>")`, which can
   be wrapped, for example to answer `plugin:dialog|open` with chosen files instead of
   opening the native dialog.
+- A faked answer must carry the header `Tauri-Response: ok` (and `Content-Type:
+  application/json`), or Tauri's IPC script hands it to the error callback and
+  nothing happens.
+- Node 20 has `WebSocket` only with `node --experimental-websocket` (Node 22 has it
+  by default).
 - Ctrl+I without that opens the real dialog, which a script cannot close.
 - A file drop from the explorer can be imitated by emitting Tauri's own event:
   `invoke("plugin:event|emit", { event: "tauri://drag-drop", payload: { paths, position } })`.
