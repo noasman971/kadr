@@ -37,6 +37,25 @@ flowchart LR
   directly and saves it after every successful change
   ([decision 0012](decisions/0012-file-mode-saves-every-change.md)).
 
+## Starting the server
+
+```text
+kadr-mcp [--allowed-folder <FOLDER>]... [--kadr-settings <FILE>]
+```
+
+- `--allowed-folder`: a folder Claude may read and write in; repeat it for several
+  ([decision 0011](decisions/0011-allowed-folders-as-server-arguments.md)).
+- `--kadr-settings`: the `claude-access.json` file of the app's *Connect to Claude*
+  screen. Its folders are allowed too, and the file is **read again before every
+  call**, so a folder added or removed on the screen applies to Claude's next
+  request without restarting anything
+  ([decision 0031](decisions/0031-claude-access-settings-file.md)). The configuration
+  the screen writes passes only this option.
+- The folders allowed are the union of both. Without any, the server starts but
+  every file tool explains how to allow a folder.
+- `KADR_LOG=debug` logs more (to stderr); `KADR_APP_LINK_ADDRESS` names another
+  pipe for the app link.
+
 ## When the app is open
 
 Before every call, `kadr-mcp` tries the app's pipe (`\\.\pipe\kadr-app-<user>` on
@@ -53,8 +72,9 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 - **Undo is shared**: `undo` and `redo` only undo or redo Claude's own steps. When the
   user changed something since, they refuse and say so, so Claude never undoes the
   user's work (the user's Ctrl+Z undoes anything).
-- The allowed folders are still the server's `--allowed-folder` arguments; each call
-  carries them to the app.
+- The allowed folders are those of the server's arguments and of the
+  `--kadr-settings` file, read before each call; each call carries them to the app,
+  which also adds the folders of its own settings.
 - Tools that only read run on a copy of the app's project (the window never waits for
   a contact sheet); tools that change it hold the project for the call, so a gesture
   and a call never interleave.
