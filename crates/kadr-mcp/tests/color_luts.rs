@@ -242,11 +242,12 @@ async fn lut_paths_in_a_project_file_are_checked_too() {
     // A missing LUT is not an error: the clip is shown without its look.
     let moved = server.allowed_folder.path().join("moved.cube");
     fs::rename(&green, &moved).unwrap();
-    let [red, _, blue] = middle_of_timeline(&server).await;
+    let [red, green_channel, blue] = middle_of_timeline(&server).await;
+    let is_green = green_channel > 200 && red < 60 && blue < 60;
     assert!(
-        red.abs_diff(blue) < 30,
-        "barcode, not green: {:?}",
-        [red, blue]
+        !is_green && red.abs_diff(green_channel) < 30 && blue.abs_diff(green_channel) < 30,
+        "the black and white barcode, not green: {:?}",
+        [red, green_channel, blue]
     );
     fs::rename(&moved, &green).unwrap();
 
@@ -278,10 +279,39 @@ async fn lut_paths_in_a_project_file_are_checked_too() {
     assert!(error.contains("colour LUT"), "{error}");
     assert!(error.contains("outside the folders"), "{error}");
     let error = server
+        .call_error("get_contact_sheet", json!({ "count": 4 }))
+        .await;
+    assert!(error.contains("outside the folders"), "{error}");
+    let error = server
         .call_error(
             "export",
             json!({ "output_path": server.allowed_path("out.mp4") }),
         )
         .await;
     assert!(error.contains("outside the folders"), "{error}");
+
+    // A clip's own pictures and the face tracking never read LUTs: still allowed.
+    server
+        .call_ok(
+            "get_frame",
+            json!({ "clip_id": clip, "time_in_seconds": 0.5 }),
+        )
+        .await;
+    let blur = server
+        .call(
+            "blur_region",
+            json!({ "clip_id": clip, "time_in_seconds": 0.5, "left_in_pixels": 100,
+                    "top_in_pixels": 60, "width_in_pixels": 120, "height_in_pixels": 120 }),
+        )
+        .await;
+    let blur_text = text_of(&blur);
+    assert!(
+        !blur_text.contains("colour LUT") && !blur_text.contains("outside the folders"),
+        "{blur_text}"
+    );
+    if blur.is_error != Some(true) {
+        server
+            .call_ok("cancel_blur", json!({ "task_id": "blur-1" }))
+            .await;
+    }
 }

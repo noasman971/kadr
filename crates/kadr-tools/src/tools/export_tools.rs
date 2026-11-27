@@ -17,7 +17,9 @@ use crate::output::{ToolError, ToolOutput};
 use crate::time_input::seconds_in;
 use crate::toolbox::ToolCall;
 use crate::tools::common::with_extension;
-use crate::tools::picture_tools::ensure_project_media_readable;
+use crate::tools::picture_tools::{
+    ensure_project_color_luts_readable, ensure_project_media_readable,
+};
 
 /// The export tools.
 pub(crate) fn export_tools() -> Vec<ToolEntry> {
@@ -132,6 +134,7 @@ fn export(
         .allowed_folders()
         .check_file_to_write(&output_path, parameters.overwrite)?;
     ensure_project_media_readable(toolbox, project)?;
+    ensure_project_color_luts_readable(toolbox, project)?;
     let target_size = target_size_of(&parameters, project.settings().canvas_size)?;
     let exported_project = project_at_size(project, target_size)?;
     let request = ExportRequest {

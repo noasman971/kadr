@@ -112,6 +112,7 @@ fn timeline_frame(
         )));
     }
     ensure_project_media_readable(toolbox, project)?;
+    ensure_project_color_luts_readable(toolbox, project)?;
     let pictures = timeline_pictures_at(project, toolbox.backend(), STILL_FRAME_RENDERER, &[time])?;
     let picture = pictures.into_iter().next().ok_or_else(no_picture)?;
     let description = format!(
@@ -210,8 +211,7 @@ fn ensure_media_readable(
         .map_err(|error| error.in_context(format!("media {}", media_asset.id)))
 }
 
-/// [`ensure_media_readable`] for every media file the timeline uses, and
-/// [`check_stored_color_lut_file`] for every colour LUT its clips apply.
+/// [`ensure_media_readable`] for every media file the timeline uses.
 pub(crate) fn ensure_project_media_readable(
     toolbox: &ToolCall<'_>,
     project: &Project,
@@ -221,6 +221,16 @@ pub(crate) fn ensure_project_media_readable(
             ensure_media_readable(toolbox, media_asset)?;
         }
     }
+    Ok(())
+}
+
+/// [`check_stored_color_lut_file`] for every colour LUT the timeline's clips
+/// apply. Only for what renders the timeline (its pictures, the export): a
+/// clip's own pictures and the face tracking never read LUTs.
+pub(crate) fn ensure_project_color_luts_readable(
+    toolbox: &ToolCall<'_>,
+    project: &Project,
+) -> Result<(), ToolError> {
     for (clip_id, effect_id, color_lut) in enabled_color_luts(project) {
         check_stored_color_lut_file(toolbox, &color_lut.file_path).map_err(|error| {
             error.in_context(format!(
@@ -383,6 +393,7 @@ fn timeline_thumbnails(
         return Err(ToolError::new("the timeline is empty: add clips first"));
     }
     ensure_project_media_readable(toolbox, project)?;
+    ensure_project_color_luts_readable(toolbox, project)?;
     let times = evenly_spaced_times(Timestamp::ZERO, duration, count);
     let pictures = timeline_pictures_at(project, toolbox.backend(), STILL_FRAME_RENDERER, &times)?;
     Ok((
