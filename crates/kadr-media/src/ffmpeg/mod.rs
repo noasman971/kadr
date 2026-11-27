@@ -68,6 +68,14 @@ impl MediaBackend for FfmpegBackend {
     fn open_video_source(&self, file_path: &Path) -> Result<Box<dyn VideoFrameSource>, MediaError> {
         Ok(Box::new(video_source::FfmpegVideoFrameSource::open(
             file_path,
+            DecoderThreading::Frames,
+        )?))
+    }
+
+    fn open_video_proxy(&self, file_path: &Path) -> Result<Box<dyn VideoFrameSource>, MediaError> {
+        Ok(Box::new(video_source::FfmpegVideoFrameSource::open(
+            file_path,
+            DecoderThreading::Slices,
         )?))
     }
 
@@ -137,11 +145,23 @@ struct PictureDecoder {
     decoder: ffmpeg::decoder::Video,
 }
 
-/// Opens the decoder of the best picture stream of `input`, decoding several
-/// frames in parallel.
+/// How a decoder spreads its work over the processor's cores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DecoderThreading {
+    /// Several frames at once: the most frames per second, but the first frame
+    /// after a jump only comes out once a frame per core has been read. For
+    /// files read in order (export, playback).
+    Frames,
+    /// Parts (slices) of one frame at once: each frame comes out as soon as it
+    /// is decoded. For proxies, written in slices and read with many jumps.
+    Slices,
+}
+
+/// Opens the decoder of the best picture stream of `input`.
 fn open_picture_decoder(
     input: &ffmpeg::format::context::Input,
     file_path: &Path,
+    threading: DecoderThreading,
 ) -> Result<PictureDecoder, MediaError> {
     let stream = find_picture_stream(input).ok_or_else(|| MediaError::NoVideoStream {
         file_path: file_path.to_path_buf(),
@@ -150,10 +170,11 @@ fn open_picture_decoder(
     let mut codec_context =
         ffmpeg::codec::context::Context::from_parameters(stream.parameters())
             .map_err(|error| decoding_failure(file_path, "reading the video parameters", error))?;
-    // Let FFmpeg decode several frames in parallel (0 = one thread per core).
-    codec_context.set_threading(ffmpeg::codec::threading::Config::kind(
-        ffmpeg::codec::threading::Type::Frame,
-    ));
+    // One thread per core (a count of 0), on frames or on slices.
+    codec_context.set_threading(ffmpeg::codec::threading::Config::kind(match threading {
+        DecoderThreading::Frames => ffmpeg::codec::threading::Type::Frame,
+        DecoderThreading::Slices => ffmpeg::codec::threading::Type::Slice,
+    }));
     let mut decoder = codec_context
         .decoder()
         .video()

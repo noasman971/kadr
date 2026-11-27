@@ -24,7 +24,8 @@ use super::picture_conversion::{color_space_of, is_full_range_format};
 use super::probe::read_frame_rate;
 use super::time_conversion::timestamp_from_stream_units;
 use super::{
-    PictureDecoder, decoding_failure, find_picture_stream, open_input_file, open_picture_decoder,
+    DecoderThreading, PictureDecoder, decoding_failure, find_picture_stream, open_input_file,
+    open_picture_decoder,
 };
 use crate::backend::{
     ChromaSubsampling, VideoProxyOutcome, VideoProxySettings, VideoStreamDetails,
@@ -41,6 +42,9 @@ const LIBX264_PRESET: &str = "veryfast";
 const LIBX264_CONSTANT_RATE_FACTOR: &str = "23";
 /// No CABAC, no deblocking, no weighted prediction: much less work per frame.
 const LIBX264_TUNING: &str = "fastdecode";
+/// Each frame is cut into this many slices, which the decoder of
+/// `open_video_proxy` decodes in parallel without delaying the frame.
+const PROXY_SLICES_PER_FRAME: u32 = 4;
 /// Bits per pixel per frame given to OpenH264, which is driven by bit rate.
 const OPENH264_BITS_PER_PIXEL: f64 = 0.15;
 /// Frame rate assumed for the last frame's duration when the file gives none.
@@ -212,7 +216,7 @@ impl ProxySource {
             stream_time_base,
             stream_start_in_stream_units,
             decoder,
-        } = open_picture_decoder(&input, file_path)?;
+        } = open_picture_decoder(&input, file_path, DecoderThreading::Frames)?;
         Ok(Self {
             input,
             file_path: file_path.to_path_buf(),
@@ -501,6 +505,7 @@ fn open_proxy_encoder(
         options.set("preset", LIBX264_PRESET);
         options.set("tune", LIBX264_TUNING);
         options.set("crf", LIBX264_CONSTANT_RATE_FACTOR);
+        options.set("x264-params", &format!("slices={PROXY_SLICES_PER_FRAME}"));
     } else {
         let frames_per_second = request
             .frame_rate

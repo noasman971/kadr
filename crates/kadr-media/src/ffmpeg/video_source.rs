@@ -19,7 +19,8 @@ use kadr_core::time::{TimeSpan, Timestamp};
 use super::picture_conversion::PictureConverter;
 use super::time_conversion::{microseconds_from_timestamp, timestamp_from_stream_units};
 use super::{
-    PictureDecoder, decoding_failure, is_still_image_format, open_input_file, open_picture_decoder,
+    DecoderThreading, PictureDecoder, decoding_failure, is_still_image_format, open_input_file,
+    open_picture_decoder,
 };
 use crate::backend::VideoFrameSource;
 use crate::error::MediaError;
@@ -53,8 +54,8 @@ pub(crate) struct FfmpegVideoFrameSource {
 }
 
 impl FfmpegVideoFrameSource {
-    /// Opens the pictures of `file_path`.
-    pub(crate) fn open(file_path: &Path) -> Result<Self, MediaError> {
+    /// Opens the pictures of `file_path`, decoding with `threading`.
+    pub(crate) fn open(file_path: &Path, threading: DecoderThreading) -> Result<Self, MediaError> {
         let input = open_input_file(file_path)?;
         let is_still_image = is_still_image_format(&input);
         let PictureDecoder {
@@ -62,7 +63,7 @@ impl FfmpegVideoFrameSource {
             stream_time_base,
             stream_start_in_stream_units,
             decoder,
-        } = open_picture_decoder(&input, file_path)?;
+        } = open_picture_decoder(&input, file_path, threading)?;
 
         Ok(Self {
             file_path: file_path.to_path_buf(),

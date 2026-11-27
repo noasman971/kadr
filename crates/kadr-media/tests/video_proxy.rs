@@ -17,7 +17,7 @@ use kadr_media::{
 };
 
 const SAMPLE_RATE: u32 = 48_000;
-const FRAMES_PER_KEYFRAME: u32 = 10;
+const FRAMES_PER_KEYFRAME: u32 = 5;
 
 fn size(width_in_pixels: u32, height_in_pixels: u32) -> PictureSize {
     PictureSize {

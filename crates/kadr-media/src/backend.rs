@@ -32,6 +32,17 @@ pub trait MediaBackend: Send + Sync {
     /// Fails when the file cannot be opened or has no pictures.
     fn open_video_source(&self, file_path: &Path) -> Result<Box<dyn VideoFrameSource>, MediaError>;
 
+    /// Opens the pictures of a proxy made by [`Self::make_video_proxy`], decoding
+    /// so that each jump answers quickly (the preview jumps a lot while
+    /// scrubbing). By default, the same as [`Self::open_video_source`].
+    ///
+    /// # Errors
+    ///
+    /// Fails when the file cannot be opened or has no pictures.
+    fn open_video_proxy(&self, file_path: &Path) -> Result<Box<dyn VideoFrameSource>, MediaError> {
+        self.open_video_source(file_path)
+    }
+
     /// Decodes a range of a file's sound, at a given speed, as stereo at the
     /// requested sample rate.
     ///
