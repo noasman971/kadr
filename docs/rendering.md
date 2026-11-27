@@ -225,13 +225,29 @@ Real exports from the command line (release build, Intel Quick Sync encoder):
 The laptop's power state changes these numbers by up to 2–3× between runs; compare
 within one table.
 
+Preview frames of a 4K video (20 s, on a 4K canvas, shown 1280 × 720; release build,
+medians, measured while other builds ran), from the original and from its proxy
+(decision record [0055](decisions/0055-automatic-proxies-for-heavy-videos.md), full
+tables there):
+
+| Source | Playback, original | Playback, proxy | Scrubbing, original | Scrubbing, proxy |
+|---|---|---|---|---|
+| H.264, 60 Mbit/s | 58.7 ms | 6.4 ms | 1 597 ms | 13.4 ms |
+| HEVC Main 10, 51 Mbit/s | 61.2 ms | 6.2 ms | 1 388 ms | 19.3 ms |
+
+The preview composes a large canvas at a half or a quarter of its size when that
+still covers the panel (a lone canvas-sized video is taken as it is): with a proxy on
+a 4K canvas, composing and shrinking the full canvas had become the slowest step
+(59 ms per frame).
+
 ## Known limits
 
 - Large downscales (4K into 1080p) use plain bilinear sampling (possible aliasing);
   mipmaps are future work.
 - Hardware decoding is not used yet: decoding 1080p H.264 on the CPU takes about 1 ms
-  per frame, so it is not the bottleneck. It becomes interesting for 4K HEVC and with
-  zero-copy GPU interop (see decision record 0006).
+  per frame, so it is not the bottleneck. 4K HEVC 10-bit takes about 20–35 ms; the
+  preview reads proxies of such videos instead (decision record 0055). Hardware
+  decoding becomes interesting with zero-copy GPU interop (see decision record 0006).
 - Tracked blurs run on the CPU (on the hidden area only, plus one copy of the source
   picture per frame); moving them to the GPU is possible if they ever cost too much.
 - Frames are rendered and read back one at a time; overlapping the next frame's upload

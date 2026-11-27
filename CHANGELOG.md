@@ -145,6 +145,37 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   image.
 - Decision record 0052.
 
+### Added (phase 8f: automatic proxies for heavy videos)
+
+- `kadr-media`: `MediaBackend::describe_video_stream` (codec, bits per sample, colour
+  subsampling, bit rate), `make_video_proxy` and `open_video_proxy`. A proxy is the
+  video's pictures shrunk to fit inside 1920 × 1080, as H.264 (libx264 `fastdecode`,
+  no B-frames, a keyframe every 5 frames, 4 slices), with every frame at its source
+  time and the source's colour tags, and no sound. Proxies are read with slice
+  threads, so a jump answers at once.
+- `kadr-engine`: `proxies`:
+  - the rule (`proxy_need_of`): above 1920 × 1080, slower to decode than 1080p60
+    H.264, or above 100 Mbit/s;
+  - `ProxyCache`: a folder outside every project, keyed by the source's path, length
+    and modification time, with a checked description, temporary names until
+    complete, and trimming of the least recently used;
+  - `ReadyProxies`, read by the preview and thumbnails, which re-checks the source
+    every two seconds.
+  
+  The export, Claude's pictures and the blur analysis keep reading the originals;
+  the preview scales tracked blur regions to the proxy.
+- `kadr-engine`: the preview composes a large canvas at a half (or a quarter…) of its
+  size when that still covers the panel: a 4K project in a laptop's panel costs a
+  quarter of the work.
+- Desktop app: importing (or opening) a heavy video makes its proxy in the
+  background. The library tile shows *Proxy…*, *Proxy 42 %* with a bar and ×
+  to stop, *Proxy* when used, or *Proxy failed* with ↻ to try again. Settings: turn
+  automatic proxies off, see the cache's size and delete the proxies.
+- Nothing about proxies goes into `.kadr` files (still format 3).
+- `scripts/generate-proxy-benchmark.ps1` and the `preview_frame_times` example measure
+  preview frame times with and without a proxy.
+- Decision record 0055.
+
 ### Fixed
 
 - Desktop inspector, *Blur* section: two quick changes (a wider margin, then the

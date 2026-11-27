@@ -86,7 +86,15 @@ the file (decision record 0052).
 Preview and export use the same renderer, so what the user sees is what they get: the
 desktop app's preview frames come from `kadr_engine::preview`, which composes frames
 with the export's own code and only shrinks the result to the panel's size (see
-[desktop-app.md](desktop-app.md)).
+[desktop-app.md](desktop-app.md)). A large canvas is composed at a half or a quarter
+of its size when that still covers the panel.
+
+Heavy videos get a *proxy* (`kadr_engine::proxies`, decision record 0055): a 1080p
+copy that is quick to decode and to jump in, made in the background by
+`MediaBackend::make_video_proxy` into a cache outside every project. Only the
+preview's composer and the thumbnail maker read proxies; the export, Claude's pictures
+and the blur analysis always read the originals, and the project file never names a
+proxy.
 
 ## How Claude edits a project (from phase 5)
 

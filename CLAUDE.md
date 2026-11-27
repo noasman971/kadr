@@ -326,6 +326,21 @@ Details: [docs/architecture.md](docs/architecture.md).
   pool, so two requests sent together can be applied in either order. To reproduce
   such races, wrap `window.fetch` in the page and hold back `apply_edit` requests or
   answers (DevTools port).
+- **Proxies** (decision 0055): only the preview's frame composer and the thumbnail
+  maker read them (`ReadyProxies`); never give proxies to the export, Claude's
+  pictures or the blur analysis. Blur regions stay in the original's pixels and are
+  scaled to the proxy where it is drawn. Nothing about proxies goes in `.kadr` files.
+- FFmpeg's frame-threaded decoders hold back the first frame after a jump until one
+  frame per thread (up to 16) has been decoded: a 1080p proxy with a keyframe every
+  10 frames still took ~50 ms per jump. Proxies are written in 4 slices and read with
+  slice threads (`open_video_proxy`); keep frame threads for originals (throughput).
+- The preview composes a large canvas at a half (or quarter) of its size when that
+  still covers the requested size (`preview::composition_size_for`). Preview tests
+  that compare pixels with an export ask for at least half the canvas, or expect it.
+- Python on Windows writes CRLF line endings in text mode, and Git Bash's `grep` and
+  `cat -A` do not show them: patch scripts must open files with `newline=''` and
+  write with `newline` set to a line feed, or the next exact-text replacement
+  silently fails to match.
 - Running the app while another session runs its own: port 1420 is then taken, and
   a `tauri dev` whose Vite fails still starts its window on the **other** session's
   front end. Use other ports and a separate WebView2 folder: a `--config` file

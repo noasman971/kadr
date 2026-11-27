@@ -13,6 +13,9 @@ The engine never calls FFmpeg directly. It uses a `MediaBackend`:
 | `open_video_source(path)` | A `VideoFrameSource`: `frame_at(source_time)` gives the exact picture on screen at that time |
 | `decode_audio_segment(request)` | An `AudioBuffer`: a range of sound, at a speed, stereo, at the exact requested length |
 | `create_export_sink(settings)` | An `ExportSink`: write video frames and sound in order, then `finish()` |
+| `describe_video_stream(path)` | A `VideoStreamDetails`: codec, bits per sample, colour subsampling, bit rate (to judge decoding cost) |
+| `make_video_proxy(settings, on_progress)` | Writes a proxy of a video's pictures (below), stoppable from `on_progress` |
+| `open_video_proxy(path)` | Like `open_video_source`, decoding for quick jumps (a proxy's slices in parallel) |
 
 The desktop implementation is `FfmpegBackend`; Android will get a `MediaCodec` one.
 
@@ -90,11 +93,49 @@ file on every machine (used by tests).
 
 Keyframes every 2 s; `+faststart` so the file plays while downloading.
 
+## Proxies
+
+Heavy videos (4K, HEVC 10-bit at 1080p60…) get a *proxy*: a copy of their pictures
+that is quick to decode and to jump in, which the preview and thumbnails show instead
+(decision record [0055](decisions/0055-automatic-proxies-for-heavy-videos.md)). The
+export never reads it.
+
+- **The rule** (`kadr_engine::proxies::proxy_need_of`): a proxy when the picture is
+  larger than 1920 × 1080 (either way round), or when the estimated decoding work is
+  more than 1080p H.264 at 60 fps (HEVC, VP9 and AV1 count twice, pictures other than
+  8-bit 4:2:0 twice again), or above 100 Mbit/s.
+- **The format** (`ffmpeg/video_proxy.rs`):
+  - pictures shrunk to fit inside 1920 × 1080 (1080 × 1920 upright), even sides,
+    swscale bicubic;
+  - H.264 by libx264: `veryfast`, `fastdecode` (no CABAC, no deblocking), CRF 23, no
+    B-frames, a keyframe at least every 5 frames, 4 slices per frame;
+  - every source frame at its own time: the times are read exactly as
+    `video_source.rs` reads them, so `frame_at(t)` shows the same frame in both files,
+    variable frame rates included;
+  - tagged with the colour matrix and range the source is read in (an untagged
+    picture under 720 lines would otherwise be read as BT.601);
+  - no sound: sound always comes from the original.
+- **The cache** (`kadr_engine::proxies::ProxyCache`): `<key>.mp4` and `<key>.json` in
+  a folder outside every project. The key hashes the proxy format's version and the
+  source's canonical path, length and modification time; the `.json` repeats them and
+  is checked before use. A proxy is written as `<key>.<process>.making`, checked
+  (probe, size), then renamed. `trim_to_size` drops the least recently used.
+- **Reading** (`ReadyProxies`): the preview's frame composer and the thumbnail maker
+  look up each original there; a proxy that cannot be read is dropped and the original
+  read instead. Tracked blur regions, stored in the original's pixels, are scaled to
+  the proxy's (area, radius, blocks, softness).
+
 ## How it is tested
 
 - `kadr-media/tests/ffmpeg_round_trip.rs` writes synthetic videos whose frames show
   their **frame number as a barcode** and whose sound **beeps** every second, then
   checks probing, every frame read back in and out of order, sound ranges and speeds.
+- `kadr-media/tests/video_proxy.rs` writes a 4K barcode video with FFmpeg, makes its
+  proxy and checks every frame time in and out of order, NTSC rates, colour tags,
+  stopping and refused sizes. `kadr-engine/tests/proxies.rs` checks that the preview
+  shows the same frames from a proxy, that blurs land in the same place, that the
+  export is byte for byte the same with a proxy in the cache, and that a source
+  written again gets no old proxy.
 - `kadr-engine/tests/export_sync.rs` is the phase 2 acceptance test: three cuts of one
   video, one at 1.5×, plus a music track. Every exported frame must come from the exact
   expected source frame, every beep must be within 20 ms, the music must be present at

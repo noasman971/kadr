@@ -108,7 +108,8 @@ flowchart LR
 | `open_project.rs` | The project being edited: `EditSession` (undo / redo), its `.kadr` file, the revision counter, the snapshot shared with the worker threads. **Every change goes through `OpenProject::edit`**, which saves the file afterwards |
 | `editing.rs` | `EditRequest`: what the interface can ask, and the rules each request follows (for example *add at the end of the first track of the right kind*). One request is one undo step; undo labels are keys the front end translates |
 | `project_view.rs` | `ProjectView`: the description the front end draws, rebuilt after every change, with tracks in display order and computed clip lengths |
-| `media_workers.rs` | The preview and thumbnail threads, which own their decoders (FFmpeg's are not `Send`). The preview thread renders only the newest waiting request |
+| `media_workers.rs` | The preview and thumbnail threads, which own their decoders (FFmpeg's are not `Send`). The preview thread renders only the newest waiting request. Both read proxies when they are ready, and close their files on request |
+| `proxy_jobs.rs` | Proxies of heavy videos: the worker thread that checks each new video, makes proxies one at a time, and sends their states (decision record 0055) |
 | `binary_messages.rs` | The byte layouts of frames, thumbnails, waveforms and sound |
 | `commands/` | The Tauri commands, thin calls into the above and `kadr-engine` |
 | `recent_projects.rs` | The home screen's list, in the app's configuration folder |
@@ -147,6 +148,55 @@ and sends requests. Selection, playhead and zoom are its only state.
 
 The panel asks for one frame at a time and always for the newest position, so a slow
 frame makes the preview skip, never lag.
+
+A canvas much larger than the panel is composed at a half (or a quarter…) of its size,
+the smallest still covering the panel (`kadr_engine::preview::composition_size_for`):
+a 4K project in a 1280-pixel panel is composed at 1920 × 1080, then shrunk. Positions
+and text sizes are scaled; videos fit the smaller canvas by themselves.
+
+## Proxies
+
+Decision record [0055](decisions/0055-automatic-proxies-for-heavy-videos.md); what
+the user sees is in [ux.md](ux.md#2-import-media).
+
+```mermaid
+flowchart LR
+    open[Project opened, media imported, Claude's call] --> notice[AppState::notice_media_of_open_project]
+    notice --> worker[Proxy thread]
+    worker -->|cache has it| ready[ReadyProxies]
+    worker -->|heavy video| make[ProxyCache::make_proxy]
+    make -->|proxy-changed events| front[Front end: proxies.svelte.ts, MediaTile]
+    make --> ready
+    ready --> preview[Preview thread]
+    ready --> thumbnails[Thumbnail thread]
+```
+
+- **When.** `notice_media_of_open_project` runs after a project is opened or
+  created, after an import, and after each of Claude's calls that changed the
+  project. New videos (by path, once a session) go to the proxy thread
+  (`proxy_jobs.rs`), which:
+  1. lists the cache's proxy if the file as it is now has one;
+  2. otherwise reads the stream's description and applies the rule
+     (`kadr_engine::proxies::proxy_need_of`), and queues a proxy when the video is
+     heavy;
+  3. makes queued proxies one at a time, sending `proxy-changed` events (a video's
+     state, at most four times a second), then lists the proxy in `ReadyProxies` and
+     trims the cache to 10 GB (least recently used first, never the session's).
+- **Stopping and again.** `stop_proxy` sets the stop flag the progress callback
+  reads (the unfinished file is deleted) or takes it out of the queue;
+  `make_proxy_again` queues it, whatever the rule says.
+- **The setting** is `proxy-settings.json` in the app's configuration folder
+  (`set_automatic_proxies`). Off, the thread makes nothing, `ReadyProxies` answers
+  nothing, and the states disappear; on again, the open project is noticed again.
+- **Clearing** (`clear_proxy_cache`): every proxy is stopped and forgotten, the
+  preview and thumbnail threads close their files (Windows cannot delete an open
+  file), then the files are deleted in a blocking task.
+- **Front end.** `state/proxies.svelte.ts` keeps the states by file path (listening
+  to `proxy-changed`, reading `get_proxy_overview` at start and when the settings
+  open); `media/proxyBadge.ts` (tested) turns a state into the tile's badge, tooltip,
+  progress and action.
+- **Not in the project.** The project view and the `.kadr` file know nothing of
+  proxies: states travel on their own, keyed by `MediaView.filePath`.
 
 ## Playback
 
