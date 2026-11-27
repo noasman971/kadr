@@ -40,8 +40,9 @@
 //!    back within a pixel of where it started was badly followed and is dropped.
 //! 3. **A first guess that ignores what moves on its own.** The median shift of the
 //!    points, on each axis, is the shift of the majority. The points moving like it
-//!    (within 1 pixel, plus 2 % of their distance to the centre, which is what a
-//!    roll of about a degree or a change of size of 2 % explains) are kept; a
+//!    (within 1 pixel, plus a fraction of their distance to the centre, which is
+//!    what a roll or a change of size explains: 0.7 % and 2 % are both tried, and
+//!    the one whose result explains the most points is kept) are kept; a
 //!    person walking across the frame or a passing car is left out.
 //! 4. **The best similarity.** On those points, the least-squares similarity has a
 //!    closed form (Umeyama). With `p` the points in the previous frame and `q` in
@@ -49,14 +50,20 @@
 //!    `α = Σ(p̃·q̃) / Σ|p̃|²` and `β = Σ(p̃ × q̃) / Σ|p̃|²`; the change of size is
 //!    `hypot(α, β)`, the roll `atan2(β, α)` (clockwise, as y points down), and the
 //!    shift what is left to bring the centroids together.
-//! 5. **Refined.** The points that this similarity explains within 1 pixel are
-//!    taken again, and the similarity is fitted again on them. When they are
+//! 5. **Refined.** The first similarity can be bent by a group of points moving
+//!    together at one side of the picture (a large object entering the frame),
+//!    which the tolerant test of step 3 lets through. It is fitted again on the
+//!    points it explains within 3 pixels, which leaves such a group out. Then the
+//!    points that this second similarity explains within 1 pixel are taken, and
+//!    the similarity is fitted a last time on them. When they are
 //!    bunched together (their spread is under 15 % of the frame's diagonal), they
 //!    cannot tell a roll from a shift: only the median shift is kept, with no roll
 //!    and no change of size.
 //! 6. **Not measured.** The motion is reported as unknown when too few points were
 //!    followed (fewer than 8, or under a quarter of those tried), when too few agree
-//!    with the result (fewer than 8, or under 40 % of the followed ones), when the
+//!    with the result (fewer than 8, or under 40 % of the followed ones) and no
+//!    majority moves together either (otherwise that majority's shift is kept,
+//!    without roll or change of size), when the
 //!    result is implausible for one frame (a roll over 5°, a change of size over
 //!    5 %), or when the two frames do not show the same scene: a cut. A cut is
 //!    recognised by the brightness histograms of the two frames (32 levels): the
@@ -111,11 +118,21 @@ const MINIMUM_FOLLOWED_FRACTION: f32 = 0.25;
 /// The first guess keeps the points whose motion is within this of the median…
 const MEDIAN_TOLERANCE_IN_PIXELS: f32 = 1.0;
 
-/// …plus this fraction of their distance to the frame's centre.
-const MEDIAN_TOLERANCE_PER_DISTANCE: f32 = 0.02;
+/// …plus a fraction of their distance to the frame's centre. Two fractions are
+/// tried. The strict one (what a roll of 0.4° or a change of size of 0.7 % in
+/// one frame explains) keeps out an object moving at one side of the picture,
+/// which the tolerant one would take for a part of the camera's motion. The
+/// tolerant one (a roll of about a degree, a change of size of 2 %) is needed
+/// for fast rolls and zooms.
+const MEDIAN_TOLERANCES_PER_DISTANCE: [f32; 2] = [0.007, 0.02];
 
 /// A point agrees with a fitted similarity when it lands within this of it.
 const MODEL_TOLERANCE_IN_PIXELS: f32 = 1.0;
+
+/// Points within this distance of the first fit are used for the second one. Wide
+/// enough to keep the background when the first fit is bent by an object moving
+/// at one side of the picture, narrow enough to leave that object out.
+const ROUGH_MODEL_TOLERANCE_IN_PIXELS: f32 = 3.0;
 
 /// Fewest points agreeing with the result for the motion to be measured…
 const MINIMUM_AGREEING_POINTS: usize = 8;
@@ -308,39 +325,107 @@ fn fit_camera_motion(
         return None;
     }
     let median_shift = median_shift_of(followed);
-    let moving_like_the_median: Vec<(Point, Point)> = followed
+    // Two first guesses, a strict and a tolerant one, each refined the same way;
+    // the one that explains the most points wins.
+    let agreeing = MEDIAN_TOLERANCES_PER_DISTANCE
+        .iter()
+        .filter_map(|&tolerance_per_distance| {
+            let moving_like_the_median =
+                points_moving_like(followed, median_shift, center, tolerance_per_distance);
+            points_agreeing_on_a_similarity(followed, &moving_like_the_median, center)
+        })
+        .max_by_key(Vec::len)
+        .filter(|agreeing| is_enough_of(agreeing.len(), followed.len()));
+    let similarity = agreeing.and_then(|agreeing| {
+        if spread_of(&agreeing) < SMALL_SPREAD_FRACTION_OF_DIAGONAL * diagonal_in_pixels {
+            Some(shift_only(&agreeing, center))
+        } else {
+            least_squares_similarity(&agreeing, center)
+        }
+    });
+    if let Some(motion) = similarity.filter(is_plausible_for_one_frame) {
+        return Some(motion);
+    }
+    // No plausible similarity explains enough points, but most of them may still
+    // move together: their shift is then a better answer than "not measured",
+    // which would let the whole shake through at this frame.
+    let majority = points_moving_like(
+        followed,
+        median_shift,
+        center,
+        MEDIAN_TOLERANCES_PER_DISTANCE[0],
+    );
+    is_enough_of(majority.len(), followed.len()).then(|| shift_only(&majority, center))
+}
+
+/// Whether `agreeing_count` points out of `followed_count` are enough to trust
+/// what they say.
+fn is_enough_of(agreeing_count: usize, followed_count: usize) -> bool {
+    agreeing_count >= MINIMUM_AGREEING_POINTS
+        && agreeing_count as f32 >= MINIMUM_AGREEING_FRACTION * followed_count as f32
+}
+
+/// The `followed` points whose motion is within 1 pixel of `median_shift`, plus
+/// `tolerance_per_distance` times their distance to `center`.
+fn points_moving_like(
+    followed: &[(Point, Point)],
+    median_shift: (f32, f32),
+    center: Point,
+    tolerance_per_distance: f32,
+) -> Vec<(Point, Point)> {
+    followed
         .iter()
         .copied()
         .filter(|(from, to)| {
             let deviation = (to.x - from.x - median_shift.0).hypot(to.y - from.y - median_shift.1);
             let distance_to_center = (from.x - center.x).hypot(from.y - center.y);
-            deviation
-                <= MEDIAN_TOLERANCE_IN_PIXELS + MEDIAN_TOLERANCE_PER_DISTANCE * distance_to_center
+            deviation <= MEDIAN_TOLERANCE_IN_PIXELS + tolerance_per_distance * distance_to_center
         })
-        .collect();
-    if moving_like_the_median.len() < MINIMUM_AGREEING_POINTS {
+        .collect()
+}
+
+/// From a first guess of the points that follow the camera, the `followed`
+/// points that agree within 1 pixel on one similarity (steps 4 and 5 of the
+/// module documentation); `None` when the guess is too small to fit one.
+fn points_agreeing_on_a_similarity(
+    followed: &[(Point, Point)],
+    first_guess: &[(Point, Point)],
+    center: Point,
+) -> Option<Vec<(Point, Point)>> {
+    if first_guess.len() < MINIMUM_AGREEING_POINTS {
         return None;
     }
-    let first_fit = least_squares_similarity(&moving_like_the_median, center)?;
-    let agreeing: Vec<(Point, Point)> = followed
+    let first_fit = least_squares_similarity(first_guess, center)?;
+    // A first fit can still be bent by points that do not follow the camera. A
+    // second fit on the points roughly agreeing with it leaves them out, before
+    // the strict selection.
+    let roughly_agreeing = points_within(followed, &first_fit, ROUGH_MODEL_TOLERANCE_IN_PIXELS);
+    if roughly_agreeing.len() < MINIMUM_AGREEING_POINTS {
+        return None;
+    }
+    let second_fit = least_squares_similarity(&roughly_agreeing, center)?;
+    Some(points_within(
+        followed,
+        &second_fit,
+        MODEL_TOLERANCE_IN_PIXELS,
+    ))
+}
+
+/// The `followed` points that `motion` brings within `tolerance_in_pixels` of
+/// where they were found.
+fn points_within(
+    followed: &[(Point, Point)],
+    motion: &SimilarityTransform,
+    tolerance_in_pixels: f32,
+) -> Vec<(Point, Point)> {
+    followed
         .iter()
         .copied()
         .filter(|(from, to)| {
-            let landing = first_fit.apply_to(*from);
-            (landing.x - to.x).hypot(landing.y - to.y) <= MODEL_TOLERANCE_IN_PIXELS
+            let landing = motion.apply_to(*from);
+            (landing.x - to.x).hypot(landing.y - to.y) <= tolerance_in_pixels
         })
-        .collect();
-    if agreeing.len() < MINIMUM_AGREEING_POINTS
-        || (agreeing.len() as f32) < MINIMUM_AGREEING_FRACTION * followed.len() as f32
-    {
-        return None;
-    }
-    let motion = if spread_of(&agreeing) < SMALL_SPREAD_FRACTION_OF_DIAGONAL * diagonal_in_pixels {
-        shift_only(&agreeing, center)
-    } else {
-        least_squares_similarity(&agreeing, center)?
-    };
-    is_plausible_for_one_frame(&motion).then_some(motion)
+        .collect()
 }
 
 /// The median motion on each axis.
