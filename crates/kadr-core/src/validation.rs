@@ -12,6 +12,7 @@ use crate::effect::{BlurStyle, ColorAdjustment, ColorLut, Effect, EffectKind, Tr
 use crate::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use crate::media_asset::{MediaAsset, MediaKind};
 use crate::project::{Project, ProjectSettings};
+use crate::subtitle::{SubtitleBackdrop, SubtitleCue, SubtitleStyle};
 use crate::text_animation::TextAnimation;
 use crate::time::{TimeSpan, Timestamp};
 use crate::timeline::{Track, TrackKind};
@@ -126,6 +127,25 @@ pub enum ValidationError {
         overlap_start: Timestamp,
         /// Where the overlap ends.
         overlap_end: Timestamp,
+    },
+
+    /// A subtitle track's style is invalid, or a track that is not a subtitle
+    /// track has one.
+    #[error("the subtitle style of track {track_id} is invalid: {reason}")]
+    InvalidSubtitleStyle {
+        /// The track.
+        track_id: TrackId,
+        /// What is wrong.
+        reason: String,
+    },
+
+    /// A subtitle cue is invalid.
+    #[error("subtitle cue {clip_id} is invalid: {reason}")]
+    InvalidSubtitleCue {
+        /// The clip.
+        clip_id: ClipId,
+        /// What is wrong.
+        reason: String,
     },
 
     /// A text clip is invalid.
@@ -351,6 +371,7 @@ fn validate_track(project: &Project, track: &Track) -> Result<(), ValidationErro
     if !track.has_clips_sorted_by_start() {
         return Err(ValidationError::TrackClipsNotSorted { track_id: track.id });
     }
+    validate_subtitle_style_of(track)?;
     for clip in track.clips() {
         validate_clip(project, track, clip)?;
     }
@@ -378,6 +399,7 @@ fn validate_clip(project: &Project, track: &Track, clip: &Clip) -> Result<(), Va
     match &clip.content {
         ClipContent::Media(segment) => validate_media_segment(project, track, clip.id, segment)?,
         ClipContent::Text(text) => validate_text(track, clip.id, text)?,
+        ClipContent::Subtitle(cue) => validate_subtitle_cue(track, clip, cue)?,
     }
     if clip.timeline_duration().is_zero() {
         return Err(ValidationError::EmptyClip { clip_id: clip.id });
@@ -394,7 +416,7 @@ fn validate_clip(project: &Project, track: &Track, clip: &Clip) -> Result<(), Va
 /// Whether the clip shows pictures (a text, a video or an image).
 fn clip_shows_picture(project: &Project, clip: &Clip) -> bool {
     match &clip.content {
-        ClipContent::Text(_) => true,
+        ClipContent::Text(_) | ClipContent::Subtitle(_) => true,
         ClipContent::Media(segment) => project
             .media_asset(segment.media_asset_id)
             .is_some_and(|asset| asset.description.has_picture()),
@@ -429,6 +451,9 @@ fn validate_media_segment(
         }
         TrackKind::Audio if !description.has_audio() => {
             return not_allowed("its media has no sound; put it on a video track");
+        }
+        TrackKind::Subtitle => {
+            return not_allowed("subtitle tracks only hold subtitle cues");
         }
         _ => {}
     }
@@ -482,6 +507,126 @@ fn validate_text(
     validate_text_animations(clip_id, text)
 }
 
+// ----- Subtitles -----
+
+/// A subtitle track has a valid style; other tracks have none.
+fn validate_subtitle_style_of(track: &Track) -> Result<(), ValidationError> {
+    let invalid = |reason: String| {
+        Err(ValidationError::InvalidSubtitleStyle {
+            track_id: track.id,
+            reason,
+        })
+    };
+    let style = match (track.kind, &track.subtitle_style) {
+        (TrackKind::Subtitle, Some(style)) => style,
+        (TrackKind::Subtitle, None) => {
+            return invalid("a subtitle track needs a style".to_string());
+        }
+        (_, None) => return Ok(()),
+        (kind, Some(_)) => {
+            return invalid(format!(
+                "only subtitle tracks have a subtitle style, and this is a {} track",
+                kind.display_name()
+            ));
+        }
+    };
+    match find_subtitle_style_problem(style) {
+        Some(reason) => invalid(reason),
+        None => Ok(()),
+    }
+}
+
+fn find_subtitle_style_problem(style: &SubtitleStyle) -> Option<String> {
+    if style.font_family.trim().is_empty() {
+        return Some("the font name is empty".to_string());
+    }
+    let outline_check = match style.backdrop {
+        SubtitleBackdrop::Outline {
+            width_in_pixels, ..
+        } => Some((
+            "outline width",
+            width_in_pixels,
+            0.1,
+            SubtitleStyle::MAXIMUM_OUTLINE_WIDTH_IN_PIXELS,
+        )),
+        SubtitleBackdrop::None | SubtitleBackdrop::Box { .. } => None,
+    };
+    let mut checks = vec![
+        (
+            "font size",
+            style.font_size_in_pixels,
+            1.0,
+            MAXIMUM_FONT_SIZE_IN_PIXELS,
+        ),
+        (
+            "margin",
+            style.margin_in_pixels,
+            0.0,
+            MAXIMUM_CANVAS_SIDE_IN_PIXELS as f32,
+        ),
+        (
+            "maximum line width",
+            style.maximum_line_width_fraction,
+            SubtitleStyle::MINIMUM_LINE_WIDTH_FRACTION,
+            1.0,
+        ),
+    ];
+    checks.extend(outline_check);
+    first_out_of_range(&checks)
+}
+
+/// A cue is on a subtitle track, has words, and nothing of its own besides
+/// them: the track's style places and draws every cue.
+fn validate_subtitle_cue(
+    track: &Track,
+    clip: &Clip,
+    cue: &SubtitleCue,
+) -> Result<(), ValidationError> {
+    if track.kind != TrackKind::Subtitle {
+        return Err(ValidationError::ClipNotAllowedOnTrack {
+            clip_id: clip.id,
+            track_id: track.id,
+            track_kind_name: track.kind.display_name(),
+            reason: "subtitle cues go on subtitle tracks".to_string(),
+        });
+    }
+    let invalid = |reason: &str| {
+        Err(ValidationError::InvalidSubtitleCue {
+            clip_id: clip.id,
+            reason: reason.to_string(),
+        })
+    };
+    if cue.plain_text().trim().is_empty() {
+        return invalid("it has no words");
+    }
+    let has_own_placement = AnimatableProperty::ALL.iter().any(|property| {
+        let value = clip.animated_property(*property);
+        value.is_animated() || value.constant_value != default_value_of(*property)
+    }) || clip.transform.crop != CropInsets::default();
+    if has_own_placement {
+        return invalid(
+            "a cue has no position, size, opacity or crop of its own: change the style of its subtitle track instead",
+        );
+    }
+    if !clip.effects.is_empty() {
+        return invalid("subtitle cues take no effect");
+    }
+    if clip.entry_transition.is_some() || clip.exit_transition.is_some() {
+        return invalid("subtitle cues appear and disappear at once: they take no transition");
+    }
+    Ok(())
+}
+
+/// The value a new clip has for `property`.
+fn default_value_of(property: AnimatableProperty) -> f32 {
+    match property {
+        AnimatableProperty::Volume | AnimatableProperty::Opacity | AnimatableProperty::Scale => 1.0,
+        AnimatableProperty::PositionX
+        | AnimatableProperty::PositionY
+        | AnimatableProperty::Rotation => 0.0,
+    }
+}
+
 fn validate_text_animations(clip_id: ClipId, text: &TextContent) -> Result<(), ValidationError> {
     let edges = [
         ("start", text.entry_animation),
@@ -517,6 +662,9 @@ fn validate_transitions(clip: &Clip, clip_has_picture: bool) -> Result<(), Valid
             ClipContent::Text(_) => Some(
                 "texts take text animations (fade, slide, pop, type-on…) instead of transitions"
                     .to_string(),
+            ),
+            ClipContent::Subtitle(_) => Some(
+                "subtitle cues appear and disappear at once: they take no transition".to_string(),
             ),
             ClipContent::Media(_) if !clip_has_picture => {
                 Some("a transition needs a picture, and this clip only has sound".to_string())
@@ -788,6 +936,92 @@ mod tests {
             Err(EditError::WouldMakeProjectInvalid(validation_error)) => validation_error,
             other => panic!("expected a refused change, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn subtitle_cues_and_styles_stay_on_subtitle_tracks() {
+        use crate::commands::{AddSubtitleCues, SetClipPropertyValue, SetSubtitleStyle};
+        use crate::subtitle::{SubtitleStyle, TimedSubtitleCue};
+
+        let mut fixture = fixture();
+        let subtitle_track_id = fixture
+            .session
+            .execute(AddTrack::new(TrackKind::Subtitle, TrackPosition::Top))
+            .unwrap()
+            .first_track_id()
+            .unwrap();
+        let cue_on_video_track = fixture.session.execute(AddClip::subtitle_cue(
+            fixture.video_track_id,
+            "Hello",
+            TimeSpan::from_whole_seconds(1),
+            seconds(0),
+        ));
+        assert!(matches!(
+            refused_rule(cue_on_video_track),
+            ValidationError::ClipNotAllowedOnTrack { .. }
+        ));
+        let video_on_subtitle_track = fixture.session.execute(AddClip::media(
+            subtitle_track_id,
+            fixture.video_id,
+            seconds(0),
+            seconds(1),
+            seconds(0),
+        ));
+        assert!(
+            refused_rule(video_on_subtitle_track)
+                .to_string()
+                .contains("subtitle tracks only hold subtitle cues")
+        );
+
+        let cue_id = fixture
+            .session
+            .execute(AddSubtitleCues::new(
+                subtitle_track_id,
+                vec![TimedSubtitleCue {
+                    start: seconds(0),
+                    end: seconds(2),
+                    text: "Hello".to_string(),
+                }],
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let tagged_but_empty = fixture.session.execute(AddSubtitleCues::new(
+            subtitle_track_id,
+            vec![TimedSubtitleCue {
+                start: seconds(3),
+                end: seconds(4),
+                text: "<i> </i>".to_string(),
+            }],
+        ));
+        assert!(matches!(
+            refused_rule(tagged_but_empty),
+            ValidationError::InvalidSubtitleCue { .. }
+        ));
+        let moved_cue = fixture.session.execute(SetClipPropertyValue::new(
+            cue_id,
+            AnimatableProperty::PositionY,
+            -300.0,
+        ));
+        assert!(
+            refused_rule(moved_cue)
+                .to_string()
+                .contains("style of its subtitle track")
+        );
+
+        let mut tiny_lines =
+            SubtitleStyle::for_canvas(fixture.session.project().settings().canvas_size);
+        tiny_lines.maximum_line_width_fraction = 0.05;
+        let error = refused_rule(
+            fixture
+                .session
+                .execute(SetSubtitleStyle::new(subtitle_track_id, tiny_lines)),
+        );
+        assert!(matches!(
+            error,
+            ValidationError::InvalidSubtitleStyle { .. }
+        ));
+        assert!(error.to_string().contains("maximum line width"));
     }
 
     #[test]

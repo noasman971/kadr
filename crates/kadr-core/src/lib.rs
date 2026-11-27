@@ -12,6 +12,8 @@
 //! - [`effect`]: colour adjustment, colour LUT and tracked blur;
 //! - [`transition`]: how videos and images enter and leave the picture;
 //! - [`text_animation`]: how texts appear and disappear;
+//! - [`subtitle`]: subtitle cues and the style a subtitle track gives them;
+//! - [`srt`]: reading and writing `.srt` subtitle files;
 //! - [`commands`]: every change, as a reversible command;
 //! - [`history`]: the [`EditSession`](history::EditSession) applying commands
 //!   with undo and redo;
@@ -39,6 +41,8 @@ pub mod ids;
 pub mod media_asset;
 pub mod project;
 pub mod project_file;
+pub mod srt;
+pub mod subtitle;
 pub mod text_animation;
 pub mod time;
 pub mod timeline;

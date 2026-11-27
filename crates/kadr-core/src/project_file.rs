@@ -31,7 +31,8 @@ use crate::validation::{ValidationError, validate_project};
 /// | 1 | First format (phase 1) |
 /// | 2 | Transitions on clips, animations on texts (phase 8) |
 /// | 3 | Colour LUT effects on clips (phase 8c) |
-pub const CURRENT_FORMAT_VERSION: u32 = 3;
+/// | 4 | Subtitle tracks, with their style, and subtitle cues (phase 8g) |
+pub const CURRENT_FORMAT_VERSION: u32 = 4;
 
 /// The recommended file extension, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
@@ -103,6 +104,10 @@ pub const MIGRATIONS: &[Migration] = &[
         from_version: 2,
         upgrade_document: allow_color_luts,
     },
+    Migration {
+        from_version: 3,
+        upgrade_document: add_subtitle_styles_to_tracks,
+    },
 ];
 
 /// Version 1 → 2: every clip gets `entry_transition` and `exit_transition`, and
@@ -138,6 +143,22 @@ fn add_transitions_and_text_animations(document: &mut Value) -> Result<(), Strin
 /// nothing changes; the version goes up so that an older Kadr opening a file
 /// with a LUT says "please update Kadr" instead of "the file is damaged".
 fn allow_color_luts(_document: &mut Value) -> Result<(), String> {
+    Ok(())
+}
+
+/// Version 3 → 4: subtitle tracks and cues. Every track gets
+/// `"subtitle_style": null`: a version 3 file has no subtitle track.
+fn add_subtitle_styles_to_tracks(document: &mut Value) -> Result<(), String> {
+    let tracks = document
+        .pointer_mut("/project/timeline/tracks")
+        .and_then(Value::as_array_mut)
+        .ok_or("the project has no list of tracks")?;
+    for track in tracks {
+        track
+            .as_object_mut()
+            .ok_or("a track is not an object")?
+            .insert("subtitle_style".to_string(), Value::Null);
+    }
     Ok(())
 }
 
@@ -231,7 +252,7 @@ mod tests {
     fn an_empty_project_round_trips() {
         let project = Project::new(ProjectSettings::vertical_1080x1920());
         let json_text = save_project_to_json(&project).unwrap();
-        assert!(json_text.contains("\"format_version\": 3"));
+        assert!(json_text.contains("\"format_version\": 4"));
         assert_eq!(load_project_from_json(&json_text).unwrap(), project);
     }
 
@@ -259,7 +280,7 @@ mod tests {
             .iter()
             .filter_map(|clip| match &clip.content {
                 ClipContent::Text(text_content) => Some(text_content),
-                ClipContent::Media(_) => None,
+                ClipContent::Media(_) | ClipContent::Subtitle(_) => None,
             })
             .collect();
         assert_eq!(texts.len(), 1);
@@ -284,8 +305,63 @@ mod tests {
         });
         assert!(!has_a_lut);
         let saved_again = save_project_to_json(&project).unwrap();
-        assert!(saved_again.contains("\"format_version\": 3"));
+        assert!(saved_again.contains("\"format_version\": 4"));
         assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
+    }
+
+    /// A version 3 file (phase 8c), kept from the editing scenario's snapshot
+    /// before subtitle tracks changed the format.
+    const VERSION_3_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_3.kadr");
+
+    #[test]
+    fn version_3_files_are_upgraded_without_subtitles() {
+        let project = load_project_from_json(VERSION_3_FILE).unwrap();
+        assert!(
+            project
+                .timeline()
+                .tracks()
+                .iter()
+                .all(|track| track.subtitle_style.is_none())
+        );
+        assert_eq!(project.timeline().subtitle_tracks().count(), 0);
+        let saved_again = save_project_to_json(&project).unwrap();
+        assert!(saved_again.contains("\"subtitle_style\": null"));
+        assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
+    }
+
+    #[test]
+    fn a_project_with_subtitles_round_trips() {
+        use crate::commands::{AddSubtitleCues, AddTrack, CreatedObjectsExt, TrackPosition};
+        use crate::history::EditSession;
+        use crate::subtitle::TimedSubtitleCue;
+        use crate::time::Timestamp;
+        use crate::timeline::TrackKind;
+
+        let mut session =
+            EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+        let track_id = session
+            .execute(AddTrack::new(TrackKind::Subtitle, TrackPosition::Top))
+            .unwrap()
+            .first_track_id()
+            .unwrap();
+        session
+            .execute(AddSubtitleCues::new(
+                track_id,
+                vec![TimedSubtitleCue {
+                    start: Timestamp::from_milliseconds(1_000),
+                    end: Timestamp::from_milliseconds(2_500),
+                    text: "Hello <i>there</i>".to_string(),
+                }],
+            ))
+            .unwrap();
+        let json_text = save_project_to_json(session.project()).unwrap();
+        assert!(json_text.contains("\"kind\": \"subtitle\""));
+        assert!(json_text.contains("\"type\": \"subtitle\""));
+        assert!(json_text.contains("\"backdrop\""));
+        assert_eq!(
+            &load_project_from_json(&json_text).unwrap(),
+            session.project()
+        );
     }
 
     #[test]
@@ -299,7 +375,9 @@ mod tests {
             Err(ProjectFileError::MissingFormatVersion)
         ));
         assert!(matches!(
-            load_project_from_json(r#"{ "format_version": 2 }"#),
+            load_project_from_json(&format!(
+                r#"{{ "format_version": {CURRENT_FORMAT_VERSION} }}"#
+            )),
             Err(ProjectFileError::MalformedFile(_))
         ));
         assert!(matches!(

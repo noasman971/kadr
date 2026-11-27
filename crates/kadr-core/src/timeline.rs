@@ -3,11 +3,15 @@
 //! Tracks are stacked in order: for video, the first track is at the bottom and
 //! each following track is drawn on top of it. On a single track, clips never
 //! overlap and are kept sorted by start time.
+//!
+//! Subtitle tracks are in the same stack: they are drawn where they are, like
+//! video tracks (new ones go on top). Each carries the style of its cues.
 
 use serde::{Deserialize, Serialize};
 
 use crate::clip::Clip;
 use crate::ids::{ClipId, TrackId};
+use crate::subtitle::SubtitleStyle;
 use crate::time::{TimeSpan, Timestamp};
 
 /// What a track can hold.
@@ -18,6 +22,8 @@ pub enum TrackKind {
     Video,
     /// Sound only: music, voice-over, sound effects.
     Audio,
+    /// Subtitle cues, drawn with the track's [`SubtitleStyle`].
+    Subtitle,
 }
 
 impl TrackKind {
@@ -26,6 +32,7 @@ impl TrackKind {
         match self {
             TrackKind::Video => "video",
             TrackKind::Audio => "audio",
+            TrackKind::Subtitle => "subtitle",
         }
     }
 }
@@ -43,6 +50,8 @@ pub struct Track {
     pub is_muted: bool,
     /// A hidden track shows no picture.
     pub is_hidden: bool,
+    /// How the cues of a subtitle track look; `None` on other tracks.
+    pub subtitle_style: Option<SubtitleStyle>,
     clips: Vec<Clip>,
 }
 
@@ -55,6 +64,7 @@ impl Track {
             name,
             is_muted: false,
             is_hidden: false,
+            subtitle_style: None,
             clips: Vec::new(),
         }
     }
@@ -183,6 +193,13 @@ impl Timeline {
     /// The track with this identifier, for modification by commands.
     pub(crate) fn track_mut(&mut self, track_id: TrackId) -> Option<&mut Track> {
         self.tracks.iter_mut().find(|track| track.id == track_id)
+    }
+
+    /// The subtitle tracks, from bottom to top.
+    pub fn subtitle_tracks(&self) -> impl Iterator<Item = &Track> {
+        self.tracks
+            .iter()
+            .filter(|track| track.kind == TrackKind::Subtitle)
     }
 
     /// The track holding this clip, for modification by commands.

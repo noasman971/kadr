@@ -20,6 +20,7 @@ mod effect_commands;
 mod keyframe_commands;
 mod media_commands;
 mod project_commands;
+mod subtitle_commands;
 mod track_commands;
 mod transition_commands;
 
@@ -34,6 +35,10 @@ pub use effect_commands::{AddEffect, RemoveEffect, ReplaceEffect, SetEffectEnabl
 pub use keyframe_commands::{RemoveKeyframe, SetKeyframe};
 pub use media_commands::{ImportMedia, RemoveMedia};
 pub use project_commands::ChangeProjectSettings;
+pub use subtitle_commands::{
+    AddSubtitleCues, MergeSubtitleCues, RemoveTimeFromSubtitleTracks, SetSubtitleCueText,
+    SetSubtitleCueTiming, SetSubtitleStyle,
+};
 pub use track_commands::{AddTrack, RemoveTrack, SetTrackHidden, SetTrackMuted, TrackPosition};
 pub use transition_commands::{SetClipTransition, SetTextAnimation};
 

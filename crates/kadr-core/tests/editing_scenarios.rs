@@ -12,11 +12,13 @@ use std::path::PathBuf;
 
 use kadr_core::animation::{Interpolation, Keyframe};
 use kadr_core::clip::{AnimatableProperty, PlaybackSpeed};
+use kadr_core::color::Color;
 use kadr_core::commands::{
     AddClip, AddEffect, AddTrack, ClipEdge, CreatedObjectsExt, EditCommand, ImportMedia, MoveClip,
     RemoveClip, ReplaceEffect, SetClipPropertyValue, SetClipSpeed, SetClipTransition, SetKeyframe,
     SetTextAnimation, SplitClip, TrackPosition, TrimClip,
 };
+use kadr_core::commands::{AddSubtitleCues, SetSubtitleStyle};
 use kadr_core::effect::{
     BlurShape, BlurStyle, ColorAdjustment, ColorLut, EffectKind, PixelRegion, RegionSample,
     RegionSampleOrigin, TrackedBlur, TrackingConfidence,
@@ -26,6 +28,7 @@ use kadr_core::ids::{ClipId, TrackId};
 use kadr_core::media_asset::{AudioFormat, MediaAssetDescription, MediaKind, PictureSize};
 use kadr_core::project::{Project, ProjectSettings};
 use kadr_core::project_file::{load_project_from_json, save_project_to_json};
+use kadr_core::subtitle::{SubtitleBackdrop, SubtitleStyle, TimedSubtitleCue};
 use kadr_core::text_animation::{TextAnimation, TextAnimationStyle};
 use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
@@ -71,8 +74,41 @@ fn background_music() -> MediaAssetDescription {
 
 /// Builds a short vertical video the way a user (or Claude) would:
 /// two cuts of an interview, a speed-up, a blurred face, a fading title and music,
-/// then (with phase 8) transitions, a text animation and a colour LUT.
+/// then (with phase 8) transitions, a text animation, a colour LUT and subtitles.
 fn edit_a_vertical_interview(session: &mut EditSession) {
+    edit_a_vertical_interview_before_phase_8g(session);
+    // Two subtitle cues on a track of their own, in white on a dark box.
+    let subtitle_track_id = add_track(session, TrackKind::Subtitle);
+    let cue = |start_millisecond, end_millisecond, text: &str| TimedSubtitleCue {
+        start: Timestamp::from_milliseconds(start_millisecond),
+        end: Timestamp::from_milliseconds(end_millisecond),
+        text: text.to_string(),
+    };
+    session
+        .execute(AddSubtitleCues::new(
+            subtitle_track_id,
+            vec![
+                cue(1_000, 3_500, "So, how did it start?"),
+                cue(
+                    3_500,
+                    6_000,
+                    "<i>Honestly?</i>
+By accident.",
+                ),
+            ],
+        ))
+        .unwrap();
+    let mut style = SubtitleStyle::for_canvas(session.project().settings().canvas_size);
+    style.backdrop = SubtitleBackdrop::Box {
+        color: Color::from_hex("#000000B3").unwrap(),
+    };
+    session
+        .execute(SetSubtitleStyle::new(subtitle_track_id, style))
+        .unwrap();
+}
+
+/// The same edit as it was possible before phase 8g (format 3).
+fn edit_a_vertical_interview_before_phase_8g(session: &mut EditSession) {
     edit_a_vertical_interview_before_phase_8c(session);
     // The second part of the interview gets a teal-and-orange look, at 80 %. The
     // path is written with forward slashes so the snapshot is the same on every
@@ -345,8 +381,9 @@ fn a_full_edit_can_be_undone_and_redone_step_by_step() {
     assert_eq!(session.project(), &empty_project);
     // 2 imports, 3 tracks, 1 clip, 2 splits, 1 removal, 1 move, 1 speed change,
     // 3 effect changes, 1 grouped title (with its 2 keyframes), 1 music clip, 1 volume,
-    // 3 transitions, 1 text animation, 1 colour LUT.
-    assert_eq!(undone_step_count, 22);
+    // 3 transitions, 1 text animation, 1 colour LUT, 1 subtitle track, its 2 cues
+    // (one step) and its style.
+    assert_eq!(undone_step_count, 25);
 
     while session.can_redo() {
         session.redo().unwrap();
@@ -424,6 +461,21 @@ fn a_format_2_file_is_upgraded_to_the_same_project() {
     assert!(format_2_file.contains("\"format_version\": 2"));
     assert_eq!(
         &load_project_from_json(format_2_file).unwrap(),
+        session.project()
+    );
+}
+
+#[test]
+fn a_format_3_file_is_upgraded_to_the_same_project() {
+    let mut session =
+        EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+    edit_a_vertical_interview_before_phase_8g(&mut session);
+
+    // The snapshot of this edit saved before phase 8g changed the format.
+    let format_3_file = include_str!("fixtures/vertical_interview_format_3.kadr");
+    assert!(format_3_file.contains("\"format_version\": 3"));
+    assert_eq!(
+        &load_project_from_json(format_3_file).unwrap(),
         session.project()
     );
 }
