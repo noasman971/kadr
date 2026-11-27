@@ -14,7 +14,7 @@ use kadr_core::clip::{
 use kadr_core::color::Color;
 use kadr_core::commands::{
     AddEffect, RemoveEffect, ReplaceEffect, SetClipCrop, SetClipPropertyValue, SetClipSpeed,
-    SetClipText,
+    SetClipText, SetKeyframe,
 };
 use std::path::PathBuf;
 
@@ -23,9 +23,10 @@ use kadr_core::error::EditError;
 use kadr_core::history::EditSession;
 use kadr_core::ids::{ClipId, EffectId};
 use kadr_core::project::Project;
+use kadr_core::time::Timestamp;
 use serde::Deserialize;
 
-use super::EditOutcome;
+use super::{EditOutcome, keyframes};
 
 /// A value of a clip the inspector changes with a number field or a slider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -46,7 +47,8 @@ pub enum ClipValue {
 }
 
 impl ClipValue {
-    fn property(self) -> AnimatableProperty {
+    /// The clip property this value is.
+    pub(super) fn property(self) -> AnimatableProperty {
         match self {
             Self::Volume => AnimatableProperty::Volume,
             Self::Opacity => AnimatableProperty::Opacity,
@@ -202,19 +204,40 @@ impl TextAlignmentChoice {
     }
 }
 
-/// Sets one value of a clip.
+/// Sets one value of a clip. When the value is animated (as the project is when
+/// the change is applied), it sets the keyframe at `time` (the playhead)
+/// instead, adding one there if needed: the person changes what they see.
 ///
 /// # Errors
 ///
-/// When the clip does not exist, the value is animated, or out of range.
+/// When the clip does not exist, the value is out of range, or it is animated
+/// and `time` is missing or not on the clip.
 pub fn set_clip_value(
     session: &mut EditSession,
     clip_id: ClipId,
     value: ClipValue,
     amount: f32,
+    time: Option<Timestamp>,
 ) -> Result<EditOutcome, EditError> {
+    let property = value.property();
     session.transaction(value.undo_label(), |transaction| {
-        transaction.execute(SetClipPropertyValue::new(clip_id, value.property(), amount))?;
+        let keyframe = {
+            let (_, clip) = find_clip(transaction.project(), clip_id)?;
+            match (clip.animated_property(property).is_animated(), time) {
+                (true, Some(time)) => {
+                    let offset = keyframes::offset_on_clip(clip, time)?;
+                    Some(keyframes::keyframe_with_value(
+                        clip, property, offset, amount,
+                    ))
+                }
+                (true, None) => return Err(EditError::PropertyIsAnimated { clip_id, property }),
+                (false, _) => None,
+            }
+        };
+        match keyframe {
+            Some(keyframe) => transaction.execute(SetKeyframe::new(clip_id, property, keyframe))?,
+            None => transaction.execute(SetClipPropertyValue::new(clip_id, property, amount))?,
+        };
         Ok(EditOutcome::default())
     })
 }
@@ -470,7 +493,8 @@ fn text_of(project: &Project, clip_id: ClipId) -> Result<&TextContent, EditError
     }
 }
 
-fn find_clip(
+/// The clip and its track, or the error naming the clips there are.
+pub(super) fn find_clip(
     project: &Project,
     clip_id: ClipId,
 ) -> Result<(&kadr_core::timeline::Track, &kadr_core::clip::Clip), EditError> {

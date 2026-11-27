@@ -175,12 +175,47 @@ value typed) is one undo step.
 Number fields accept typing, arrow keys (Shift for bigger steps) and dragging
 sideways on the field. Each section has a *Reset*.
 
-A value animated with keyframes (by Claude, for example) shows *"Animated (3
-keyframes)"* and cannot be changed to a single value from the inspector yet:
-keyframe editing arrives in phase 8.
+Position, scale, rotation, opacity and volume can be **animated with keyframes**
+(phase 8e, see [Animate a clip](#animate-a-clip-keyframes-phase-8e)).
 
 With nothing selected, the inspector shows the **project**: format (16:9, 9:16, 1:1
 or a custom size), frame rate, background colour, and the project's length.
+
+### Animate a clip (keyframes, phase 8e)
+
+What the person wants: a title that slides in and fades in, a picture that slowly
+zooms, music that fades under a voice; set by mouse, smooth, and exactly as the
+export will show it.
+
+Everything happens **at the playhead**, in the inspector:
+
+1. Put the playhead on the clip, where the movement starts, and click the **◇**
+   before *Position X* (*Animate Position X: add a keyframe at the playhead*). A
+   keyframe holds the current value; the diamond fills in (◆), and a **keyframe lane**
+   opens under the setting.
+2. Move the playhead to where the movement ends and **type, drag or step the value**:
+   an animated value always sets its keyframe at the playhead, adding one there if
+   needed. The field shows the value at the playhead, with an accent border.
+3. The preview and the export follow the curve between the keyframes.
+
+| Element | What it does |
+|---|---|
+| ◇ / ◆ before a setting | Adds a keyframe at the playhead (holding the value there), or removes the one there (◆). Disabled, with a tooltip, when the playhead is not on the clip |
+| Number field | The value **at the playhead**; changing it sets the keyframe there. Read-only for an animated value while the playhead is off the clip |
+| Keyframe lane | The clip's length, its keyframes as diamonds, the playhead, and the stretch the playhead is in. Click: the playhead goes there. Drag a diamond: moves it, snapped to frames (it turns red over another keyframe and is not dropped there). Keyboard: ← / → move the focused keyframe by a frame (Shift: ten), Delete removes it |
+| ‹ › | The previous / next keyframe |
+| *Curve* | The curve of the stretch the playhead is in, from its keyframe to the next: *Linear*, *Ease in*, *Ease out*, *Ease in and out*, *Hold*, *Custom curve* |
+| Curve editor (custom curve) | A square from the keyframe (bottom left) to the next (top right), with two handles. Dragging shows the curve at once and changes it on release; arrows move the focused handle (Shift: finer). Handles stay inside the square: the value never goes past either keyframe |
+
+On the **timeline**, a clip's keyframes show as small diamonds along its bottom edge,
+one per moment (whatever the settings keyed there, named in the tooltip). A click
+selects the clip and puts the playhead there; a drag moves every keyframe at that
+moment.
+
+Removing a setting's last keyframe keeps its value. Each gesture (a keyframe added,
+moved, changed or removed, a curve chosen, a handle released) is one undo step.
+Keyframes set by Claude (`set_keyframes`, the fades of `add_transition`) show and
+change the same way.
 
 ### 7. Add a title
 
