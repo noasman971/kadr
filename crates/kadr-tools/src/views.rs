@@ -264,7 +264,7 @@ impl ClipView {
             volume: constant_or_none(&clip.volume_multiplier),
             opacity: constant_or_none(&clip.opacity),
             transform: TransformView::of(project.settings(), clip),
-            animations: animations_of(clip),
+            animations: animations_of(project.settings(), clip),
             effect_details: clip.effects.iter().map(EffectView::of).collect(),
         }
     }
@@ -339,11 +339,17 @@ pub(crate) struct AnimationView {
 pub(crate) struct KeyframeView {
     /// Measured from the start of the clip.
     pub(crate) time_in_clip_in_seconds: f64,
+    /// In the unit of the tool parameter of the same name (canvas pixels from the
+    /// top-left corner for positions).
     pub(crate) value: f32,
-    pub(crate) interpolation_to_next: &'static str,
+    /// How the value travels to the next keyframe (see `set_keyframes`).
+    pub(crate) curve: &'static str,
+    /// `[x1, y1, x2, y2]` when `curve` is `"bezier"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) bezier_handles: Option<[f32; 4]>,
 }
 
-fn animations_of(clip: &Clip) -> Vec<AnimationView> {
+pub(crate) fn animations_of(settings: &ProjectSettings, clip: &Clip) -> Vec<AnimationView> {
     AnimatableProperty::ALL
         .into_iter()
         .filter(|property| clip.animated_property(*property).is_animated())
@@ -355,20 +361,64 @@ fn animations_of(clip: &Clip) -> Vec<AnimationView> {
                 .iter()
                 .map(|keyframe| KeyframeView {
                     time_in_clip_in_seconds: seconds_in(keyframe.time_offset),
-                    value: keyframe.value,
-                    interpolation_to_next: match keyframe.interpolation_to_next {
-                        Interpolation::Linear => "linear",
-                        Interpolation::EaseInOut => "ease_in_out",
-                        Interpolation::Hold => "hold",
-                    },
+                    value: value_shown_to_claude(settings, property, keyframe.value),
+                    curve: curve_name(keyframe.interpolation_to_next),
+                    bezier_handles: bezier_handles_of(keyframe.interpolation_to_next),
                 })
                 .collect(),
         })
         .collect()
 }
 
+/// The name of a keyframe curve in tool parameters and answers.
+pub(crate) fn curve_name(interpolation: Interpolation) -> &'static str {
+    match interpolation {
+        Interpolation::Linear => "linear",
+        Interpolation::EaseIn => "ease_in",
+        Interpolation::EaseOut => "ease_out",
+        Interpolation::EaseInOut => "ease_in_out",
+        Interpolation::Hold => "hold",
+        Interpolation::CubicBezier(_) => "bezier",
+    }
+}
+
+/// `[x1, y1, x2, y2]` of a Bézier curve, as in CSS `cubic-bezier()`.
+fn bezier_handles_of(interpolation: Interpolation) -> Option<[f32; 4]> {
+    match interpolation {
+        Interpolation::CubicBezier(curve) => Some([
+            curve.start_handle.time_fraction,
+            curve.start_handle.progress_fraction,
+            curve.end_handle.time_fraction,
+            curve.end_handle.progress_fraction,
+        ]),
+        _ => None,
+    }
+}
+
+/// How far Claude's value of `property` is from Kadr's: positions are shown from
+/// the canvas's top-left corner, but stored from its centre.
+pub(crate) fn claude_value_offset(settings: &ProjectSettings, property: AnimatableProperty) -> f32 {
+    match property {
+        AnimatableProperty::PositionX => settings.canvas_size.width_in_pixels as f32 / 2.0,
+        AnimatableProperty::PositionY => settings.canvas_size.height_in_pixels as f32 / 2.0,
+        AnimatableProperty::Volume
+        | AnimatableProperty::Opacity
+        | AnimatableProperty::Scale
+        | AnimatableProperty::Rotation => 0.0,
+    }
+}
+
+/// A stored value of `property`, in the unit Claude uses.
+fn value_shown_to_claude(
+    settings: &ProjectSettings,
+    property: AnimatableProperty,
+    value: f32,
+) -> f32 {
+    value + claude_value_offset(settings, property)
+}
+
 /// The property name used in tool parameters.
-fn property_name(property: AnimatableProperty) -> &'static str {
+pub(crate) fn property_name(property: AnimatableProperty) -> &'static str {
     match property {
         AnimatableProperty::Volume => "volume",
         AnimatableProperty::Opacity => "opacity",

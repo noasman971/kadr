@@ -115,7 +115,7 @@ export from the originals. Questions to answer:
   before.
 - **Nothing goes into the `.kadr` file** (option 7, second choice): projects stay
   portable (a proxy path would name another computer's cache), the cache can be
-  deleted at any time, and file format 3 does not change.
+  deleted at any time, and the file format does not change.
 - **The preview composes large canvases smaller.** With proxies, a 4K project's
   preview spent most of its time composing a 4K canvas and shrinking it. The
   preview now composes at the canvas's half (or quarter…) while that still covers

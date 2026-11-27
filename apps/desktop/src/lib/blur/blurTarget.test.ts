@@ -6,7 +6,7 @@ import { blurTargetClip } from "./blurTarget";
 const SECOND = 705_600_000;
 
 function clip(id: number, kind: ClipView["kind"], startSeconds: number, durationSeconds: number): ClipView {
-  const property = { value: 1, keyframeCount: 0 };
+  const property = { value: 1, keyframes: [] };
   return {
     id,
     trackId: 1,
@@ -23,10 +23,10 @@ function clip(id: number, kind: ClipView["kind"], startSeconds: number, duration
     hasSound: true,
     volume: property,
     opacity: property,
-    positionX: { value: 0, keyframeCount: 0 },
-    positionY: { value: 0, keyframeCount: 0 },
+    positionX: { value: 0, keyframes: [] },
+    positionY: { value: 0, keyframes: [] },
     scale: property,
-    rotation: { value: 0, keyframeCount: 0 },
+    rotation: { value: 0, keyframes: [] },
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     text: null,
     colorAdjustment: null,

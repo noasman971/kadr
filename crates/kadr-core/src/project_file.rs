@@ -31,7 +31,8 @@ use crate::validation::{ValidationError, validate_project};
 /// | 1 | First format (phase 1) |
 /// | 2 | Transitions on clips, animations on texts (phase 8) |
 /// | 3 | Colour LUT effects on clips (phase 8c) |
-pub const CURRENT_FORMAT_VERSION: u32 = 3;
+/// | 4 | Keyframe curves: ease in, ease out and cubic Bézier (phase 8e) |
+pub const CURRENT_FORMAT_VERSION: u32 = 4;
 
 /// The recommended file extension, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
@@ -103,6 +104,10 @@ pub const MIGRATIONS: &[Migration] = &[
         from_version: 2,
         upgrade_document: allow_color_luts,
     },
+    Migration {
+        from_version: 3,
+        upgrade_document: allow_more_keyframe_curves,
+    },
 ];
 
 /// Version 1 → 2: every clip gets `entry_transition` and `exit_transition`, and
@@ -138,6 +143,15 @@ fn add_transitions_and_text_animations(document: &mut Value) -> Result<(), Strin
 /// nothing changes; the version goes up so that an older Kadr opening a file
 /// with a LUT says "please update Kadr" instead of "the file is damaged".
 fn allow_color_luts(_document: &mut Value) -> Result<(), String> {
+    Ok(())
+}
+
+/// Version 3 → 4: new keyframe curves (`ease_in`, `ease_out`, `cubic_bezier`). A
+/// version 3 file uses only `linear`, `ease_in_out` and `hold`, which keep their
+/// names and shapes, so nothing changes; the version goes up so that an older
+/// Kadr opening a file with a new curve says "please update Kadr" instead of
+/// "the file is damaged".
+fn allow_more_keyframe_curves(_document: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
@@ -231,7 +245,7 @@ mod tests {
     fn an_empty_project_round_trips() {
         let project = Project::new(ProjectSettings::vertical_1080x1920());
         let json_text = save_project_to_json(&project).unwrap();
-        assert!(json_text.contains("\"format_version\": 3"));
+        assert!(json_text.contains("\"format_version\": 4"));
         assert_eq!(load_project_from_json(&json_text).unwrap(), project);
     }
 
@@ -284,7 +298,28 @@ mod tests {
         });
         assert!(!has_a_lut);
         let saved_again = save_project_to_json(&project).unwrap();
-        assert!(saved_again.contains("\"format_version\": 3"));
+        assert!(saved_again.contains("\"format_version\": 4"));
+        assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
+    }
+
+    /// A version 3 file (phase 8c), kept from the editing scenario's snapshot
+    /// before the new keyframe curves changed the format.
+    const VERSION_3_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_3.kadr");
+
+    #[test]
+    fn version_3_files_are_upgraded_with_the_same_curves() {
+        use crate::animation::Interpolation;
+
+        let project = load_project_from_json(VERSION_3_FILE).unwrap();
+        let curves: Vec<Interpolation> = project
+            .timeline()
+            .all_clips()
+            .flat_map(|(_, clip)| clip.opacity.keyframes().to_vec())
+            .map(|keyframe| keyframe.interpolation_to_next)
+            .collect();
+        assert_eq!(curves, [Interpolation::EaseInOut, Interpolation::EaseInOut]);
+        let saved_again = save_project_to_json(&project).unwrap();
+        assert!(saved_again.contains("\"format_version\": 4"));
         assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
     }
 

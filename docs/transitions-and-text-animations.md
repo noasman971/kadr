@@ -140,8 +140,9 @@ top track (`--title-seconds`, 3 by default) that appears and disappears with
 - Only one transition plays on a track at a time: an exit and an entry at the same
   cut play one after the other (which makes a "dip to background").
 - The transitioning clip is always drawn above the touching one.
-- Keyframes inside transitions (custom curves) are future work, with the keyframe
-  editor of the desktop app.
+- Custom curves inside transitions are future work. A clip's own keyframes, which
+  transitions combine with, have curves and an editor in the app since phase 8e
+  (decision record 0054).
 - Claude's `add_transition` tool still makes fades from opacity keyframes, and the
   desktop app's inspector has no transition controls yet: for now, transitions are
   set from the command line or the `kadr-core` commands.
