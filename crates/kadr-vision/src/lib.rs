@@ -26,7 +26,10 @@
 //! For **video stabilisation**, [`camera_motion`] measures how a shaky camera
 //! moved from each frame to the next (its shift, roll and change of size): Shi and
 //! Tomasi points spread over the frame, followed by the same optical flow, and a
-//! least-squares similarity that ignores what moves on its own.
+//! least-squares similarity that ignores what moves on its own. [`camera_path`]
+//! adds these motions up into the camera's path, smooths it (a Gaussian, with the
+//! path reflected at its breaks), and tells how to move each frame onto the
+//! smoothed path and how much to enlarge the picture so its edges never show.
 //!
 //! ## Rules for this crate
 //!
@@ -39,6 +42,7 @@
 //! See also `docs/decisions/0003-face-blur-by-classic-tracking.md`.
 
 pub mod camera_motion;
+pub mod camera_path;
 mod correlation_filter;
 mod fourier;
 mod geometry;
