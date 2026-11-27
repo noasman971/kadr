@@ -161,6 +161,10 @@ Details: [docs/architecture.md](docs/architecture.md).
   laptop, phase 8c's 10 tests every time. `--test-threads=1` passes, the real GPUs
   never crash, and CI's WARP does not. Treat such a crash there as the machine's,
   after a single-threaded rerun.
+  Since 2026-11-27 the tests of `gpu_matches_cpu.rs` render one at a time
+  (`wait_for_a_turn_on_the_gpu`): the same crash had reached CI's Linux (lavapipe,
+  `SIGSEGV`), on `main` too, and blocked every pull request. A new test file that
+  renders on the GPU in several tests needs the same turn-taking.
 - Comparing with `main` by building an extracted copy with the same
   `CARGO_TARGET_DIR` overwrites the branch's artifacts (same package hash), and the
   branch's older source files then look up to date: cargo runs `main`'s test binary
