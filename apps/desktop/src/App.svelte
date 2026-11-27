@@ -14,6 +14,7 @@
   import { t } from "./lib/i18n/i18n.svelte";
   import { claudeActivity } from "./lib/state/claude.svelte";
   import { editor } from "./lib/state/editor.svelte";
+  import { proxies } from "./lib/state/proxies.svelte";
   import Icon from "./lib/ui/Icon.svelte";
   import ToastStack from "./lib/ui/ToastStack.svelte";
 
@@ -41,6 +42,15 @@
       stopListeningToClaude = unlisten;
     });
     return () => stopListeningToClaude?.();
+  });
+
+  // Proxies of heavy videos are made in the background (decision record 0055).
+  onMount(() => {
+    let stopListeningToProxies: (() => void) | undefined;
+    void proxies.listen().then((unlisten) => {
+      stopListeningToProxies = unlisten;
+    });
+    return () => stopListeningToProxies?.();
   });
 
   onMount(() => {

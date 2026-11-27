@@ -89,7 +89,7 @@ const MAXIMUM_PLAUSIBLE_FRAMES_PER_SECOND: f64 = 240.0;
 ///
 /// The nominal rate comes first: the average is computed from the duration and
 /// is slightly off for short files (3600/119 instead of 30/1 for 4 seconds).
-fn read_frame_rate(stream: &ffmpeg::format::stream::Stream<'_>) -> Option<FrameRate> {
+pub(crate) fn read_frame_rate(stream: &ffmpeg::format::stream::Stream<'_>) -> Option<FrameRate> {
     [stream.rate(), stream.avg_frame_rate()]
         .into_iter()
         .filter_map(|rate| {

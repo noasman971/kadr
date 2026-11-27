@@ -129,6 +129,8 @@ fn run_call(app: &AppHandle, request: LinkRequest) -> LinkResponse {
             let _ = remember_recent_project(&state.configuration_folder, project_file, None);
         }
         let _ = app.emit(CLAUDE_CHANGED_EVENT, change);
+        // Claude may have imported heavy videos, or opened another project.
+        state.notice_media_of_open_project();
     }
     LinkResponse::from_tool_output(&output, project_file)
 }

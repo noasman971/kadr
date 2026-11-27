@@ -12,6 +12,7 @@ use crate::command_error::{CommandError, CommandResult};
 use crate::export_job::ExportJobs;
 use crate::media_workers::{PreviewWorker, ThumbnailWorker};
 use crate::open_project::OpenProject;
+use crate::proxy_jobs::{ProxyJobs, ProxyStatusSender};
 use crate::silence_search::SilenceSearches;
 use crate::tracking_job::TrackingJobs;
 
@@ -41,20 +42,36 @@ pub struct AppState {
     pub silence_searches: SilenceSearches,
     /// Runs Claude's tool calls on the open project (decision record 0030).
     pub claude: ClaudeToolbox,
+    /// Proxies of heavy videos, made in the background (decision record 0055).
+    pub proxies: ProxyJobs,
 }
 
 impl AppState {
-    /// Starts the media backend and the worker threads.
+    /// Starts the media backend and the worker threads. Proxies go in
+    /// `proxy_cache_folder`; their states are sent through `send_proxy_status`.
     ///
     /// # Errors
     ///
     /// When FFmpeg cannot be initialised or a thread cannot start.
-    pub fn new(configuration_folder: PathBuf, projects_folder: PathBuf) -> CommandResult<Self> {
+    pub fn new(
+        configuration_folder: PathBuf,
+        projects_folder: PathBuf,
+        proxy_cache_folder: PathBuf,
+        send_proxy_status: ProxyStatusSender,
+    ) -> CommandResult<Self> {
         let backend: Arc<dyn MediaBackend> =
             Arc::new(FfmpegBackend::new().map_err(CommandError::internal)?);
+        let proxies = ProxyJobs::start(
+            Arc::clone(&backend),
+            &configuration_folder,
+            proxy_cache_folder,
+            send_proxy_status,
+        )
+        .map_err(CommandError::internal)?;
         Ok(Self {
-            preview: PreviewWorker::start(Arc::clone(&backend)).map_err(CommandError::internal)?,
-            thumbnails: ThumbnailWorker::start(Arc::clone(&backend))
+            preview: PreviewWorker::start(Arc::clone(&backend), proxies.ready_proxies())
+                .map_err(CommandError::internal)?,
+            thumbnails: ThumbnailWorker::start(Arc::clone(&backend), proxies.ready_proxies())
                 .map_err(CommandError::internal)?,
             claude: ClaudeToolbox::new(Arc::clone(&backend)),
             backend,
@@ -66,7 +83,17 @@ impl AppState {
             exports: ExportJobs::default(),
             tracking: TrackingJobs::default(),
             silence_searches: SilenceSearches::default(),
+            proxies,
         })
+    }
+
+    /// Looks for videos of the open project that need a proxy (after opening a
+    /// project or importing media, by the user or by Claude).
+    pub fn notice_media_of_open_project(&self) {
+        let project = self.lock_open_project().as_ref().map(OpenProject::snapshot);
+        if let Some(project) = project {
+            self.proxies.notice_media_of(&project);
+        }
     }
 
     /// The open project slot. A panic while it was held cannot leave a half-applied

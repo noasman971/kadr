@@ -13,6 +13,8 @@
 //! - [`region_tracking`]: follow a selected region through a clip, forwards and
 //!   backwards, to fill a tracked blur (the face blur);
 //! - [`preview`]: pictures of the timeline at any time, at an interface's size;
+//! - [`proxies`]: smaller, easy-to-decode copies of heavy videos, made in the
+//!   background and shown by the preview instead of the originals;
 //! - [`timeline_sound`]: the mixed sound of any range of the timeline, for playback;
 //! - [`media_overview`]: thumbnails and waveforms of media files;
 //! - [`picture_scaling`]: shrinking pictures for display;
@@ -40,6 +42,7 @@ pub mod media_overview;
 pub mod picture_scaling;
 pub mod preview;
 pub mod project_files;
+pub mod proxies;
 pub mod quick_assembly;
 pub mod region_tracking;
 pub mod silence_analysis;

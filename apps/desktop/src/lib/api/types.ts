@@ -60,6 +60,37 @@ export interface KeyframeView {
   curve: KeyframeCurve;
 }
 
+/** Why a video gets a proxy (`kadr_engine::proxies::proxy_need_of`, decision record 0055). */
+export type ProxyReason = "largePicture" | "slowToDecode" | "highBitRate";
+
+/** A video's proxy, as `proxy_jobs.rs` sends it; `reason` is `null` when the user asked for it. */
+export type ProxyState =
+  | { state: "queued"; reason: ProxyReason | null }
+  | { state: "making"; reason: ProxyReason | null; fraction: number }
+  | { state: "ready"; width: number; height: number }
+  | { state: "stopped" }
+  | { state: "failed"; details: string };
+
+/** The `proxy-changed` event: one video's proxy, `null` when it has none. */
+export interface ProxyStatus {
+  /** The video, as `MediaView.filePath` names it. */
+  filePath: string;
+  proxy: ProxyState | null;
+}
+
+export interface ProxyOverview {
+  /** Heavy videos get proxies automatically, and the preview uses them. */
+  isAutomatic: boolean;
+  cacheSizeInBytes: number;
+  cacheFolder: string;
+  statuses: ProxyStatus[];
+}
+
+export interface ProxyCacheCleared {
+  freedBytes: number;
+  overview: ProxyOverview;
+}
+
 export interface CropView {
   left: number;
   top: number;

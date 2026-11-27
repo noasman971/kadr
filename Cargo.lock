@@ -2662,12 +2662,15 @@ dependencies = [
 name = "kadr-engine"
 version = "0.1.0"
 dependencies = [
+ "dunce",
  "image",
  "kadr-core",
  "kadr-media",
  "kadr-render",
  "kadr-vision",
  "rayon",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
 ]

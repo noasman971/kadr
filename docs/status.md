@@ -61,7 +61,7 @@ which is more detailed and is the reference for its phase.
 | 5. MCP server | Done, tagged `v0.6.0` | `main` (#9) | — (owner's Claude Desktop test still to do) |
 | 6. Desktop app | Done, tagged `v0.7.0` | `main` (#6, #10, #14, #15, #16; fix #18 after the tag) | — (owner's edit-and-export test still to do) |
 | 7. Blur and Claude in the app | 7a–7e merged (#17, #19, #20, #21, #24), blur inspector fix merged (#25) | `main` | The owner's end test |
-| 8. Features | 8a, 8b and 8c merged (#11, #23, #27), 8e in #28 | `main` | Owner: which feature next |
+| 8. Features | 8a, 8b, 8c and 8e merged (#11, #23, #27, #28); 8f (proxies) in #31 | `main` | Owner: which feature next |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -177,11 +177,23 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
   position X à −600 ; avancer d'une seconde, remettre l'opacité à 100 % et la
   position X à 0 ; choisir « Arrivée en douceur » dans Courbe ; lire, annuler
   (Ctrl+Z), rétablir, enregistrer, rouvrir, exporter.*
-- **Next step:** the owner chooses the next feature (8d stabilisation, 8f proxies
-  and 8g subtitles are being built in parallel).
+- **8f, automatic proxies for heavy videos** (#31, decision record 0055):
+  - the rule, the proxy format (1080p H.264 `fastdecode`, a keyframe every 5
+    frames, 4 slices, same frame times, no sound) and the cache outside projects,
+    in `kadr-media` and `kadr-engine::proxies`;
+  - the preview and thumbnails read proxies; the export, Claude's pictures and the
+    blur analysis never do; nothing goes into `.kadr` files;
+  - the preview composes large canvases at a half or a quarter of their size;
+  - the app makes proxies in the background on import, with progress, stop, again,
+    a setting and *Delete the proxies*.
+  
+  Owner's check: import a 4K video (`scripts/generate-proxy-benchmark.ps1` makes
+  two), watch the tile go from *Proxy 0 %* to *Proxy*, then scrub and play. The
+  steps, in French, are in #31.
+- **Next step:** the owner chooses the next feature (8d stabilisation and 8g
+  subtitles are being built in parallel).
 - **Left, proposed in the specification's order:** stabilisation (`kadr-vision`'s
-  optical flow and smoothing), automatic proxies for heavy 4K videos, SRT
-  subtitles. Also waiting:
+  optical flow and smoothing), SRT subtitles. Also waiting:
   Claude's `add_transition` still makes fades from opacity keyframes, and the
   inspector has no transition controls yet.
 - Decision records 0050–0059.

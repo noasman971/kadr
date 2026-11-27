@@ -13,6 +13,8 @@
 //!   draws on top of a clip;
 //! - [`project_view`]: the description of the project the front end draws;
 //! - [`media_workers`]: the threads owning decoders (preview, thumbnails);
+//! - [`proxy_jobs`]: proxies of heavy videos, made in the background for the
+//!   preview (decision record 0055);
 //! - [`binary_messages`]: the byte layouts of pictures and sound;
 //! - [`recent_projects`]: the home screen's list;
 //! - [`claude_link`]: Claude's tool calls, passed by `kadr-mcp` through a local
@@ -37,20 +39,25 @@ pub mod export_job;
 pub mod media_workers;
 pub mod open_project;
 pub mod project_view;
+pub mod proxy_jobs;
 pub mod recent_projects;
 pub mod silence_search;
 pub mod tracking_job;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::app_state::AppState;
 use crate::commands::{
     blur_commands, claude_commands, editing_commands, export_commands, picture_and_sound_commands,
-    project_commands, silence_commands,
+    project_commands, proxy_commands, silence_commands,
 };
 
 /// Name of the folder, in the user's documents, where new projects are created.
 const PROJECTS_FOLDER_NAME: &str = "Kadr";
+/// Name of the folder, in the app's cache folder, where proxies go.
+const PROXIES_FOLDER_NAME: &str = "proxies";
+/// The event carrying a video's proxy state ([`proxy_jobs::ProxyStatus`]).
+const PROXY_CHANGED_EVENT: &str = "proxy-changed";
 
 /// Starts the app and returns when its window is closed.
 ///
@@ -66,7 +73,20 @@ pub fn run() -> Result<(), tauri::Error> {
             let paths = app.path();
             let configuration_folder = paths.app_config_dir()?;
             let projects_folder = paths.document_dir()?.join(PROJECTS_FOLDER_NAME);
-            app.manage(AppState::new(configuration_folder, projects_folder)?);
+            // The cache folder is per computer and outside any project (on
+            // Windows, %LOCALAPPDATA%), so proxies never travel with projects.
+            let proxy_cache_folder = paths.app_cache_dir()?.join(PROXIES_FOLDER_NAME);
+            let handle = app.handle().clone();
+            let send_proxy_status = Box::new(move |status: proxy_jobs::ProxyStatus| {
+                // The window may have closed meanwhile: nobody is listening then.
+                let _ = handle.emit(PROXY_CHANGED_EVENT, status);
+            });
+            app.manage(AppState::new(
+                configuration_folder,
+                projects_folder,
+                proxy_cache_folder,
+                send_proxy_status,
+            )?);
             // Claude reaches the window through a local pipe; phones have none.
             #[cfg(desktop)]
             claude_link::start(app.handle().clone());
@@ -98,6 +118,11 @@ pub fn run() -> Result<(), tauri::Error> {
             blur_commands::get_clip_overlay,
             blur_commands::start_region_tracking,
             blur_commands::cancel_region_tracking,
+            proxy_commands::get_proxy_overview,
+            proxy_commands::stop_proxy,
+            proxy_commands::make_proxy_again,
+            proxy_commands::set_automatic_proxies,
+            proxy_commands::clear_proxy_cache,
             silence_commands::find_clip_silences,
             silence_commands::stop_silence_search,
             claude_commands::get_claude_setup,

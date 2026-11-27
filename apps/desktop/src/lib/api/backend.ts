@@ -25,6 +25,8 @@ import type {
   ImportResponse,
   ProjectFormatChoice,
   ProjectView,
+  ProxyCacheCleared,
+  ProxyOverview,
   RecentProject,
   SilencePlan,
   SilenceSearchSettings,
@@ -75,6 +77,16 @@ export const backend = {
     });
     return decodeRgbaPicture(buffer);
   },
+
+  /** The proxies' setting, the cache's size and every video's proxy (decision record 0055). */
+  getProxyOverview: () => invoke<ProxyOverview>("get_proxy_overview"),
+  /** Stops making the proxy of a video of the open project. */
+  stopProxy: (mediaId: number) => invoke<void>("stop_proxy", { mediaId }),
+  /** Makes the proxy of a video again, after it was stopped or failed. */
+  makeProxyAgain: (mediaId: number) => invoke<void>("make_proxy_again", { mediaId }),
+  setAutomaticProxies: (isAutomatic: boolean) => invoke<ProxyOverview>("set_automatic_proxies", { isAutomatic }),
+  /** Deletes every proxy; the preview reads the originals until they are made again. */
+  clearProxyCache: () => invoke<ProxyCacheCleared>("clear_proxy_cache"),
 
   /** Starts an export; `onEvent` receives its progress, then how it ended. */
   startExport(settings: ExportSettings, onEvent: (event: ExportEvent) => void): Promise<ExportStarted> {

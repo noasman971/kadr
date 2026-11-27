@@ -9,7 +9,10 @@
 //! - [`MediaBackend::decode_audio_segment`]: decode a range of sound, at any
 //!   speed, as stereo;
 //! - [`MediaBackend::create_export_sink`]: write an MP4 file (H.264 + AAC), with a
-//!   hardware encoder when one is available.
+//!   hardware encoder when one is available;
+//! - [`MediaBackend::describe_video_stream`] and [`MediaBackend::make_video_proxy`]:
+//!   judge how heavy a video is to decode, and write a small, easy-to-decode copy
+//!   of its pictures for the preview (decision record 0055).
 //!
 //! Pictures are [`VideoFrame`]s: YUV 4:2:0 planes as videos store them, or RGBA
 //! for images with transparency. Colour conversions are explicit (BT.601 / BT.709,
@@ -37,8 +40,9 @@ pub mod video_frame;
 
 pub use audio_buffer::AudioBuffer;
 pub use backend::{
-    AudioSegmentRequest, EncodingSpeed, ExportSink, ExportSinkSettings, MediaBackend,
-    VideoEncoderPreference, VideoFrameSource,
+    AudioSegmentRequest, ChromaSubsampling, EncodingSpeed, ExportSink, ExportSinkSettings,
+    MediaBackend, VideoEncoderPreference, VideoFrameSource, VideoProxyOutcome, VideoProxySettings,
+    VideoStreamDetails,
 };
 pub use error::MediaError;
 #[cfg(feature = "ffmpeg")]

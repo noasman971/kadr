@@ -100,6 +100,20 @@ The project is saved automatically, from the first change, in
   can read. Accepted formats: MP4, MOV, MKV, WebM, MP3, WAV, M4A, PNG, JPG."* The
   tile has a remove button.
 - Importing the same file twice reuses the existing tile.
+- **Heavy videos get a proxy** (decision record
+  [0055](decisions/0055-automatic-proxies-for-heavy-videos.md)): a video larger than
+  1080p, or slow to decode (HEVC or 10-bit at 1080p60, 1080p120, above 100 Mbit/s),
+  gets a lighter copy in the background, which the preview and the thumbnails show
+  instead. The tile says where it stands, next to its kind:
+  - *"Proxy…"* (waiting), then *"Proxy 42 %"* with a thin bar along the bottom of the
+    thumbnail; × stops it (*"No proxy"*, ↻ makes it again);
+  - *"Proxy"* in green once the preview uses it; the tooltip says which copy it shows
+    (*"The preview shows a 1920 × 1080 copy of this 3840 × 2160 video, quicker to
+    read. The export uses the original."*);
+  - *"Proxy failed"* in amber, with the reason in the tooltip and ↻ to try again;
+    meanwhile the preview reads the original.
+  - Editing goes on while proxies are made. Exports, Claude's pictures and the blur
+    analysis always read the original, so nothing changes in the result.
 
 ### 3. Put clips on the timeline
 
@@ -335,6 +349,20 @@ see what Claude does, as it does it.
 - Faces Claude blurs appear when their analysis ends, with the same notification.
 - The person keeps editing meanwhile: Claude's calls and the person's gestures take
   turns, never mix.
+
+### Proxies (Settings)
+
+Two rows in the settings, under the interface size:
+
+- **Proxies for heavy videos** (on by default), with one line saying what it does.
+  Off, no proxy is made and the preview reads every original; on again, the open
+  project's heavy videos get theirs (from the cache when they are still there).
+- ***"Proxies on this computer: 1.2 GB"*** and **Delete the proxies**: stops the
+  proxy being made, deletes every proxy (a notification says how much space it
+  freed), and the preview reads the originals until the videos get proxies again
+  (when their project is opened again, or a file is imported).
+- Proxies live in the app's cache folder, never next to the project, and the cache
+  keeps at most 10 GB, dropping the least recently used.
 
 ### Connecting Claude (Settings → Claude)
 

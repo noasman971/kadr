@@ -44,12 +44,12 @@ fn conversion_target_for(format: Pixel) -> ConversionTarget {
 }
 
 /// Whether the pixel format itself says "full range" (the old `yuvj` formats).
-fn is_full_range_format(format: Pixel) -> bool {
+pub(crate) fn is_full_range_format(format: Pixel) -> bool {
     pixel_format_name(format).starts_with("yuvj")
 }
 
 /// FFmpeg's name of a pixel format, for example `"yuv422p10le"` (empty if unknown).
-fn pixel_format_name(format: Pixel) -> &'static str {
+pub(crate) fn pixel_format_name(format: Pixel) -> &'static str {
     format
         .descriptor()
         .map_or("", |descriptor| descriptor.name())
@@ -57,7 +57,7 @@ fn pixel_format_name(format: Pixel) -> &'static str {
 
 /// The colour space of a decoded YUV picture, from its metadata, its format and,
 /// when the file says nothing, its height.
-fn color_space_of(picture: &ffmpeg::frame::Video) -> YuvColorSpace {
+pub(crate) fn color_space_of(picture: &ffmpeg::frame::Video) -> YuvColorSpace {
     let matrix = match picture.color_space() {
         ffmpeg::color::Space::BT709 => YuvMatrix::Bt709,
         ffmpeg::color::Space::BT470BG
