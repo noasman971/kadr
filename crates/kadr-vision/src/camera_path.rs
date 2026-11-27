@@ -28,14 +28,15 @@
 //!    at `exp(−(2πfs)² / 2)` of its size: with `s = 0.5 s`, 1 Hz is cut to 0.7 %
 //!    while a slow move at 0.05 Hz keeps 98.8 %.
 //! 3. **The ends of a run.** Past each end, the path is continued by **point
-//!    reflection** about the end sample: the sample at `t_e + d` gets the value
-//!    `2·p_e − p(t_e − d)` (the end sample is not reflected onto itself). A
-//!    straight move then stays exactly straight, and the smoothed path equals the
-//!    measured one at both ends, so the correction is exactly nothing there: a
-//!    break in the path never makes the picture jump. Near an end, only a slow
-//!    drift of at most one shake's size is left. A run shorter than `6s` is
-//!    smoothed with `s = length / 6`, so that the reflections at its two ends
-//!    never both reach a frame.
+//!    reflection** about the run's *fitted* end: the sample at `t_e + d` gets the
+//!    value `2·f_e − p(t_e − d)`, where `f_e` is the value at `t_e` of the straight
+//!    line that best fits the run's samples within `3s` of that end. A straight
+//!    move then stays exactly straight, and the end frames are steadied like the
+//!    others. Reflecting about the end *sample* itself was tried first: it forces
+//!    the smoothed path through one shaky sample, and on the benchmark the first
+//!    and last half second of every run kept most of their shake. A run shorter
+//!    than `6s` is smoothed with `s = length / 6`, so that the reflections at its
+//!    two ends never both reach a frame.
 //! 4. **The correction.** With `S` the smoothed pose and `P` the measured one,
 //!    the frame must move by `K = S ∘ P⁻¹`: its content goes where the smoothed
 //!    camera would show it. With `ρ = σ_S / σ_P`, `Δa = a_S − a_P` and
@@ -97,6 +98,10 @@ pub const MAXIMUM_ZOOM_FACTOR: f64 = 1.2;
 
 /// The smoothing reads samples up to this many smoothings away.
 const SMOOTHING_REACH_IN_SMOOTHINGS: f64 = 3.0;
+
+/// The line fitted at an end of a run reads the samples up to this many
+/// smoothings from that end.
+const END_FIT_SPAN_IN_SMOOTHINGS: f64 = SMOOTHING_REACH_IN_SMOOTHINGS;
 
 /// Runs shorter than this many smoothings are smoothed less (twice the reach, so
 /// the reflections at both ends never reach the same frame).
@@ -568,10 +573,7 @@ fn smoothing_for_run(smoothing_in_seconds: f64, run_length_in_seconds: Option<f6
 fn smoothed_pose_in_run<P: CameraPath + ?Sized>(path: &P, run: &Run, index: usize) -> CameraPose {
     let center = path.sample_at(index);
     let smoothing = run.smoothing_in_seconds;
-    let is_an_end = (run.starts_at_first_index && index == run.first_index)
-        || (run.ends_at_last_index && index == run.last_index);
-    if is_an_end || smoothing <= 0.0 {
-        // Reflected about itself, an end sample is its own average.
+    if smoothing <= 0.0 {
         return center.pose;
     }
     let reach = SMOOTHING_REACH_IN_SMOOTHINGS * smoothing * (1.0 + REACH_TOLERANCE);
@@ -599,37 +601,83 @@ fn smoothed_pose_in_run<P: CameraPath + ?Sized>(path: &P, run: &Run, index: usiz
         // The samples after the first one, reflected to before it.
         let first = path.sample_at(run.first_index);
         let to_first = center.time_in_seconds - first.time_in_seconds;
-        let first_channels = PoseChannels::of(&first.pose);
-        for reflected in run.first_index + 1..=run.last_index {
-            let sample = path.sample_at(reflected);
-            let difference = to_first + (sample.time_in_seconds - first.time_in_seconds);
-            if difference > reach {
-                break;
+        if to_first <= reach {
+            let first_channels = fitted_end_of(path, run, true);
+            for reflected in run.first_index + 1..=run.last_index {
+                let sample = path.sample_at(reflected);
+                let difference = to_first + (sample.time_in_seconds - first.time_in_seconds);
+                if difference > reach {
+                    break;
+                }
+                sums.add(
+                    weight(difference),
+                    first_channels.reflected(&PoseChannels::of(&sample.pose)),
+                );
             }
-            sums.add(
-                weight(difference),
-                first_channels.reflected(&PoseChannels::of(&sample.pose)),
-            );
         }
     }
     if run.ends_at_last_index {
         // The samples before the last one, reflected to after it.
         let last = path.sample_at(run.last_index);
         let to_last = last.time_in_seconds - center.time_in_seconds;
-        let last_channels = PoseChannels::of(&last.pose);
-        for reflected in (run.first_index..run.last_index).rev() {
-            let sample = path.sample_at(reflected);
-            let difference = to_last + (last.time_in_seconds - sample.time_in_seconds);
-            if difference > reach {
-                break;
+        if to_last <= reach {
+            let last_channels = fitted_end_of(path, run, false);
+            for reflected in (run.first_index..run.last_index).rev() {
+                let sample = path.sample_at(reflected);
+                let difference = to_last + (last.time_in_seconds - sample.time_in_seconds);
+                if difference > reach {
+                    break;
+                }
+                sums.add(
+                    weight(difference),
+                    last_channels.reflected(&PoseChannels::of(&sample.pose)),
+                );
             }
-            sums.add(
-                weight(difference),
-                last_channels.reflected(&PoseChannels::of(&sample.pose)),
-            );
         }
     }
     sums.average().pose()
+}
+
+/// Where the path stands at the start (`at_start`) or the end of `run`, without
+/// its shake: the value there of the straight line that best fits, by least
+/// squares, the run's samples within [`END_FIT_SPAN_IN_SMOOTHINGS`] smoothings of
+/// that end. The end sample itself when the samples cannot define a line.
+fn fitted_end_of<P: CameraPath + ?Sized>(path: &P, run: &Run, at_start: bool) -> PoseChannels {
+    let end = path.sample_at(if at_start {
+        run.first_index
+    } else {
+        run.last_index
+    });
+    let span = END_FIT_SPAN_IN_SMOOTHINGS * run.smoothing_in_seconds * (1.0 + REACH_TOLERANCE);
+    // Sums for the least-squares line of each value against the time to the end.
+    let (mut count, mut time_sum, mut squared_time_sum) = (0.0, 0.0, 0.0);
+    let (mut value_sums, mut time_value_sums) = ([0.0; 4], [0.0; 4]);
+    for step in 0..=run.last_index - run.first_index {
+        let sample = path.sample_at(if at_start {
+            run.first_index + step
+        } else {
+            run.last_index - step
+        });
+        let time_to_end = (sample.time_in_seconds - end.time_in_seconds).abs();
+        if time_to_end > span {
+            break;
+        }
+        count += 1.0;
+        time_sum += time_to_end;
+        squared_time_sum += time_to_end * time_to_end;
+        for (channel, value) in PoseChannels::of(&sample.pose).0.into_iter().enumerate() {
+            value_sums[channel] += value;
+            time_value_sums[channel] += time_to_end * value;
+        }
+    }
+    let determinant = count * squared_time_sum - time_sum * time_sum;
+    if count < 3.0 || determinant <= 0.0 {
+        return PoseChannels::of(&end.pose);
+    }
+    // The line's value at the end (time 0) is its intercept.
+    PoseChannels(std::array::from_fn(|channel| {
+        (squared_time_sum * value_sums[channel] - time_sum * time_value_sums[channel]) / determinant
+    }))
 }
 
 /// The four values of a pose that are smoothed on their own: the shift, the angle
@@ -892,26 +940,51 @@ mod tests {
     }
 
     #[test]
-    fn the_correction_is_identity_at_both_ends_of_a_run() {
-        let path = path_of(600, &[250], shake);
+    fn the_ends_of_a_run_are_steadied_like_its_middle() {
+        // A slow pan with a shake, in two runs (a break at frame 250).
+        let camera = |time: f64| {
+            let shaking = shake(time);
+            pose(
+                40.0 * time + shaking.shift_x_in_pixels,
+                shaking.shift_y_in_pixels,
+                shaking.rotation_in_degrees,
+                shaking.scale_factor,
+            )
+        };
+        let path = path_of(600, &[250], camera);
         let corrections = stabilizing_corrections(&path, 0.5);
-        for end in [0, 249, 250, 599] {
-            assert_eq!(
-                corrections[end],
-                StabilizingCorrection::IDENTITY,
-                "frame {end}"
-            );
-            assert_eq!(
-                stabilizing_correction_at(&path, end, 0.5),
-                StabilizingCorrection::IDENTITY,
-                "frame {end}"
-            );
+        let step_of = |from: &CameraPose, to: &CameraPose| {
+            (to.shift_x_in_pixels - from.shift_x_in_pixels)
+                .hypot(to.shift_y_in_pixels - from.shift_y_in_pixels)
+        };
+        for (first, last) in [(0, 249), (250, 599)] {
+            for frames in [first..first + 15, last - 15..last] {
+                for frame in frames {
+                    let smoothed = [frame, frame + 1]
+                        .map(|index| smoothed_pose_at(&path, index, 0.5).unwrap());
+                    let filmed = step_of(&path[frame].pose, &path[frame + 1].pose);
+                    let steadied = step_of(&smoothed[0], &smoothed[1]);
+                    // The pan alone moves the picture by 40 / 60 pixel per frame; the
+                    // shake, by up to 6 pixels.
+                    assert!(
+                        steadied < 2.0,
+                        "frame {frame}: {steadied:.2} px after, {filmed:.2} px before"
+                    );
+                }
+            }
+            for end in [first, last] {
+                assert_eq!(
+                    stabilizing_correction_at(&path, end, 0.5),
+                    corrections[end],
+                    "frame {end}"
+                );
+                assert_ne!(corrections[end], StabilizingCorrection::IDENTITY);
+            }
         }
-        assert_ne!(corrections[100], StabilizingCorrection::IDENTITY);
     }
 
     #[test]
-    fn a_run_break_never_makes_the_correction_jump() {
+    fn a_run_break_barely_moves_the_correction() {
         // A pan shaking up, down and sideways, whose motion could not be measured
         // at frame 300: the pose is held there, and the path goes on from it. The
         // slow shake moves the picture by up to 7 pixels, but by less than 3 pixels
@@ -950,10 +1023,8 @@ mod tests {
                 .collect()
         };
         let (broken_steps, unbroken_steps) = (steps(&broken), steps(&unbroken));
-        assert_eq!(
-            broken_steps[299], 0.0,
-            "both sides of the break are uncorrected"
-        );
+        // Both sides of the break are corrected towards the same smooth path.
+        assert!(broken_steps[299] < 1.0, "{}", broken_steps[299]);
         let largest = |steps: &[f64]| steps.iter().copied().fold(0.0, f64::max);
         let largest_correction = stabilizing_corrections(&unbroken, 0.5)
             .iter()
@@ -969,7 +1040,7 @@ mod tests {
             largest(&unbroken_steps)
         );
         assert!(largest(&unbroken_steps) < 0.5 * largest_correction);
-        assert!(largest(&broken_steps) <= 1.1 * largest(&unbroken_steps));
+        assert!(largest(&broken_steps) <= 1.5 * largest(&unbroken_steps));
     }
 
     #[test]

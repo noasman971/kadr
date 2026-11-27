@@ -279,15 +279,23 @@ mod tests {
     }
 
     #[test]
-    fn the_first_and_last_frames_are_only_enlarged() {
+    fn the_first_and_last_frames_are_steadied_too() {
         let stabilization = shaky_pan(8.0);
-        for frame_index in [0, 89, 500] {
+        let zoom = stabilization.zoom_factor;
+        // Frames 1 and 88 are next to the ends, where the shake is far from zero;
+        // frame 500 is past the path and gets the last frame's correction.
+        for (frame_index, sample_index) in [(1, 1), (88, 88), (500, 89)] {
             let time = FrameRate::FPS_30.timestamp_of_frame(frame_index);
             let correction =
                 stabilization_correction_at(&stabilization, time, SIZE).source_correction;
-            assert!(correction.shift_x_in_pixels.abs() < 1e-3, "{correction:?}");
-            assert!(correction.shift_y_in_pixels.abs() < 1e-3, "{correction:?}");
-            assert_eq!(correction.scale_factor, stabilization.zoom_factor);
+            let shake = stabilization.camera_path[sample_index].shift_y_in_pixels;
+            // The shake is taken out (within 2 pixels), and the pan is kept.
+            assert!(
+                (correction.shift_y_in_pixels + zoom * shake).abs() < 2.0 * zoom,
+                "frame {frame_index}: {correction:?} for a shake of {shake}"
+            );
+            assert!(correction.shift_x_in_pixels.abs() < 0.5, "{correction:?}");
+            assert_eq!(correction.scale_factor, zoom);
         }
     }
 
@@ -321,7 +329,8 @@ mod tests {
         let weaker = stabilization_with_smoothing(&stabilization, 0.1);
         assert!(Arc::ptr_eq(&weaker.camera_path, &stabilization.camera_path));
         assert_eq!(weaker.smoothing_in_seconds, 0.1);
-        assert!(weaker.zoom_factor <= stabilization.zoom_factor);
+        assert!(weaker.zoom_factor >= 1.0);
+        assert!(weaker.zoom_factor <= Stabilization::MAXIMUM_ZOOM_FACTOR);
         let summary = stabilization_summary(&stabilization);
         assert_eq!(summary.zoom_factor, stabilization.zoom_factor);
         assert_eq!(summary.partly_corrected_frame_count, 0);

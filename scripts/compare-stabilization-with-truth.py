@@ -79,15 +79,28 @@ def percentile(values, fraction):
 
 
 def high_passed(positions):
-    """`positions` minus their own Gaussian average over time."""
+    """`positions` minus their own Gaussian average over time.
+
+    Past the ends, the positions are continued by point reflection about the end
+    one, so that a steady pan is not counted as shake there.
+    """
     sigma = HIGH_PASS_SIGMA_IN_SECONDS * FRAMES_PER_SECOND
     reach = int(3 * sigma)
+    last = len(positions) - 1
+
+    def position_at(index):
+        if index < 0:
+            return 2 * positions[0] - positions[min(last, -index)]
+        if index > last:
+            return 2 * positions[last] - positions[max(0, 2 * last - index)]
+        return positions[index]
+
     result = []
     for index, position in enumerate(positions):
         total, weight_sum = 0j, 0.0
-        for other in range(max(0, index - reach), min(len(positions), index + reach + 1)):
-            weight = math.exp(-((other - index) ** 2) / (2 * sigma * sigma))
-            total += weight * positions[other]
+        for offset in range(-reach, reach + 1):
+            weight = math.exp(-(offset ** 2) / (2 * sigma * sigma))
+            total += weight * position_at(index + offset)
             weight_sum += weight
         result.append(position - total / weight_sum)
     return result
