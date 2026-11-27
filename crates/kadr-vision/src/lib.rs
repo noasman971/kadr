@@ -23,6 +23,11 @@
 //! The crate also finds the **silent parts of a sound** ([`silence_detection`]),
 //! for cutting silences: its loudness is measured window by window.
 //!
+//! For **video stabilisation**, [`camera_motion`] measures how a shaky camera
+//! moved from each frame to the next (its shift, roll and change of size): Shi and
+//! Tomasi points spread over the frame, followed by the same optical flow, and a
+//! least-squares similarity that ignores what moves on its own.
+//!
 //! ## Rules for this crate
 //!
 //! - **No neural network, no pre-trained model, no model file.** Every algorithm
@@ -33,6 +38,7 @@
 //!
 //! See also `docs/decisions/0003-face-blur-by-classic-tracking.md`.
 
+pub mod camera_motion;
 mod correlation_filter;
 mod fourier;
 mod geometry;
@@ -44,7 +50,7 @@ pub mod synthetic_scenes;
 mod template_matching;
 mod tracker;
 
-pub use geometry::{Point, Region};
+pub use geometry::{Point, Region, SimilarityTransform};
 pub use grey_image::GreyImage;
 pub use smoothing::smooth_track;
 pub use tracker::{

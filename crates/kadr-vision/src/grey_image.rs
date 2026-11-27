@@ -106,6 +106,11 @@ impl GreyImage {
         self.values[row * self.width + column]
     }
 
+    /// Every pixel's value, row after row.
+    pub(crate) fn values(&self) -> &[f32] {
+        &self.values
+    }
+
     /// The value at any point, interpolated between the four nearest pixel
     /// centres. Points outside the image take the value of the nearest edge pixel.
     pub fn sample(&self, x: f32, y: f32) -> f32 {

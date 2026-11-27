@@ -1,14 +1,19 @@
-//! Synthetic scenes for testing and measuring the tracker.
+//! Synthetic scenes for testing and measuring the tracker and the camera motion.
 //!
 //! A textured ellipse (the stand-in for a face) moves, grows or hides behind an
-//! obstacle over a textured background. Every pixel is computed from formulas,
-//! so the true position of the object is known exactly in every frame and the
-//! tracking error can be measured.
+//! obstacle over a textured background ([`SceneFrame`]). Every pixel is computed
+//! from formulas, so the true position of the object is known exactly in every
+//! frame and the tracking error can be measured.
+//!
+//! A [`ShakenCameraFrame`] films a textured background through a known similarity
+//! transform (a shaky camera's shift, roll and change of size), with an optional
+//! object moving on its own and noise, so that the measured camera motion can be
+//! compared with the true one.
 //!
 //! Textures are value noise: random brightness on a grid, smoothly interpolated,
 //! at three scales. They are deterministic: the same seed gives the same texture.
 
-use crate::geometry::Region;
+use crate::geometry::{Point, Region, SimilarityTransform};
 use crate::grey_image::GreyImage;
 
 /// Typical size of a background detail, in pixels.
@@ -67,21 +72,77 @@ impl SceneFrame {
                         self.background_seed,
                     );
             match &self.object {
-                Some(object) => {
-                    let coverage = ellipse_coverage(&object.region, x, y);
-                    if coverage <= 0.0 {
-                        return background;
-                    }
-                    let feature_size = object.region.width * OBJECT_FEATURE_SIZE_RELATIVE_TO_WIDTH;
-                    let local_x = (x - object.region.left()) / feature_size;
-                    let local_y = (y - object.region.top()) / feature_size;
-                    let object_value =
-                        40.0 + 200.0 * textured_value(local_x, local_y, 1.0, object.texture_seed);
-                    background * (1.0 - coverage) + object_value * coverage
-                }
+                Some(object) => object.drawn_over(background, x, y),
                 None => background,
             }
         })
+    }
+}
+
+/// One frame filmed by a shaky camera: a textured background seen through a known
+/// similarity transform, an optional object moving on its own, and noise.
+///
+/// The motion of the camera from a frame filmed with `previous` to one filmed with
+/// `current` is `previous.inverse().followed_by(&current)`: it maps a point of the
+/// first frame's content to where the second frame shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShakenCameraFrame {
+    /// Width in pixels.
+    pub width: usize,
+    /// Height in pixels.
+    pub height: usize,
+    /// Seed of the background texture.
+    pub background_seed: u32,
+    /// Where the camera shows the background: the background's point `p` (in the
+    /// pixels of a frame filmed with the identity) is seen at `camera.apply_to(p)`.
+    pub camera: SimilarityTransform,
+    /// An object drawn over the background where this frame shows it: it does not
+    /// move with the camera.
+    pub moving_object: Option<SceneObject>,
+    /// Largest brightness the noise adds or removes, in grey levels (0 = none).
+    pub noise_amplitude: f32,
+    /// Seed of the noise: another seed gives other noise, as in the next frame of
+    /// a real video.
+    pub noise_seed: u32,
+}
+
+impl ShakenCameraFrame {
+    /// Draws the frame.
+    pub fn render(&self) -> GreyImage {
+        let seen_from = self.camera.inverse();
+        GreyImage::from_fn(self.width, self.height, |column, row| {
+            let (x, y) = (column as f32 + 0.5, row as f32 + 0.5);
+            let seen = seen_from.apply_to(Point { x, y });
+            let background = 30.0
+                + 170.0
+                    * textured_value(
+                        seen.x,
+                        seen.y,
+                        BACKGROUND_FEATURE_SIZE_IN_PIXELS,
+                        self.background_seed,
+                    );
+            let value = match &self.moving_object {
+                Some(object) => object.drawn_over(background, x, y),
+                None => background,
+            };
+            let noise = 2.0 * lattice_value(column as i32, row as i32, self.noise_seed) - 1.0;
+            value + self.noise_amplitude * noise
+        })
+    }
+}
+
+impl SceneObject {
+    /// The brightness at (`x`, `y`) with the object drawn over `background`.
+    fn drawn_over(&self, background: f32, x: f32, y: f32) -> f32 {
+        let coverage = ellipse_coverage(&self.region, x, y);
+        if coverage <= 0.0 {
+            return background;
+        }
+        let feature_size = self.region.width * OBJECT_FEATURE_SIZE_RELATIVE_TO_WIDTH;
+        let local_x = (x - self.region.left()) / feature_size;
+        let local_y = (y - self.region.top()) / feature_size;
+        let object_value = 40.0 + 200.0 * textured_value(local_x, local_y, 1.0, self.texture_seed);
+        background * (1.0 - coverage) + object_value * coverage
     }
 }
 
@@ -179,5 +240,41 @@ mod tests {
         let hidden = scene_with(Some(object), Some(object.region.scaled_by(1.5))).render();
         let obstacle_only = scene_with(None, Some(object.region.scaled_by(1.5))).render();
         assert_eq!(hidden.value(30, 22), obstacle_only.value(30, 22));
+    }
+
+    #[test]
+    fn a_shaken_camera_shows_the_background_where_its_transform_puts_it() {
+        let center = Point { x: 32.0, y: 24.0 };
+        let still = ShakenCameraFrame {
+            width: 64,
+            height: 48,
+            background_seed: 1,
+            camera: SimilarityTransform::identity_about(center),
+            moving_object: None,
+            noise_amplitude: 0.0,
+            noise_seed: 0,
+        };
+        let shaken = ShakenCameraFrame {
+            camera: SimilarityTransform {
+                shift_x_in_pixels: 3.0,
+                shift_y_in_pixels: -2.0,
+                ..still.camera
+            },
+            ..still.clone()
+        };
+        let (still, shaken_image) = (still.render(), shaken.render());
+        // The content of pixel (10, 20) moved 3 pixels right and 2 up.
+        assert!((still.value(10, 20) - shaken_image.value(13, 18)).abs() < 1e-3);
+        let noisy = ShakenCameraFrame {
+            noise_amplitude: 4.0,
+            noise_seed: 9,
+            ..shaken
+        }
+        .render();
+        let differences: Vec<f32> = (0..64)
+            .map(|column| noisy.value(column, 5) - shaken_image.value(column, 5))
+            .collect();
+        assert!(differences.iter().all(|difference| difference.abs() <= 4.0));
+        assert!(differences.iter().any(|difference| difference.abs() > 1.0));
     }
 }

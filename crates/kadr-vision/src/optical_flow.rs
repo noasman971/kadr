@@ -76,7 +76,7 @@ const MAXIMUM_FORWARD_BACKWARD_ERROR_IN_PIXELS: f32 = 1.0;
 /// Smallest eigenvalue of the slope matrix, per window pixel, for a point to be
 /// followed. Below it, the window is uniform or a straight edge: its motion is
 /// ambiguous.
-const MINIMUM_TEXTURE_PER_PIXEL: f32 = 0.5;
+pub(crate) const MINIMUM_TEXTURE_PER_PIXEL: f32 = 0.5;
 
 /// Fewest well-followed points for the motion to be trusted.
 const MINIMUM_RELIABLE_POINTS: usize = 4;
