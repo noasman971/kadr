@@ -16,8 +16,9 @@ use kadr_core::text_animation::TextAnimationStyle;
 use kadr_core::transition::{EdgePhase, SlideDirection, TransitionStyle, ZoomDirection};
 use kadr_media::{VideoFrame, YuvColorSpace, YuvMatrix, YuvPicture, YuvRange};
 use kadr_render::{
-    CanvasDescription, CpuRenderer, FrameRenderer, GpuRenderer, LayerPlacement, LayerSizing,
-    TextRasterizer, TransitionRole, VisualLayer, text_animation_frame, transition_motion,
+    CanvasDescription, ColorLookupTable, CpuRenderer, FrameRenderer, GpuRenderer, LayerColorLut,
+    LayerPlacement, LayerSizing, LookupTableShape, TextRasterizer, TransitionRole, VisualLayer,
+    text_animation_frame, transition_motion,
 };
 
 /// The GPU renderer, or `None` (test skipped) when there is no GPU and it is not required.
@@ -143,6 +144,7 @@ fn a_scaled_video_matches() {
         picture: &video,
         placement: LayerPlacement::FITTED,
         color_adjustments: &[],
+        color_lut: None,
     }];
     assert_gpu_matches_cpu("scaled video", &canvas(640, 360), &layers);
 }
@@ -158,6 +160,7 @@ fn a_standard_definition_full_range_video_matches() {
         picture: &video,
         placement: LayerPlacement::FITTED,
         color_adjustments: &[],
+        color_lut: None,
     }];
     assert_gpu_matches_cpu("BT.601 full range video", &canvas(320, 240), &layers);
 }
@@ -181,6 +184,7 @@ fn a_rotated_cropped_semi_transparent_stack_matches() {
                 ..LayerPlacement::FITTED
             },
             color_adjustments: &[],
+            color_lut: None,
         },
         VisualLayer {
             picture: &logo,
@@ -193,6 +197,7 @@ fn a_rotated_cropped_semi_transparent_stack_matches() {
                 ..LayerPlacement::FITTED
             },
             color_adjustments: &[],
+            color_lut: None,
         },
     ];
     assert_gpu_matches_cpu("rotated stack", &canvas(400, 300), &layers);
@@ -250,6 +255,7 @@ fn colour_adjusted_layers_match() {
             picture: &video,
             placement: LayerPlacement::FITTED,
             color_adjustments: &warm_and_punchy,
+            color_lut: None,
         },
         VisualLayer {
             picture: &logo,
@@ -258,9 +264,175 @@ fn colour_adjusted_layers_match() {
                 ..LayerPlacement::FITTED
             },
             color_adjustments: &black_and_white,
+            color_lut: None,
         },
     ];
     assert_gpu_matches_cpu("colour adjustments", &canvas(320, 180), &layers);
+}
+
+/// A moderate 3D look of `size`: warmer highlights, cooler shadows, a little
+/// more contrast. Moderate on purpose: a steep LUT would magnify the known
+/// chroma differences between the renderers (see `assert_gpu_matches_cpu`).
+fn warm_look(size: usize) -> ColorLookupTable {
+    let last = (size - 1) as f32;
+    let entries = (0..size * size * size)
+        .map(|index| {
+            let red = (index % size) as f32 / last;
+            let green = (index / size % size) as f32 / last;
+            let blue = (index / (size * size)) as f32 / last;
+            let brightness = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+            let contrast = |channel: f32| (channel - 0.5) * 1.15 + 0.5;
+            [
+                contrast(red) + 0.06 * brightness,
+                contrast(green),
+                contrast(blue) + 0.06 * (1.0 - brightness) - 0.03,
+            ]
+        })
+        .collect();
+    ColorLookupTable::from_entries(LookupTableShape::ThreeDimensional, size, entries).unwrap()
+}
+
+/// A 1D look: a soft S-curve on every channel.
+fn s_curve(size: usize) -> ColorLookupTable {
+    let entries = (0..size)
+        .map(|index| {
+            let value = index as f32 / (size - 1) as f32;
+            let curved = value * value * (3.0 - 2.0 * value);
+            [0.5 * value + 0.5 * curved; 3]
+        })
+        .collect();
+    ColorLookupTable::from_entries(LookupTableShape::OneDimensional, size, entries).unwrap()
+}
+
+#[test]
+fn colour_lut_layers_match() {
+    let video = gradient_video_picture(320, 180, YuvColorSpace::BT709_LIMITED);
+    let logo = transparent_logo(64);
+    let look = warm_look(17);
+    let curve = s_curve(300);
+    let adjustment = [ColorAdjustment {
+        exposure_in_stops: 0.2,
+        ..ColorAdjustment::NEUTRAL
+    }];
+    let layers = [
+        VisualLayer {
+            picture: &video,
+            placement: LayerPlacement::FITTED,
+            color_adjustments: &adjustment,
+            color_lut: Some(LayerColorLut {
+                table: &look,
+                strength_fraction: 0.7,
+            }),
+        },
+        VisualLayer {
+            picture: &logo,
+            placement: LayerPlacement {
+                scale_factor: 0.4,
+                ..LayerPlacement::FITTED
+            },
+            color_adjustments: &[],
+            color_lut: Some(LayerColorLut {
+                table: &curve,
+                strength_fraction: 1.0,
+            }),
+        },
+    ];
+    assert_gpu_matches_cpu("colour LUTs", &canvas(640, 360), &layers);
+}
+
+/// An RGBA picture of the canvas size is read texel for texel by both
+/// renderers, so their colours only differ by rounding: this checks the
+/// shader's interpolation and the order of the table's axes closely.
+#[test]
+fn a_colour_lut_gives_the_same_colours_on_both_renderers() {
+    let Some(mut gpu_renderer) = gpu_renderer() else {
+        return;
+    };
+    let gradient = VideoFrame::Rgba(RgbaImage::from_fn(64, 32, |x, y| {
+        Rgba([(x * 4) as u8, (y * 8) as u8, (255 - x * 4) as u8, 255])
+    }));
+    // Red and blue swapped: an axis mix-up would show at once.
+    let swapped = {
+        let size = 9;
+        let last = (size - 1) as f32;
+        let entries = (0..size * size * size)
+            .map(|index| {
+                let red = (index % size) as f32 / last;
+                let green = (index / size % size) as f32 / last;
+                let blue = (index / (size * size)) as f32 / last;
+                [blue, green * 0.9, red]
+            })
+            .collect();
+        ColorLookupTable::from_entries(LookupTableShape::ThreeDimensional, size, entries).unwrap()
+    };
+    for (name, table) in [("3D", &swapped), ("1D", &s_curve(40))] {
+        let layers = [VisualLayer {
+            picture: &gradient,
+            placement: LayerPlacement::FITTED,
+            color_adjustments: &[],
+            color_lut: Some(LayerColorLut {
+                table,
+                strength_fraction: 0.8,
+            }),
+        }];
+        let canvas = canvas(64, 32);
+        let cpu_frame = CpuRenderer.render_frame(&canvas, &layers).unwrap();
+        let gpu_frame = gpu_renderer.render_frame(&canvas, &layers).unwrap();
+        let (VideoFrame::Yuv420(cpu_picture), VideoFrame::Yuv420(gpu_picture)) =
+            (&cpu_frame, &gpu_frame)
+        else {
+            panic!("both renderers must return YUV");
+        };
+        let largest_difference = cpu_picture
+            .y_plane()
+            .iter()
+            .zip(gpu_picture.y_plane())
+            .chain(cpu_picture.u_plane().iter().zip(gpu_picture.u_plane()))
+            .chain(cpu_picture.v_plane().iter().zip(gpu_picture.v_plane()))
+            .map(|(cpu, gpu)| cpu.abs_diff(*gpu))
+            .max()
+            .unwrap();
+        assert!(
+            largest_difference <= 2,
+            "{name} LUT: values differ by up to {largest_difference}"
+        );
+    }
+}
+
+/// The GPU keeps uploaded tables between frames: a different table on the same
+/// layer must not reuse the previous one.
+#[test]
+fn a_new_colour_lut_on_the_next_frame_replaces_the_previous_one() {
+    let Some(mut gpu_renderer) = gpu_renderer() else {
+        return;
+    };
+    let video = gradient_video_picture(160, 90, YuvColorSpace::BT709_LIMITED);
+    let (first_look, second_look) = (warm_look(5), s_curve(16));
+    let canvas = canvas(320, 180);
+    for look in [&first_look, &second_look, &first_look] {
+        let layers = [VisualLayer {
+            picture: &video,
+            placement: LayerPlacement::FITTED,
+            color_adjustments: &[],
+            color_lut: Some(LayerColorLut {
+                table: look,
+                strength_fraction: 1.0,
+            }),
+        }];
+        let cpu_frame = CpuRenderer.render_frame(&canvas, &layers).unwrap();
+        let gpu_frame = gpu_renderer.render_frame(&canvas, &layers).unwrap();
+        let (VideoFrame::Yuv420(cpu_picture), VideoFrame::Yuv420(gpu_picture)) =
+            (&cpu_frame, &gpu_frame)
+        else {
+            panic!("both renderers must return YUV");
+        };
+        let difference = compare_planes(cpu_picture.y_plane(), gpu_picture.y_plane());
+        assert!(
+            difference.mean < 1.5,
+            "mean difference {:.2}",
+            difference.mean
+        );
+    }
 }
 
 /// A second, different video picture: a checkerboard of a light warm colour and
@@ -301,11 +473,13 @@ fn transition_layers<'picture>(
             picture: outgoing,
             placement: placement_for(TransitionRole::TouchingClip),
             color_adjustments: &[],
+            color_lut: None,
         },
         VisualLayer {
             picture: incoming,
             placement: placement_for(TransitionRole::TransitioningClip),
             color_adjustments: &[],
+            color_lut: None,
         },
     ]
 }
@@ -393,11 +567,13 @@ fn an_animated_text_matches() {
                 picture: &background,
                 placement: LayerPlacement::FITTED,
                 color_adjustments: &[],
+                color_lut: None,
             },
             VisualLayer {
                 picture: &text_picture,
                 placement,
                 color_adjustments: &[],
+                color_lut: None,
             },
         ];
         assert_gpu_matches_cpu(scene_name, &scene_canvas, &layers);

@@ -62,6 +62,7 @@ fn render_frames(criterion: &mut Criterion) {
         picture: &video,
         placement: LayerPlacement::FITTED,
         color_adjustments: &[],
+        color_lut: None,
     }];
     let video_with_logo = [
         scaled_video[0],
@@ -76,6 +77,7 @@ fn render_frames(criterion: &mut Criterion) {
                 ..LayerPlacement::FITTED
             },
             color_adjustments: &[],
+            color_lut: None,
         },
     ];
     let mut renderers: Vec<(&str, Box<dyn FrameRenderer>)> = vec![("cpu", Box::new(CpuRenderer))];

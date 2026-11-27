@@ -88,7 +88,7 @@ pub(crate) fn pass_through_frame(
     };
     if picture.color_space() != YuvColorSpace::BT709_LIMITED
         || layer.placement.clamped_opacity() < 1.0
-        || !layer.color_adjustments.is_empty()
+        || layer.changes_colors()
     {
         return None;
     }

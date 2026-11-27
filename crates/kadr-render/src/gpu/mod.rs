@@ -18,6 +18,7 @@ mod device;
 mod pipelines;
 mod resources;
 
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 
 use kadr_media::{VideoFrame, YuvColorSpace, YuvPicture};
@@ -26,11 +27,12 @@ pub use device::ADAPTER_ENVIRONMENT_VARIABLE;
 use device::open_device;
 use pipelines::Pipelines;
 use resources::{
-    LayerSlot, OutputPlane, OutputTargets, PictureTextures, TextureWithView, create_texture,
-    floats_as_bytes,
+    LayerSlot, OutputPlane, OutputTargets, PictureTextures, TextureWithView,
+    create_color_lut_texture, create_texture, floats_as_bytes,
 };
 
 use crate::color_adjustment::{MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, shader_values};
+use crate::color_lookup_table::{LayerColorLut, NO_LUT_SHADER_ROWS};
 use crate::layers::{CanvasDescription, LayerGeometry, VisualLayer};
 use crate::renderer::{FrameRenderer, RenderError, pass_through_frame};
 use kadr_core::effect::ColorAdjustment;
@@ -44,6 +46,11 @@ pub struct GpuRenderer {
     picture_sampler: wgpu::Sampler,
     /// Bound in place of the U and V planes when drawing an RGBA picture.
     placeholder_plane: TextureWithView,
+    /// Bound in place of a colour LUT when the layer has none.
+    placeholder_color_lut: TextureWithView,
+    /// The colour LUTs uploaded, by table fingerprint: uploaded once, kept while
+    /// frames use them.
+    color_lut_textures: HashMap<u64, TextureWithView>,
     layer_slots: Vec<LayerSlot>,
     output_targets: Option<OutputTargets>,
 }
@@ -79,6 +86,8 @@ impl GpuRenderer {
             pipelines::PLANE_FORMAT,
             wgpu::TextureUsages::TEXTURE_BINDING,
         );
+        let placeholder_color_lut =
+            create_color_lut_texture(&device, &open_device.queue, [1, 1, 1], &[0.0; 4]);
         Ok(Self {
             device,
             queue: open_device.queue,
@@ -86,6 +95,8 @@ impl GpuRenderer {
             pipelines,
             picture_sampler,
             placeholder_plane,
+            placeholder_color_lut,
+            color_lut_textures: HashMap::new(),
             layer_slots: Vec::new(),
             output_targets: None,
         })
@@ -137,7 +148,18 @@ impl GpuRenderer {
         while self.layer_slots.len() <= slot_index {
             self.layer_slots.push(LayerSlot::new(&self.device));
         }
-        let uniforms = layer_uniforms(canvas, &geometry, picture, opacity, layer.color_adjustments);
+        let color_lut = layer.color_lut.filter(LayerColorLut::is_visible);
+        if let Some(color_lut) = color_lut {
+            self.upload_color_lut(color_lut);
+        }
+        let uniforms = layer_uniforms(
+            canvas,
+            &geometry,
+            picture,
+            opacity,
+            layer.color_adjustments,
+            color_lut,
+        );
         self.layer_slots[slot_index].upload_picture(&self.device, &self.queue, picture);
         let slot = &self.layer_slots[slot_index];
         self.queue
@@ -156,6 +178,9 @@ impl GpuRenderer {
                 true,
             ),
         };
+        let color_lut_view = color_lut
+            .and_then(|color_lut| self.color_lut_textures.get(&color_lut.table.fingerprint()))
+            .map_or(&self.placeholder_color_lut.view, |texture| &texture.view);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Kadr layer bindings"),
             layout: &self.pipelines.layer_bind_group_layout,
@@ -180,9 +205,40 @@ impl GpuRenderer {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(third),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(color_lut_view),
+                },
             ],
         });
         Some(PreparedLayer { is_yuv, bind_group })
+    }
+
+    /// Uploads the LUT's table, unless a layer already did.
+    fn upload_color_lut(&mut self, color_lut: LayerColorLut<'_>) {
+        let table = color_lut.table;
+        let (device, queue) = (&self.device, &self.queue);
+        self.color_lut_textures
+            .entry(table.fingerprint())
+            .or_insert_with(|| {
+                create_color_lut_texture(
+                    device,
+                    queue,
+                    table.texture_extent(),
+                    &table.texture_texels(),
+                )
+            });
+    }
+
+    /// Forgets the LUTs no layer of the current frame uses.
+    fn keep_only_color_luts_of(&mut self, layers: &[VisualLayer<'_>]) {
+        let in_use: HashSet<u64> = layers
+            .iter()
+            .filter_map(|layer| layer.color_lut)
+            .map(|color_lut| color_lut.table.fingerprint())
+            .collect();
+        self.color_lut_textures
+            .retain(|fingerprint, _| in_use.contains(fingerprint));
     }
 
     /// Records the drawing of every layer and the conversion to YUV planes.
@@ -290,12 +346,13 @@ fn layer_uniforms(
     picture: &VideoFrame,
     opacity: f32,
     color_adjustments: &[ColorAdjustment],
+    color_lut: Option<LayerColorLut<'_>>,
 ) -> Vec<f32> {
     let (canvas_width, canvas_height) = (
         canvas.size.width_in_pixels as f32,
         canvas.size.height_in_pixels as f32,
     );
-    let mut uniforms = Vec::with_capacity(32);
+    let mut uniforms = Vec::with_capacity(64);
     let texture_corners = geometry.texture_corners(picture.width(), picture.height());
     for ((canvas_x, canvas_y), (texture_x, texture_y)) in
         geometry.canvas_corners().into_iter().zip(texture_corners)
@@ -325,6 +382,10 @@ fn layer_uniforms(
         uniforms.extend(values);
     }
     uniforms.extend([adjustment_count as f32, 0.0, 0.0, 0.0]);
+    let color_lut_rows = color_lut.map_or(NO_LUT_SHADER_ROWS, |color_lut| {
+        color_lut.table.shader_rows(color_lut.strength_fraction)
+    });
+    uniforms.extend(color_lut_rows.as_flattened());
     uniforms
 }
 
@@ -381,6 +442,7 @@ impl FrameRenderer for GpuRenderer {
         let canvas_size = (canvas.size.width_in_pixels, canvas.size.height_in_pixels);
         self.output_targets_for(canvas_size);
 
+        self.keep_only_color_luts_of(layers);
         let prepared_layers: Vec<PreparedLayer> = layers
             .iter()
             .enumerate()

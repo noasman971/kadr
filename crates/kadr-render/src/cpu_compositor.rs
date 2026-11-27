@@ -14,6 +14,7 @@ use kadr_media::{VideoFrame, YuvColorSpace, YuvPicture};
 use rayon::prelude::*;
 
 use crate::color_adjustment::adjust_color_in_sequence;
+use crate::color_lookup_table::LayerColorLut;
 use crate::layers::{CanvasDescription, LayerGeometry, VisualLayer};
 use crate::renderer::{FrameRenderer, RenderError, pass_through_frame};
 
@@ -130,17 +131,23 @@ fn sample_bilinear(
     sampled
 }
 
-/// Applies the layer's colour adjustments to a sampled colour (0–255 channels).
-fn adjusted(
-    sampled: [f32; 4],
-    color_adjustments: &[kadr_core::effect::ColorAdjustment],
-) -> [f32; 4] {
-    if color_adjustments.is_empty() {
+/// Applies the layer's colour adjustments, then its colour LUT, to a sampled
+/// colour (0–255 channels). Alpha is left as it is.
+fn graded(sampled: [f32; 4], layer: &VisualLayer<'_>) -> [f32; 4] {
+    if !layer.changes_colors() {
         return sampled;
     }
     let rgb = [sampled[0], sampled[1], sampled[2]].map(|channel| channel / FULL_CHANNEL);
-    let [red, green, blue] =
-        adjust_color_in_sequence(rgb, color_adjustments).map(|channel| channel * FULL_CHANNEL);
+    let adjusted = if layer.color_adjustments.is_empty() {
+        rgb
+    } else {
+        adjust_color_in_sequence(rgb, layer.color_adjustments)
+    };
+    let looked_up = match layer.color_lut.filter(LayerColorLut::is_visible) {
+        Some(color_lut) => color_lut.apply(adjusted),
+        None => adjusted,
+    };
+    let [red, green, blue] = looked_up.map(|channel| channel * FULL_CHANNEL);
     [red, green, blue, sampled[3]]
 }
 
@@ -175,7 +182,7 @@ fn draw_layer(
         return;
     };
     if geometry.maps_pixels_one_to_one(canvas.size, picture.width(), picture.height(), placement) {
-        draw_one_to_one(canvas_pixels, picture, opacity, layer.color_adjustments);
+        draw_one_to_one(canvas_pixels, picture, opacity, layer);
         return;
     }
     let visible = VisiblePixels::of(&geometry);
@@ -192,10 +199,8 @@ fn draw_layer(
                 if let Some((source_x, source_y)) =
                     geometry.source_point_for(column, row_index as u32)
                 {
-                    let sampled = adjusted(
-                        sample_bilinear(picture, visible, source_x, source_y),
-                        layer.color_adjustments,
-                    );
+                    let sampled =
+                        graded(sample_bilinear(picture, visible, source_x, source_y), layer);
                     let pixel_start = column as usize * BYTES_PER_PIXEL;
                     blend_over(
                         &mut row_bytes[pixel_start..pixel_start + BYTES_PER_PIXEL],
@@ -213,7 +218,7 @@ fn draw_one_to_one(
     canvas_pixels: &mut RgbaImage,
     picture: &RgbaImage,
     opacity: f32,
-    color_adjustments: &[kadr_core::effect::ColorAdjustment],
+    layer: &VisualLayer<'_>,
 ) {
     let row_length = canvas_pixels.width() as usize * BYTES_PER_PIXEL;
     canvas_pixels
@@ -223,7 +228,7 @@ fn draw_one_to_one(
         .for_each(|(destination_row, source_row)| {
             let (source_pixels, _) = source_row.as_chunks::<BYTES_PER_PIXEL>();
             let is_opaque_row = opacity >= 1.0
-                && color_adjustments.is_empty()
+                && !layer.changes_colors()
                 && source_pixels.iter().all(|pixel| pixel[3] == 255);
             if is_opaque_row {
                 destination_row.copy_from_slice(source_row);
@@ -231,11 +236,7 @@ fn draw_one_to_one(
             }
             let (destination_pixels, _) = destination_row.as_chunks_mut::<BYTES_PER_PIXEL>();
             for (destination, source) in destination_pixels.iter_mut().zip(source_pixels) {
-                blend_over(
-                    destination,
-                    adjusted(source.map(f32::from), color_adjustments),
-                    opacity,
-                );
+                blend_over(destination, graded(source.map(f32::from), layer), opacity);
             }
         });
 }
@@ -282,6 +283,7 @@ mod tests {
             picture,
             placement,
             color_adjustments: &[],
+            color_lut: None,
         }
     }
 
@@ -407,6 +409,66 @@ mod tests {
             &[layer(&white, hidden)],
         );
         assert!(result.pixels().all(|pixel| pixel.0 == [1, 2, 3, 255]));
+    }
+
+    /// A 2 × 2 × 2 cube turning every colour into its negative.
+    fn inverting_table() -> crate::color_lookup_table::ColorLookupTable {
+        let entries = (0..8)
+            .map(|index| {
+                let corner = [index & 1, (index >> 1) & 1, (index >> 2) & 1];
+                corner.map(|bit| 1.0 - bit as f32)
+            })
+            .collect();
+        crate::color_lookup_table::ColorLookupTable::from_entries(
+            crate::color_lookup_table::LookupTableShape::ThreeDimensional,
+            2,
+            entries,
+        )
+        .unwrap()
+    }
+
+    fn inverted<'layer>(
+        picture: &'layer VideoFrame,
+        table: &'layer crate::color_lookup_table::ColorLookupTable,
+    ) -> VisualLayer<'layer> {
+        VisualLayer {
+            color_lut: Some(LayerColorLut {
+                table,
+                strength_fraction: 1.0,
+            }),
+            ..layer(picture, LayerPlacement::FITTED)
+        }
+    }
+
+    #[test]
+    fn a_colour_lut_is_applied_even_where_pictures_are_usually_copied() {
+        let table = inverting_table();
+        // An opaque picture of the canvas size, usually copied row by row.
+        let green = solid(4, 2, 10, 200, 30);
+        let result =
+            composite_layers_to_rgba(&canvas(4, 2, Color::BLACK), &[inverted(&green, &table)]);
+        assert_eq!(*result.get_pixel(1, 1), Rgba([245, 55, 225, 255]));
+        // A BT.709 video of the canvas size, usually passed through untouched.
+        let video = VideoFrame::Yuv420(YuvPicture::from_rgba(
+            &RgbaImage::from_pixel(16, 8, Rgba([10, 200, 30, 255])),
+            YuvColorSpace::BT709_LIMITED,
+        ));
+        let rendered = CpuRenderer
+            .render_frame(&canvas(16, 8, Color::BLACK), &[inverted(&video, &table)])
+            .unwrap();
+        assert_ne!(rendered, video);
+        // At strength 0 the shortcut applies again.
+        let untouched = VisualLayer {
+            color_lut: Some(LayerColorLut {
+                table: &table,
+                strength_fraction: 0.0,
+            }),
+            ..layer(&video, LayerPlacement::FITTED)
+        };
+        let rendered = CpuRenderer
+            .render_frame(&canvas(16, 8, Color::BLACK), &[untouched])
+            .unwrap();
+        assert_eq!(rendered, video);
     }
 
     #[test]
