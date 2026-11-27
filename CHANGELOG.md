@@ -206,6 +206,15 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   its own project; `KadrToolbox::call_tool_on`.
 - Decision record 0030.
 
+### Added (phase 7e, in progress: Connect to Claude)
+
+- Settings → *Connect to Claude…*: the folders Claude may use (kept in
+  `claude-access.json`, read by `kadr-mcp --kadr-settings` before every call, so a
+  change applies at once), Claude Desktop's configuration found automatically (or
+  chosen) and written in one click (only the `kadr` entry, with a backup; an invalid
+  file is never touched), and the `claude mcp add` command for Claude Code.
+- Decision record 0031.
+
 ### Added (phase 8a: transitions and text animations)
 
 - `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`

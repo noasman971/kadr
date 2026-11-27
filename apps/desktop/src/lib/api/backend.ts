@@ -15,6 +15,7 @@ import {
 } from "./binaryMessages";
 import type {
   BlurShapeChoice,
+  ClaudeSetupView,
   ClipOverlay,
   EditRequest,
   EditResponse,
@@ -108,6 +109,14 @@ export const backend = {
     });
   },
   cancelRegionTracking: () => invoke<void>("cancel_region_tracking"),
+
+  getClaudeSetup: (configPath: string | null) => invoke<ClaudeSetupView>("get_claude_setup", { configPath }),
+  addClaudeFolder: (folder: string, configPath: string | null) =>
+    invoke<ClaudeSetupView>("add_claude_folder", { folder, configPath }),
+  removeClaudeFolder: (folder: string, configPath: string | null) =>
+    invoke<ClaudeSetupView>("remove_claude_folder", { folder, configPath }),
+  connectClaudeDesktop: (configPath: string | null) =>
+    invoke<ClaudeSetupView>("connect_claude_desktop", { configPath }),
 
   async getWaveform(mediaId: number): Promise<Waveform> {
     return decodeWaveform(await invoke<ArrayBuffer>("get_waveform", { mediaId }));

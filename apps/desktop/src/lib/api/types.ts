@@ -202,6 +202,18 @@ export interface ClaudeChange {
   changedClipIds: number[];
 }
 
+/** The Connect to Claude screen (`claude_setup.rs`). */
+export interface ClaudeSetupView {
+  /** `kadr-mcp` next to the app; `null` when missing. */
+  kadrMcpPath: string | null;
+  settingsFile: string;
+  allowedFolders: Array<{ path: string; exists: boolean }>;
+  claudeDesktopConfig: string;
+  claudeDesktopConfigExists: boolean;
+  connection: "connected" | "notConnected" | "otherKadr" | "unreadable";
+  claudeCodeCommand: string | null;
+}
+
 export interface RecentProject {
   filePath: string;
   name: string;
@@ -316,6 +328,11 @@ export type ErrorCode =
   | "trackingAlreadyRunning"
   | "trackingFailed"
   | "trackingProjectClosed"
+  | "claudeFolderUnusable"
+  | "claudeSettingsNotSaved"
+  | "kadrMcpMissing"
+  | "claudeConfigUnreadable"
+  | "claudeConfigNotSaved"
   | "internal";
 
 /** The size of an exported video (`export_job.rs`). */

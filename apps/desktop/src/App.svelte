@@ -8,6 +8,7 @@
 
   import EditorScreen from "./lib/components/editor/EditorScreen.svelte";
   import HomeScreen from "./lib/components/home/HomeScreen.svelte";
+  import ClaudeDialog from "./lib/components/ClaudeDialog.svelte";
   import SettingsDialog from "./lib/components/SettingsDialog.svelte";
   import ShortcutsDialog from "./lib/components/ShortcutsDialog.svelte";
   import { t } from "./lib/i18n/i18n.svelte";
@@ -16,7 +17,7 @@
   import Icon from "./lib/ui/Icon.svelte";
   import ToastStack from "./lib/ui/ToastStack.svelte";
 
-  let openDialog = $state<"settings" | "shortcuts" | null>(null);
+  let openDialog = $state<"settings" | "shortcuts" | "claude" | null>(null);
   let isDraggingFilesOver = $state(false);
 
   /** Dropped files: imported into the open project, or into a new automatic project. */
@@ -75,7 +76,9 @@
 {/if}
 
 {#if openDialog === "settings"}
-  <SettingsDialog onClose={() => (openDialog = null)} />
+  <SettingsDialog onClose={() => (openDialog = null)} onOpenClaude={() => (openDialog = "claude")} />
+{:else if openDialog === "claude"}
+  <ClaudeDialog onClose={() => (openDialog = null)} />
 {:else if openDialog === "shortcuts"}
   <ShortcutsDialog onClose={() => (openDialog = null)} />
 {/if}
