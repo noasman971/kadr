@@ -25,7 +25,7 @@ use crate::blur_tasks::{AnalysedBlur, BlurTaskPurpose, BlurTaskState, BlurTaskSt
 use crate::catalog::{ToolEffect, ToolEntry, declare_tool};
 use crate::output::{ToolError, ToolOutput};
 use crate::time_input::{seconds_in, seconds_of, timestamp_from_seconds};
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::tools::common::parse_color;
 use crate::tools::picture_tools::ensure_project_media_readable;
 use crate::tools::timeline_tools::missing_created_object;
@@ -149,7 +149,7 @@ struct BlurRegionParameters {
 }
 
 fn blur_region(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: BlurRegionParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -343,7 +343,7 @@ struct GetBlurStatusParameters {
 }
 
 fn get_blur_status(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: GetBlurStatusParameters,
 ) -> Result<ToolOutput, ToolError> {
     match (&parameters.task_id, parameters.clip_id) {
@@ -662,7 +662,7 @@ struct CancelBlurParameters {
 }
 
 fn cancel_blur(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: CancelBlurParameters,
 ) -> Result<ToolOutput, ToolError> {
     let status = toolbox.blur_tasks().cancel(&parameters.task_id)?;
@@ -687,7 +687,7 @@ fn cancel_blur(
 
 /// Adds every finished analysis to the open project, each as one undo step, and
 /// returns a sentence about each for Claude.
-pub(crate) fn add_analysed_blurs_to_project(toolbox: &mut KadrToolbox) -> Vec<String> {
+pub(crate) fn add_analysed_blurs_to_project(toolbox: &mut ToolCall<'_>) -> Vec<String> {
     let analysed = toolbox.blur_tasks().analysed_blurs();
     analysed
         .into_iter()
@@ -722,7 +722,7 @@ pub(crate) fn add_analysed_blurs_to_project(toolbox: &mut KadrToolbox) -> Vec<St
 }
 
 fn add_analysed_blur(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     analysed: &AnalysedBlur,
 ) -> Result<EffectId, ToolError> {
     let session = toolbox.require_project_session()?;

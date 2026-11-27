@@ -8,91 +8,111 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 
 ## [Unreleased]
 
-### Added (phase 4a: region tracker)
+### Added (phase 7a: blur tools for Claude)
 
-- `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
-  AI:
-  - a MOSSE correlation filter finds its position;
-  - the peak-to-sidelobe ratio rates each frame as confident, uncertain or lost;
-  - pyramidal Lucas-Kanade optical flow predicts fast motion and measures changes of
-    size (Median Flow);
-  - normalised cross-correlation with the memorised appearance finds a lost region
-    again.
-- `smooth_track`: One Euro smoothing, forwards and backwards, so the blur neither
-  shakes nor lags.
-- `GreyImage`: brightness images built straight from a video's Y plane, optionally
-  shrunk to about 640 pixels wide (`shrink_factor_for_tracking`).
-- `synthetic_scenes`: textured scenes with a known truth, for tests and benchmarks.
-- Tracking scenarios (motion, acceleration, coming closer, moving away, camera pan,
-  occlusion, leaving the frame, backwards) and `criterion` benchmarks
-  (`cargo bench -p kadr-vision`).
-- `docs/tracking-and-blur.md`, decision record 0007.
+- MCP tools `blur_region`, `get_blur_status` and `cancel_blur`: Claude gives the
+  rectangle around a face on one frame, the analysis runs in the background (task
+  `blur-1`), the tracked blur is added to the project as one undo step, and the status
+  lists the ranges to check in timeline seconds. `blur_region` with an `effect_id`
+  corrects a blur: tracking restarts from the redrawn rectangle.
+- `kadr-engine`: `RegionTrackingRequest::for_correction` and `corrected_tracked_blur`
+  re-track from a correction up to the neighbouring anchors (the selection and other
+  corrections) and keep, frame by frame, the surer of the old and new answers;
+  `RegionTrackingRequest::check_selection` checks a selection without decoding;
+  `find_tracked_blur`.
+- `kadr-core`: `Clip::timeline_time_showing`, the timeline moment showing a source
+  moment.
+- `kadr-mcp` adds finished analyses to the project every second, so the file is up to
+  date even if Claude makes no further call.
 
-### Added (phase 4b: blur analysis)
+### Added (phase 7b: blur in the desktop app)
 
-- `kadr-engine`: `region_tracking`:
-  - `RegionTrackingRequest::for_clip` turns a selection on a clip into a request;
-  - `track_region` tracks it forwards and backwards from the selected frame. The
-    backward pass decodes in chunks. It reports progress and can be cancelled;
-  - the result is smoothed and stored as few samples as possible (within a pixel);
-  - `export_tracking_debug_video` draws the tracked box and its confidence.
-- `TrackedBlur::unsure_ranges` lists where the tracker was uncertain or lost.
-- `kadr-vision`: `TrackingError::RegionWithoutDetail` for a uniform region on a
-  textured background. A recovered region now counts as uncertain, and the
-  recovery search starts at exactly one region size.
-- `kadr-cli blur video.mp4 --at 2.5 --rect 420,180,160,200 -o out.mp4 [--debug]`.
-- `scripts/generate-tracking-benchmark.ps1`, the `track_video` example and
-  `scripts/compare-tracking-with-truth.py`: measure the tracker on a 60 s 1080p video
-  whose true path is known.
+- Blur tool on the preview (**B**, the preview's button, or *Add* in the inspector):
+  draw a box on a face, move and resize it, ellipse or rectangle, *Blur and follow*
+  (Enter). The analysis runs in the background with its progress and *Stop*; the
+  result is one undo step, announced with *Undo*.
+- The inspector's *Blur* section: style (blur, pixels, mask), strength, shape, margin,
+  on / off, delete; how many moments the tracker was unsure about.
+- The preview draws each blur's box at the playhead for the selected clip (dashed
+  with ⚠ where the tracker was unsure); blurred clips get a badge on the timeline.
+- `kadr_engine::clip_geometry` and `kadr_render::SourceToCanvasMapping`: where a
+  clip's source picture is on the canvas, for interfaces drawing on top of it.
 
-### Fixed (phase 4b: tracking drift on a real video)
+### Added (phase 7c: checking and correcting a blur in the app)
 
-On the 1080p benchmark the region slid off the object by 2 to 4 pixels per second
-while every frame stayed "confident" (mean centre error 197 px, size error 24 %). Now
-2 px and 1.7 % (decision record 0008):
+- The moments a blur's tracker was unsure about are striped on the clip in the
+  timeline (amber uncertain, red lost, with ⚠ and a tooltip); a click goes there.
+  **Shift+B** and the inspector's *Next* go to the next one.
+- Correcting: drag a blur's box on the preview (or *Correct the box here*, then the
+  arrow keys) where the face is, then *Correct from here* (Enter): the tracking runs
+  again from that frame up to the neighbouring corrections or the selection, and keeps
+  the surer answer frame by frame. One undo step, announced with what is left to
+  check.
 
-- Median Flow measures the size only from points moving with the region, and the
-  correlation filter's window is weighted towards the region.
-- The correlation filter learns at 0.02 instead of 0.125: it no longer forgets the
-  selection within a few frames.
-- Every confident frame is anchored to the selection's appearance: searched a few
-  cells around the answer at three sizes, the region is pulled towards it where it
-  matches clearly.
-- A confident frame that does not look like the selection at all is reported as
-  uncertain, and the region is re-anchored where the selection is found again nearby.
+### Added (phase 7d: Claude works live in the open app)
 
-### Added (phase 5: MCP server, file mode)
+- When the desktop app is open, `kadr-mcp` passes Claude's calls to it through a local
+  pipe (`kadr-app-link`: `\\.\pipe\kadr-app-<user>` on Windows, a private Unix socket
+  elsewhere), and the app runs them on the project its window shows: same undo
+  history, every change shown at once with *"Claude a modifié le projet : …"*, Undo
+  and the changed clips outlined; projects Claude opens or creates open in the window.
+  With the app closed, file mode as before; the first answer after a switch says so.
+- Claude may only undo and redo its own steps when the app is open.
+- `kadr-tools`: the tools reach the project through a `ProjectHost`
+  (`EditableProject`, `FileProjectHost`, `run_tool_steps`), so the app can run them on
+  its own project; `KadrToolbox::call_tool_on`.
+- Decision record 0030.
 
-- `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
-  3.11, that Claude Desktop and Claude Code start with `--allowed-folder <folder>`
-  arguments. Nothing but the protocol is written to stdout; logs go to stderr.
-- `kadr-tools`: 35 tools defined once (name, description for a language model, JSON
-  schema generated with `schemars`, code), independent of MCP: project
-  (`create_project`, `open_project`, `save_project`, `get_project_info`,
-  `set_project_settings`, `undo`, `redo`), media (`find_media_files`, `probe_media`,
-  `import_media`, `list_media`), timeline (`get_timeline`, `get_clip`, `add_track`,
-  `remove_track`, `add_clip`, `remove_clip`, `move_clip`, `trim_clip`, `split_clip`),
-  clip properties (`set_clip_speed`, `set_clip_volume`, `set_transform`), content
-  (`add_text`, `edit_text`, `add_transition`, `remove_transitions`,
-  `add_color_adjustment`, `remove_effect`), pictures (`get_frame`,
-  `get_contact_sheet`), sound (`detect_silences`) and export (`export`,
-  `get_export_status`, `cancel_export`).
-- One tool call is one undo step labelled "Claude: …"; the project file is saved
-  after every change and never overwritten if another program changed it.
-- File access limited to the allowed folders (links and `..` resolved), no file
-  replaced without `"overwrite": true`, no file deleted.
-- Pictures for Claude are JPEG with the longest side at most 1024 pixels, with the
-  original size and the conversion factor stated.
-- Exports run in the background with a task id; presets for TikTok / Reels / Shorts,
-  YouTube 1080p and 4K, with automatic scaling when the shape matches.
-- `kadr-engine::still_frames`: single pictures of a file, a clip or the finished
-  timeline, and labelled contact sheets.
-- Silence detection: `kadr-vision::silence_detection` (RMS level per 10 ms window,
-  incremental), `kadr-engine::silence_analysis` (sound decoded piece by piece at
-  16 kHz), the `detect_silences` tool.
-- Integration tests driving the server through an MCP client, including the real
-  binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
-  README section "Editing with Claude".
+### Added (phase 8a: transitions and text animations)
+
+- `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
+  in four directions, `zoom` in or out) and entry and exit **text animations** on texts
+  (`fade`, `slide`, `pop`, `type_on`, `word_by_word`), with the undoable commands
+  `SetClipTransition` and `SetTextAnimation` and their validation rules. A clip
+  touching a transition's edge on the same track shows underneath, so a fade between
+  two clips is a dissolve and a slide pushes the previous clip out. Splitting keeps
+  the entry on the first part and the exit on the second.
+- File format version 2, with a migration from version 1.
+- `kadr-render`: `transition_motion` and `text_animation_frame` move layers (opacity,
+  position, scale) on both renderers; `TextRasterizer::rasterize_revealed` draws
+  part of a text for type-on and word-by-word animations.
+- `kadr-engine`: exports draw transitions, reading the touching clip's source past its
+  cut (holding the file's last or first frame where it ends).
+- `kadr-cli assemble --transition … --title … --title-animation …` to try them.
+- `docs/transitions-and-text-animations.md`, decision record 0050.
+
+### Added (phase 8b: silence removal)
+
+- `kadr-core`: `RemoveClipParts` cuts timeline ranges out of a clip in one undoable
+  command: what is left goes end to end, the later clips of its track move earlier,
+  other tracks do not move (`Clip::without_parts`, `TimeRange`,
+  `FrameRate::frame_start_at_or_before` / `_after`).
+- `kadr-engine`: `silence_removal` finds a clip's silences and shortens each to a
+  pause (0.2 s by default, half on each side), with cuts on frame starts; the
+  analysis reports progress and can be stopped.
+- Claude's tool `remove_silences` shortens every silence of a clip in one step;
+  `detect_silences` and `split_clip` point to it.
+- Desktop app: *Remove silences…* in the inspector's Sound section opens a dialog
+  with three settings, a strip of what will go and a summary; one click, one undo
+  step.
+- `kadr-cli remove-silences video.mp4 -o shorter.mp4 [--threshold -45]`.
+- Decision record 0051.
+
+### Fixed
+
+- Desktop inspector: two quick changes to the same clip could make the second undo
+  the first. New words typed in a title, then a click on an alignment button before
+  the first answer arrived, brought the old words back; the same could happen to
+  the font, size and colour of a title, to the colour settings and to the crop.
+  Crop, colour and text requests now name only what changes, and the back end
+  keeps the rest as the project has it.
+- Desktop app: edits, undo and redo are sent one at a time, in order. Two requests
+  sent together could be applied in either order (left then right alignment could
+  end up left), and an undo pressed right after a change could be ignored.
+- Desktop inspector: words being typed in a title were replaced by the saved words
+  when the answer to an earlier change (a font size, say) arrived.
+
+## [0.7.0] — Phase 6: desktop app
 
 ### Added (phase 6a: desktop app design)
 
@@ -151,82 +171,6 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   another size, shared by Claude's tools and the app, and `refit_clips_to_canvas`,
   which keeps titles in place when the canvas changes shape.
 
-### Added (phase 7a: blur tools for Claude)
-
-- MCP tools `blur_region`, `get_blur_status` and `cancel_blur`: Claude gives the
-  rectangle around a face on one frame, the analysis runs in the background (task
-  `blur-1`), the tracked blur is added to the project as one undo step, and the status
-  lists the ranges to check in timeline seconds. `blur_region` with an `effect_id`
-  corrects a blur: tracking restarts from the redrawn rectangle.
-- `kadr-engine`: `RegionTrackingRequest::for_correction` and `corrected_tracked_blur`
-  re-track from a correction up to the neighbouring anchors (the selection and other
-  corrections) and keep, frame by frame, the surer of the old and new answers;
-  `RegionTrackingRequest::check_selection` checks a selection without decoding;
-  `find_tracked_blur`.
-- `kadr-core`: `Clip::timeline_time_showing`, the timeline moment showing a source
-  moment.
-- `kadr-mcp` adds finished analyses to the project every second, so the file is up to
-  date even if Claude makes no further call.
-
-### Added (phase 7b: blur in the desktop app)
-
-- Blur tool on the preview (**B**, the preview's button, or *Add* in the inspector):
-  draw a box on a face, move and resize it, ellipse or rectangle, *Blur and follow*
-  (Enter). The analysis runs in the background with its progress and *Stop*; the
-  result is one undo step, announced with *Undo*.
-- The inspector's *Blur* section: style (blur, pixels, mask), strength, shape, margin,
-  on / off, delete; how many moments the tracker was unsure about.
-- The preview draws each blur's box at the playhead for the selected clip (dashed
-  with ⚠ where the tracker was unsure); blurred clips get a badge on the timeline.
-- `kadr_engine::clip_geometry` and `kadr_render::SourceToCanvasMapping`: where a
-  clip's source picture is on the canvas, for interfaces drawing on top of it.
-
-### Added (phase 7c: checking and correcting a blur in the app)
-
-- The moments a blur's tracker was unsure about are striped on the clip in the
-  timeline (amber uncertain, red lost, with ⚠ and a tooltip); a click goes there.
-  **Shift+B** and the inspector's *Next* go to the next one.
-- Correcting: drag a blur's box on the preview (or *Correct the box here*, then the
-  arrow keys) where the face is, then *Correct from here* (Enter): the tracking runs
-  again from that frame up to the neighbouring corrections or the selection, and keeps
-  the surer answer frame by frame. One undo step, announced with what is left to
-  check.
-
-### Added (phase 8a: transitions and text animations)
-
-- `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
-  in four directions, `zoom` in or out) and entry and exit **text animations** on texts
-  (`fade`, `slide`, `pop`, `type_on`, `word_by_word`), with the undoable commands
-  `SetClipTransition` and `SetTextAnimation` and their validation rules. A clip
-  touching a transition's edge on the same track shows underneath, so a fade between
-  two clips is a dissolve and a slide pushes the previous clip out. Splitting keeps
-  the entry on the first part and the exit on the second.
-- File format version 2, with a migration from version 1.
-- `kadr-render`: `transition_motion` and `text_animation_frame` move layers (opacity,
-  position, scale) on both renderers; `TextRasterizer::rasterize_revealed` draws
-  part of a text for type-on and word-by-word animations.
-- `kadr-engine`: exports draw transitions, reading the touching clip's source past its
-  cut (holding the file's last or first frame where it ends).
-- `kadr-cli assemble --transition … --title … --title-animation …` to try them.
-- `docs/transitions-and-text-animations.md`, decision record 0050.
-
-### Added (phase 8b: silence removal)
-
-- `kadr-core`: `RemoveClipParts` cuts timeline ranges out of a clip in one undoable
-  command: what is left goes end to end, the later clips of its track move earlier,
-  other tracks do not move (`Clip::without_parts`, `TimeRange`,
-  `FrameRate::frame_start_at_or_before` / `_after`).
-- `kadr-engine`: `silence_removal` finds a clip's silences and shortens each to a
-  pause (0.2 s by default, half on each side), with cuts on frame starts; the
-  analysis reports progress and can be stopped.
-- Claude's tool `remove_silences` shortens every silence of a clip in one step;
-  `detect_silences` and `split_clip` point to it.
-- Desktop app: *Remove silences…* in the inspector's Sound section opens a dialog
-  with three settings, a strip of what will go and a summary; one click, one undo
-  step.
-- `kadr-cli remove-silences video.mp4 -o shorter.mp4 [--threshold -45]`.
-- Decision record 0051.
-
 ### Changed
 
 - Build scripts and procedural macros are compiled with optimisations, so `bindgen`
@@ -241,21 +185,100 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   speed, colour, font size, length): the field sends its value while it is being
   removed, when the inspector no longer has its clip. The change now goes to the
   clip the inspector was showing.
-- Desktop inspector: two quick changes to the same clip could make the second undo
-  the first. New words typed in a title, then a click on an alignment button before
-  the first answer arrived, brought the old words back; the same could happen to
-  the font, size and colour of a title, to the colour settings and to the crop.
-  Crop, colour and text requests now name only what changes, and the back end
-  keeps the rest as the project has it.
-- Desktop app: edits, undo and redo are sent one at a time, in order. Two requests
-  sent together could be applied in either order (left then right alignment could
-  end up left), and an undo pressed right after a change could be ignored.
-- Desktop inspector: words being typed in a title were replaced by the saved words
-  when the answer to an earlier change (a font size, say) arrived.
 - Number fields: after ↑ or ↓, leaving the field put the old value back.
 - Number fields in English: a value of 1000 or more was shown as "1,200", read back
   as 1.2, so just entering and leaving the field changed it (Position X 1200 px
   became 1 px). Editable numbers are now shown without thousands separators.
+
+## [0.6.0] — Phase 5: MCP server
+
+### Added (phase 5: MCP server, file mode)
+
+- `kadr-mcp`: a local MCP server over stdio, built on the official Rust SDK `rmcp`
+  3.11, that Claude Desktop and Claude Code start with `--allowed-folder <folder>`
+  arguments. Nothing but the protocol is written to stdout; logs go to stderr.
+- `kadr-tools`: 35 tools defined once (name, description for a language model, JSON
+  schema generated with `schemars`, code), independent of MCP: project
+  (`create_project`, `open_project`, `save_project`, `get_project_info`,
+  `set_project_settings`, `undo`, `redo`), media (`find_media_files`, `probe_media`,
+  `import_media`, `list_media`), timeline (`get_timeline`, `get_clip`, `add_track`,
+  `remove_track`, `add_clip`, `remove_clip`, `move_clip`, `trim_clip`, `split_clip`),
+  clip properties (`set_clip_speed`, `set_clip_volume`, `set_transform`), content
+  (`add_text`, `edit_text`, `add_transition`, `remove_transitions`,
+  `add_color_adjustment`, `remove_effect`), pictures (`get_frame`,
+  `get_contact_sheet`), sound (`detect_silences`) and export (`export`,
+  `get_export_status`, `cancel_export`).
+- One tool call is one undo step labelled "Claude: …"; the project file is saved
+  after every change and never overwritten if another program changed it.
+- File access limited to the allowed folders (links and `..` resolved), no file
+  replaced without `"overwrite": true`, no file deleted.
+- Pictures for Claude are JPEG with the longest side at most 1024 pixels, with the
+  original size and the conversion factor stated.
+- Exports run in the background with a task id; presets for TikTok / Reels / Shorts,
+  YouTube 1080p and 4K, with automatic scaling when the shape matches.
+- `kadr-engine::still_frames`: single pictures of a file, a clip or the finished
+  timeline, and labelled contact sheets.
+- Silence detection: `kadr-vision::silence_detection` (RMS level per 10 ms window,
+  incremental), `kadr-engine::silence_analysis` (sound decoded piece by piece at
+  16 kHz), the `detect_silences` tool.
+- Integration tests driving the server through an MCP client, including the real
+  binary as a child process; `docs/mcp-server.md`; decision records 0010–0012;
+  README section "Editing with Claude".
+
+## [0.5.0] — Phase 4: face blur by region tracking
+
+### Added (phase 4a: region tracker)
+
+- `kadr-vision`: `RegionTracker` follows a selected region frame after frame, without
+  AI:
+  - a MOSSE correlation filter finds its position;
+  - the peak-to-sidelobe ratio rates each frame as confident, uncertain or lost;
+  - pyramidal Lucas-Kanade optical flow predicts fast motion and measures changes of
+    size (Median Flow);
+  - normalised cross-correlation with the memorised appearance finds a lost region
+    again.
+- `smooth_track`: One Euro smoothing, forwards and backwards, so the blur neither
+  shakes nor lags.
+- `GreyImage`: brightness images built straight from a video's Y plane, optionally
+  shrunk to about 640 pixels wide (`shrink_factor_for_tracking`).
+- `synthetic_scenes`: textured scenes with a known truth, for tests and benchmarks.
+- Tracking scenarios (motion, acceleration, coming closer, moving away, camera pan,
+  occlusion, leaving the frame, backwards) and `criterion` benchmarks
+  (`cargo bench -p kadr-vision`).
+- `docs/tracking-and-blur.md`, decision record 0007.
+
+### Added (phase 4b: blur analysis)
+
+- `kadr-engine`: `region_tracking`:
+  - `RegionTrackingRequest::for_clip` turns a selection on a clip into a request;
+  - `track_region` tracks it forwards and backwards from the selected frame. The
+    backward pass decodes in chunks. It reports progress and can be cancelled;
+  - the result is smoothed and stored as few samples as possible (within a pixel);
+  - `export_tracking_debug_video` draws the tracked box and its confidence.
+- `TrackedBlur::unsure_ranges` lists where the tracker was uncertain or lost.
+- `kadr-vision`: `TrackingError::RegionWithoutDetail` for a uniform region on a
+  textured background. A recovered region now counts as uncertain, and the
+  recovery search starts at exactly one region size.
+- `kadr-cli blur video.mp4 --at 2.5 --rect 420,180,160,200 -o out.mp4 [--debug]`.
+- `scripts/generate-tracking-benchmark.ps1`, the `track_video` example and
+  `scripts/compare-tracking-with-truth.py`: measure the tracker on a 60 s 1080p video
+  whose true path is known.
+
+### Fixed (phase 4b: tracking drift on a real video)
+
+On the 1080p benchmark the region slid off the object by 2 to 4 pixels per second
+while every frame stayed "confident" (mean centre error 197 px, size error 24 %). Now
+2 px and 1.7 % (decision record 0008):
+
+- Median Flow measures the size only from points moving with the region, and the
+  correlation filter's window is weighted towards the region.
+- The correlation filter learns at 0.02 instead of 0.125: it no longer forgets the
+  selection within a few frames.
+- Every confident frame is anchored to the selection's appearance: searched a few
+  cells around the answer at three sizes, the region is pulled towards it where it
+  matches clearly.
+- A confident frame that does not look like the selection at all is reported as
+  uncertain, and the region is re-anchored where the selection is found again nearby.
 
 ## [0.4.0] — Phase 3: GPU rendering
 

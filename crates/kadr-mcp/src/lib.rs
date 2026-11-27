@@ -23,11 +23,18 @@
 //!   stderr (Claude Desktop keeps them in its MCP log files).
 //! - File access is limited to the folders the user allowed (`--allowed-folder`).
 //!
-//! Phase 5 works directly on a project file; phase 7 connects to the running
-//! desktop app. See `docs/mcp-server.md`.
+//! When the desktop app is open, calls go to it through a local pipe and run on
+//! the project its window shows (`app_relay`, decision record 0030); when it is
+//! closed, they run here on the project file (file mode). See
+//! `docs/mcp-server.md`.
+
+mod app_relay;
 
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+
+pub use app_relay::AppRelay;
+use kadr_app_link::LinkAddress;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -73,6 +80,8 @@ pub const BACKGROUND_WORK_INTERVAL: Duration = Duration::from_secs(1);
 pub struct KadrMcpServer {
     /// One call at a time: the tools edit one project with one undo history.
     toolbox: Arc<Mutex<KadrToolbox>>,
+    /// Where calls go: the open app, or the project file.
+    relay: Arc<Mutex<AppRelay>>,
     /// The tool list, built once.
     tools: Arc<Vec<Tool>>,
 }
@@ -87,14 +96,26 @@ impl std::fmt::Debug for KadrMcpServer {
 }
 
 impl KadrMcpServer {
-    /// A server running the tools of `toolbox`.
+    /// A server running the tools of `toolbox` on the project file only (file
+    /// mode), whether or not the app is open.
     pub fn new(toolbox: KadrToolbox) -> Self {
+        Self::with_relay(toolbox, AppRelay::file_mode_only())
+    }
+
+    /// A server passing calls to the app listening at `address` when it is
+    /// open, and running them with `toolbox` on the project file otherwise.
+    pub fn with_app_link(toolbox: KadrToolbox, address: LinkAddress) -> Self {
+        Self::with_relay(toolbox, AppRelay::to_app_at(address))
+    }
+
+    fn with_relay(toolbox: KadrToolbox, relay: AppRelay) -> Self {
         let tools = KadrToolbox::tool_definitions()
             .into_iter()
             .map(mcp_tool_from_definition)
             .collect();
         Self {
             toolbox: Arc::new(Mutex::new(toolbox)),
+            relay: Arc::new(Mutex::new(relay)),
             tools: Arc::new(tools),
         }
     }
@@ -128,10 +149,12 @@ impl KadrMcpServer {
     /// read files) and turns the answer into MCP content.
     async fn run_tool(&self, tool_name: String, arguments: Value) -> CallToolResult {
         let toolbox = Arc::clone(&self.toolbox);
+        let relay = Arc::clone(&self.relay);
         let name_for_log = tool_name.clone();
         let outcome = tokio::task::spawn_blocking(move || {
             let mut toolbox = toolbox.lock().unwrap_or_else(PoisonError::into_inner);
-            toolbox.call_tool(&tool_name, arguments)
+            let mut relay = relay.lock().unwrap_or_else(PoisonError::into_inner);
+            relay.run(&mut toolbox, &tool_name, arguments)
         })
         .await;
         match outcome {

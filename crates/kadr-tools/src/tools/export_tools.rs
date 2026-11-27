@@ -15,7 +15,7 @@ use crate::catalog::{ToolEffect, ToolEntry, declare_tool};
 use crate::export_tasks::{ExportTaskState, ExportTaskStatus};
 use crate::output::{ToolError, ToolOutput};
 use crate::time_input::seconds_in;
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::tools::common::with_extension;
 use crate::tools::picture_tools::ensure_project_media_readable;
 
@@ -118,7 +118,7 @@ struct ExportParameters {
 }
 
 fn export(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: ExportParameters,
 ) -> Result<ToolOutput, ToolError> {
     let project = toolbox.require_project()?;
@@ -317,7 +317,7 @@ fn round_to_tenths(value: f64) -> f64 {
 }
 
 fn get_export_status(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: GetExportStatusParameters,
 ) -> Result<ToolOutput, ToolError> {
     let export_tasks = toolbox.export_tasks();
@@ -357,7 +357,7 @@ struct CancelExportParameters {
 }
 
 fn cancel_export(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: CancelExportParameters,
 ) -> Result<ToolOutput, ToolError> {
     let status = toolbox.export_tasks().cancel(&parameters.task_id)?;

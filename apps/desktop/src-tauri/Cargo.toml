@@ -24,9 +24,11 @@ path = "src/main.rs"
 tauri-build.workspace = true
 
 [dependencies]
+kadr-app-link = { workspace = true, features = ["server"] }
 kadr-core.workspace = true
 kadr-engine.workspace = true
 kadr-media = { workspace = true, features = ["ffmpeg"] }
+kadr-tools.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true

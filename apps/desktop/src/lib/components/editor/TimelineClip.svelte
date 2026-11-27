@@ -10,6 +10,7 @@
   import { ticksToPixels } from "../../timeline/timelineGeometry";
   import Icon from "../../ui/Icon.svelte";
   import type { IconName } from "../../ui/icons";
+  import { claudeActivity } from "../../state/claude.svelte";
   import { editor } from "../../state/editor.svelte";
   import { playback } from "../../state/playback.svelte";
   import { formatTimecode } from "../../time/ticks";
@@ -96,6 +97,7 @@
   class="clip {clip.kind}"
   class:selected={isSelected}
   class:ghost={isGhost}
+  class:changed-by-claude={claudeActivity.highlightedClipIds.includes(clip.id)}
   style:left="{left}px"
   style:width="{width}px"
   role="button"
@@ -216,6 +218,29 @@
       0 0 0 2px var(--color-text),
       0 0 0 4px var(--color-accent);
     z-index: 1;
+  }
+  /* Just changed by Claude: an outline that fades, on top of the selection. */
+  .clip.changed-by-claude {
+    animation: changed-by-claude 2.5s var(--easing-standard);
+  }
+  @keyframes changed-by-claude {
+    0%,
+    60% {
+      box-shadow:
+        0 0 0 2px var(--color-text),
+        0 0 0 5px var(--color-success);
+    }
+    100% {
+      box-shadow: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .clip.changed-by-claude {
+      animation: none;
+      box-shadow:
+        0 0 0 2px var(--color-text),
+        0 0 0 5px var(--color-success);
+    }
   }
   .clip.ghost {
     opacity: 0.4;

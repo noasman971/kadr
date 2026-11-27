@@ -12,9 +12,11 @@
 //!                                              └─► kadr-engine (pictures, export, files)
 //! ```
 //!
-//! - [`KadrToolbox`]: the open project, the allowed folders, the background
-//!   exports and tracking analyses; [`KadrToolbox::call_tool`] runs a tool by
-//!   name.
+//! - [`KadrToolbox`]: the allowed folders, the background exports and tracking
+//!   analyses; [`KadrToolbox::call_tool`] runs a tool by name on the toolbox's
+//!   own project file, [`KadrToolbox::call_tool_on`] on another host's project.
+//! - [`ProjectHost`] and [`EditableProject`]: where the project lives, a `.kadr`
+//!   file ([`FileProjectHost`]) or the desktop app (decision record 0030).
 //! - [`ToolDefinition`]: name, description and JSON schema of a tool, from
 //!   [`KadrToolbox::tool_definitions`].
 //! - [`ToolOutput`]: text and pictures returned to Claude.
@@ -41,6 +43,7 @@ mod file_access;
 mod output;
 mod pictures_for_claude;
 mod project_file_session;
+mod project_host;
 mod time_input;
 mod toolbox;
 mod tools;
@@ -51,4 +54,5 @@ pub use file_access::AllowedFolders;
 pub use output::{ToolContent, ToolError, ToolOutput};
 pub use pictures_for_claude::MAXIMUM_PICTURE_SIDE_IN_PIXELS;
 pub use project_file_session::CLAUDE_UNDO_LABEL_PREFIX;
+pub use project_host::{EditableProject, FileProjectHost, ProjectHost, ToolSteps, run_tool_steps};
 pub use toolbox::KadrToolbox;

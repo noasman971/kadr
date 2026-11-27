@@ -298,6 +298,10 @@ Claude looks at the video through pictures Kadr sends back (a frame, or thumbnai
 across a clip), so it can check its own work. Every request it carries out is one
 step in the undo history. The project file is saved after every change.
 
+**With the Kadr app open**, Claude works on the project open in the app: you see each
+change at once, with a *"Claude a modifié le projet"* notice and Undo, in the same
+history as your own edits. With the app closed, Claude works on the project file.
+
 The list of tools and their rules is in [docs/mcp-server.md](docs/mcp-server.md).
 
 ---
@@ -313,6 +317,7 @@ crates/
   kadr-engine   single API used by every interface; background tasks
   kadr-tools    editing tools exposed to Claude
   kadr-mcp      local MCP server for Claude Desktop / Claude Code
+  kadr-app-link local pipe between kadr-mcp and the open desktop app
   kadr-cli      command-line binary for testing
 apps/
   desktop       desktop app: Svelte front end, Tauri back end (crate kadr-desktop)

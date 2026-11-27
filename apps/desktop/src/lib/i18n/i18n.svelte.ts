@@ -67,9 +67,16 @@ export function trackDisplayName(name: string): string {
 
 /** An undo label for display: keys sent by Kadr are translated, others kept. */
 export function undoStepDisplayName(label: string): string {
+  // Claude's steps keep the tools' English words after "Claude: ".
+  if (label.startsWith(CLAUDE_STEP_PREFIX)) {
+    return t("undo.byClaude", { step: label.slice(CLAUDE_STEP_PREFIX.length) });
+  }
   const key = `undo.${label}`;
   return isMessageKey(key) ? t(key) : label;
 }
+
+/** The prefix of the undo steps made by Claude (`kadr_tools::CLAUDE_UNDO_LABEL_PREFIX`). */
+const CLAUDE_STEP_PREFIX = "Claude: ";
 
 /** A file or clip name in the language's quotation marks. */
 export function quoted(text: string): string {

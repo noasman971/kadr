@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalog::{NoParameters, ToolEffect, ToolEntry, declare_tool};
 use crate::output::{ToolError, ToolOutput};
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::views::MediaView;
 
 /// The media tools.
@@ -215,7 +215,7 @@ fn imported_media_with_path(project: &Project, path: &Path) -> Option<MediaAsset
 }
 
 fn find_media_files(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: FindMediaFilesParameters,
 ) -> Result<ToolOutput, ToolError> {
     let folders = match &parameters.folder {
@@ -274,7 +274,7 @@ struct ProbeMediaParameters {
 }
 
 fn probe_media(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: ProbeMediaParameters,
 ) -> Result<ToolOutput, ToolError> {
     let file_path = toolbox
@@ -305,7 +305,7 @@ struct ImportMediaParameters {
 }
 
 fn import_media(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: ImportMediaParameters,
 ) -> Result<ToolOutput, ToolError> {
     if parameters.file_paths.is_empty() {
@@ -371,7 +371,7 @@ const LIST_MEDIA_DESCRIPTION: &str = "\
 Lists the media files imported in the open project, with their media_id, kind, duration, \
 picture size, whether they have sound, and the clips that use them.";
 
-fn list_media(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOutput, ToolError> {
+fn list_media(toolbox: &mut ToolCall<'_>, _: NoParameters) -> Result<ToolOutput, ToolError> {
     let project = toolbox.require_project()?;
     let views: Vec<MediaView> = project
         .media_assets()

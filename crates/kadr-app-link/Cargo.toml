@@ -1,0 +1,32 @@
+[package]
+name = "kadr-app-link"
+description = "Kadr's link between the MCP server and the open desktop app: a local pipe, one JSON message per line."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[features]
+# The app's side: an asynchronous server on the pipe (needs tokio).
+server = ["dep:tokio"]
+
+[dependencies]
+base64.workspace = true
+kadr-tools.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt", "sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros", "time"] }
+
+# The round trip needs the app's side.
+[[test]]
+name = "round_trip"
+required-features = ["server"]
+
+[lints]
+workspace = true

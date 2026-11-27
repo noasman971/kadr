@@ -15,6 +15,8 @@
 //! - [`media_workers`]: the threads owning decoders (preview, thumbnails);
 //! - [`binary_messages`]: the byte layouts of pictures and sound;
 //! - [`recent_projects`]: the home screen's list;
+//! - [`claude_link`]: Claude's tool calls, passed by `kadr-mcp` through a local
+//!   pipe and run on the open project, live (decision record 0030);
 //! - [`commands`]: the Tauri commands themselves.
 //!
 //! The engine crates never depend on this one: everything reusable (preview
@@ -24,6 +26,7 @@ pub mod app_state;
 pub mod binary_messages;
 pub mod blur_overlay;
 pub mod blur_results;
+pub mod claude_link;
 pub mod command_error;
 pub mod commands;
 pub mod editing;
@@ -61,6 +64,9 @@ pub fn run() -> Result<(), tauri::Error> {
             let configuration_folder = paths.app_config_dir()?;
             let projects_folder = paths.document_dir()?.join(PROJECTS_FOLDER_NAME);
             app.manage(AppState::new(configuration_folder, projects_folder)?);
+            // Claude reaches the window through a local pipe; phones have none.
+            #[cfg(desktop)]
+            claude_link::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -14,7 +14,8 @@ the reference: how the server works, every tool and its rules.
 ```mermaid
 flowchart LR
     claude[Claude Desktop / Claude Code] -- "MCP over stdin/stdout" --> mcp[kadr-mcp]
-    mcp --> toolbox[KadrToolbox<br/>kadr-tools]
+    mcp -- "app open: local pipe" --> app[Kadr app<br/>its KadrToolbox, its project]
+    mcp -- "app closed" --> toolbox[KadrToolbox<br/>kadr-tools]
     toolbox -- "one transaction per call" --> session[EditSession<br/>kadr-core]
     toolbox -- "pictures, export, files" --> engine[kadr-engine]
     session -- "saved after every change" --> file[(project.kadr)]
@@ -28,10 +29,38 @@ flowchart LR
 - **`kadr-mcp`** serves them with the official Rust SDK, `rmcp`, over stdio. Each
   call runs on a blocking thread, one at a time. Nothing but the protocol is
   written to stdout; logs go to stderr (`KADR_LOG=debug` for more).
-- **File mode** (phase 5): the server edits a `.kadr` file directly and saves it
-  after every successful change
-  ([decision 0012](decisions/0012-file-mode-saves-every-change.md)). Phase 7 will
-  connect it to the open desktop app instead.
+- **App mode** (phase 7): when the Kadr app is open, the server passes each call to
+  it through a local pipe and the app runs it on the project its window shows, live
+  ([decision 0030](decisions/0030-claude-edits-the-open-app-through-a-local-pipe.md),
+  see [When the app is open](#when-the-app-is-open)).
+- **File mode** (phase 5): when the app is closed, the server edits a `.kadr` file
+  directly and saves it after every successful change
+  ([decision 0012](decisions/0012-file-mode-saves-every-change.md)).
+
+## When the app is open
+
+Before every call, `kadr-mcp` tries the app's pipe (`\\.\pipe\kadr-app-<user>` on
+Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
+
+| The app… | The call |
+|---|---|
+| answers | runs in the app, on the project its window shows, in its undo history. The user sees each change at once, with *"Claude a modifié le projet : …"*, **Undo**, and the changed clips outlined |
+| is closed | runs here, on the project file. The first answer after the app closed says so, and the app's last project is reopened from its file |
+| is there but the exchange fails | is **not** run again here (it may have been applied in the app): Claude is told to check with `get_timeline` |
+
+- The first answer after the app appears starts with *"Note: the Kadr app is open…"*.
+- `open_project` and `create_project` open the project **in the app's window**.
+- **Undo is shared**: `undo` and `redo` only undo or redo Claude's own steps. When the
+  user changed something since, they refuse and say so, so Claude never undoes the
+  user's work (the user's Ctrl+Z undoes anything).
+- The allowed folders are still the server's `--allowed-folder` arguments; each call
+  carries them to the app.
+- Tools that only read run on a copy of the app's project (the window never waits for
+  a contact sheet); tools that change it hold the project for the call, so a gesture
+  and a call never interleave.
+- `blur_region` analyses run in the app, which adds them to its project as soon as
+  they end.
+- `KADR_APP_LINK_ADDRESS` names another pipe (tests, two apps while developing).
 
 ## Rules every tool follows
 
@@ -229,6 +258,8 @@ client over an in-memory pipe), as Claude Desktop would:
   `overwrite`, no deletion, a project changed by another program;
 - `export_task.rs`: export in the background, status until finished, scaled
   export, cancellation;
+- `app_relay.rs`: a fake app on its own pipe takes the calls, then disappears: the
+  next call says so and reopens the project from its file;
 - `blur.rs`: a blur on a synthetic scene with an obstacle (known true position):
   the analysis, the range to check, a correction with another style, undo, mistakes
   refused before anything runs, cancellation;
