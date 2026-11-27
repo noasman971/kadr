@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use kadr_core::animation::{Interpolation, Keyframe};
+use kadr_core::animation::{BezierCurve, BezierHandle, Interpolation, Keyframe};
 use kadr_core::clip::{AnimatableProperty, PlaybackSpeed};
 use kadr_core::color::Color;
 use kadr_core::commands::{
@@ -74,7 +74,8 @@ fn background_music() -> MediaAssetDescription {
 
 /// Builds a short vertical video the way a user (or Claude) would:
 /// two cuts of an interview, a speed-up, a blurred face, a fading title and music,
-/// then (with phase 8) transitions, a text animation, a colour LUT and subtitles.
+/// then (with phase 8) transitions, a text animation, a colour LUT, a title
+/// sliding in on eased keyframes and subtitles.
 fn edit_a_vertical_interview(session: &mut EditSession) {
     edit_a_vertical_interview_before_phase_8g(session);
     // Two subtitle cues on a track of their own, in white on a dark box.
@@ -89,12 +90,7 @@ fn edit_a_vertical_interview(session: &mut EditSession) {
             subtitle_track_id,
             vec![
                 cue(1_000, 3_500, "So, how did it start?"),
-                cue(
-                    3_500,
-                    6_000,
-                    "<i>Honestly?</i>
-By accident.",
-                ),
+                cue(3_500, 6_000, "<i>Honestly?</i>\nBy accident."),
             ],
         ))
         .unwrap();
@@ -107,8 +103,55 @@ By accident.",
         .unwrap();
 }
 
-/// The same edit as it was possible before phase 8g (format 3).
+/// The same edit as it was possible before phase 8g (format 4): the title
+/// slides in on eased keyframes.
 fn edit_a_vertical_interview_before_phase_8g(session: &mut EditSession) {
+    edit_a_vertical_interview_before_phase_8e(session);
+    // The title slides in from the left, slowing down as it arrives, and grows
+    // slightly along a hand-drawn curve: one undo step.
+    let title_clip_id = session.project().timeline().tracks()[1].clips()[0].id;
+    let keyframe = |at_milliseconds, value, interpolation_to_next| Keyframe {
+        time_offset: TimeSpan::from_milliseconds(at_milliseconds),
+        value,
+        interpolation_to_next,
+    };
+    let grow_curve = Interpolation::CubicBezier(BezierCurve {
+        start_handle: BezierHandle {
+            time_fraction: 0.25,
+            progress_fraction: 0.0,
+        },
+        end_handle: BezierHandle {
+            time_fraction: 0.5,
+            progress_fraction: 1.0,
+        },
+    });
+    let slide_in: Vec<Box<dyn EditCommand>> = vec![
+        Box::new(SetKeyframe::new(
+            title_clip_id,
+            AnimatableProperty::PositionX,
+            keyframe(0, -600.0, Interpolation::EaseOut),
+        )),
+        Box::new(SetKeyframe::new(
+            title_clip_id,
+            AnimatableProperty::PositionX,
+            keyframe(800, 0.0, Interpolation::Linear),
+        )),
+        Box::new(SetKeyframe::new(
+            title_clip_id,
+            AnimatableProperty::Scale,
+            keyframe(0, 0.9, grow_curve),
+        )),
+        Box::new(SetKeyframe::new(
+            title_clip_id,
+            AnimatableProperty::Scale,
+            keyframe(1_000, 1.0, Interpolation::Linear),
+        )),
+    ];
+    session.execute_all("Slide the title in", slide_in).unwrap();
+}
+
+/// The same edit as it was possible before phase 8e (format 3).
+fn edit_a_vertical_interview_before_phase_8e(session: &mut EditSession) {
     edit_a_vertical_interview_before_phase_8c(session);
     // The second part of the interview gets a teal-and-orange look, at 80 %. The
     // path is written with forward slashes so the snapshot is the same on every
@@ -381,9 +424,9 @@ fn a_full_edit_can_be_undone_and_redone_step_by_step() {
     assert_eq!(session.project(), &empty_project);
     // 2 imports, 3 tracks, 1 clip, 2 splits, 1 removal, 1 move, 1 speed change,
     // 3 effect changes, 1 grouped title (with its 2 keyframes), 1 music clip, 1 volume,
-    // 3 transitions, 1 text animation, 1 colour LUT, 1 subtitle track, its 2 cues
-    // (one step) and its style.
-    assert_eq!(undone_step_count, 25);
+    // 3 transitions, 1 text animation, 1 colour LUT, 1 grouped slide-in (4 keyframes),
+    // 1 subtitle track, its 2 cues (one step) and its style.
+    assert_eq!(undone_step_count, 26);
 
     while session.can_redo() {
         session.redo().unwrap();
@@ -451,6 +494,41 @@ fn a_format_1_file_is_upgraded_to_the_same_project() {
 }
 
 #[test]
+fn a_format_3_file_is_upgraded_to_the_same_project() {
+    let mut session =
+        EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+    edit_a_vertical_interview_before_phase_8e(&mut session);
+
+    // The snapshot of this edit saved before phase 8e changed the format.
+    let format_3_file = include_str!("fixtures/vertical_interview_format_3.kadr");
+    assert!(format_3_file.contains("\"format_version\": 3"));
+    assert_eq!(
+        &load_project_from_json(format_3_file).unwrap(),
+        session.project()
+    );
+}
+
+#[test]
+fn the_title_slides_in_on_eased_keyframes() {
+    let mut session =
+        EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+    edit_a_vertical_interview(&mut session);
+    let title_clip = &session.project().timeline().tracks()[1].clips()[0];
+    let position_x = &title_clip.transform.position_x_in_pixels;
+
+    // Ease out: past the middle of the distance at the middle of the time.
+    let halfway = position_x.value_at(TimeSpan::from_milliseconds(400));
+    assert_eq!(halfway, -150.0);
+    assert_eq!(position_x.value_at(TimeSpan::from_whole_seconds(2)), 0.0);
+    let scale = &title_clip.transform.scale_factor;
+    let scale_at_middle = scale.value_at(TimeSpan::from_milliseconds(500));
+    assert!(
+        scale_at_middle > 0.95 && scale_at_middle < 1.0,
+        "{scale_at_middle}"
+    );
+}
+
+#[test]
 fn a_format_2_file_is_upgraded_to_the_same_project() {
     let mut session =
         EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
@@ -466,16 +544,16 @@ fn a_format_2_file_is_upgraded_to_the_same_project() {
 }
 
 #[test]
-fn a_format_3_file_is_upgraded_to_the_same_project() {
+fn a_format_4_file_is_upgraded_to_the_same_project() {
     let mut session =
         EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
     edit_a_vertical_interview_before_phase_8g(&mut session);
 
     // The snapshot of this edit saved before phase 8g changed the format.
-    let format_3_file = include_str!("fixtures/vertical_interview_format_3.kadr");
-    assert!(format_3_file.contains("\"format_version\": 3"));
+    let format_4_file = include_str!("fixtures/vertical_interview_format_4.kadr");
+    assert!(format_4_file.contains("\"format_version\": 4"));
     assert_eq!(
-        &load_project_from_json(format_3_file).unwrap(),
+        &load_project_from_json(format_4_file).unwrap(),
         session.project()
     );
 }

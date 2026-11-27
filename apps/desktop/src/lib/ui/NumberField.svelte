@@ -2,7 +2,8 @@
   A number setting (docs/ux.md, "Adjust a clip"): type a value, use ↑ / ↓ (Shift
   for bigger steps), or drag sideways on the label. Each finished gesture (Enter,
   leaving the field, one arrow press, releasing the drag) calls `onCommit` once:
-  one undo step. A value animated with keyframes is shown, not edited.
+  one undo step. An animated value shows the value at the playhead, marked as
+  animated; a disabled field shows its value without taking changes.
 -->
 <script lang="ts">
   import { t, translations } from "../i18n/i18n.svelte";
@@ -17,13 +18,27 @@
     min?: number;
     max?: number;
     decimals?: number;
-    /** Keyframes on this value: it cannot be set to a single value here yet. */
-    keyframeCount?: number;
+    /** The value changes over time (keyframes): the field shows it at the playhead. */
+    isAnimated?: boolean;
+    /** Shown, not changed; `disabledReason` is the tooltip that says why. */
+    disabled?: boolean;
+    disabledReason?: string;
     onCommit: (value: number) => void;
   }
 
-  let { label, value, unit = "", step = 1, min = -Infinity, max = Infinity, decimals = 0, keyframeCount = 0, onCommit }: Props =
-    $props();
+  let {
+    label,
+    value,
+    unit = "",
+    step = 1,
+    min = -Infinity,
+    max = Infinity,
+    decimals = 0,
+    isAnimated = false,
+    disabled = false,
+    disabledReason,
+    onCommit,
+  }: Props = $props();
 
   /** Pixels of drag per step. */
   const PIXELS_PER_STEP = 3;
@@ -61,6 +76,9 @@
   }
 
   function startEditing(): void {
+    if (disabled) {
+      return;
+    }
     isEditing = true;
     valueAtFocus = value;
   }
@@ -79,6 +97,11 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    if (disabled) {
+      // Keys typed here are still not editor shortcuts.
+      event.stopPropagation();
+      return;
+    }
     if (event.key === "Enter") {
       (event.currentTarget as HTMLInputElement).blur();
     } else if (event.key === "Escape") {
@@ -100,7 +123,7 @@
   }
 
   function startDrag(event: PointerEvent): void {
-    if (event.button !== 0 || keyframeCount > 0) {
+    if (event.button !== 0 || disabled) {
       return;
     }
     const startX = event.clientX;
@@ -124,26 +147,23 @@
   }
 </script>
 
-<div class="number-field">
+<div class="number-field" title={disabled ? disabledReason : undefined}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <span class="label" class:draggable={keyframeCount === 0} onpointerdown={startDrag} title={label}>{label}</span>
-  {#if keyframeCount > 0}
-    <span class="animated">{t("inspector.animated", { count: keyframeCount })}</span>
-  {:else}
-    <span class="input">
-      <input
-        type="text"
-        inputmode="decimal"
-        aria-label={label}
-        bind:value={text}
-        onfocus={startEditing}
-        onblur={commitText}
-        onkeydown={handleKeydown}
-        spellcheck="false"
-      />
-      {#if unit}<span class="unit">{unit}</span>{/if}
-    </span>
-  {/if}
+  <span class="label" class:draggable={!disabled} onpointerdown={startDrag} title={disabled ? disabledReason : label}>{label}</span>
+  <span class="input" class:animated={isAnimated} class:disabled>
+    <input
+      type="text"
+      inputmode="decimal"
+      aria-label={isAnimated ? t("keyframes.animatedFieldLabel", { name: label }) : label}
+      bind:value={text}
+      readonly={disabled}
+      onfocus={startEditing}
+      onblur={commitText}
+      onkeydown={handleKeydown}
+      spellcheck="false"
+    />
+    {#if unit}<span class="unit">{unit}</span>{/if}
+  </span>
 </div>
 
 <style>
@@ -189,9 +209,16 @@
     padding-right: 6px;
     color: var(--color-text-muted);
   }
-  .animated {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-xs);
-    text-align: right;
+  /* Animated: the value is the one at the playhead; never colour alone, the
+     keyframe button next to the label says it too. */
+  .input.animated {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+  .input.disabled {
+    opacity: 0.6;
+  }
+  .input.disabled input {
+    cursor: not-allowed;
   }
 </style>

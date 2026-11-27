@@ -145,6 +145,33 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   image.
 - Decision record 0052.
 
+### Added (phase 8e: editable keyframes with curves)
+
+- `kadr-core`: keyframe curves `EaseIn` (p²), `EaseOut` (1 − (1 − p)²) and
+  `CubicBezier`, a CSS-like timing curve.
+  - The rules keep its handles from 0 to 1, so every value stays between its two
+    keyframes.
+  - File format 4, with a migration from 3 that changes nothing.
+  - `MoveKeyframe` moves a keyframe in time, keeping its value and curve.
+  - `RemoveKeyframe::keeping_the_value_when_last` keeps the last keyframe's value.
+  - `AnimatedValue::interpolation_in_effect_at` and `Interpolation::as_bezier_curve`.
+- Desktop app: position, scale, rotation, opacity and volume can be animated by
+  mouse in the inspector.
+  - A diamond adds or removes a keyframe at the playhead, and the field shows and
+    sets the value at the playhead.
+  - A lane per animated value: click to go to a keyframe, drag to move it (snapped
+    to frames), ← / → and Delete from the keyboard; previous / next keyframe.
+  - The *Curve* menu (linear, ease in, ease out, ease in and out, hold, custom
+    curve) and a small curve editor with two handles.
+  - The timeline shows a clip's keyframes as diamonds: click to go there, drag to
+    move every keyframe at that moment.
+  - Each gesture is one undo step, and the preview is drawn by the engine, as the
+    export is.
+- Claude's tool `set_keyframes` sets one property's keyframes with their curves, in
+  canvas coordinates. `get_clip` now shows animated positions in canvas coordinates
+  too (they were shown from the canvas centre), with each keyframe's `curve`.
+- Decision record 0054.
+
 ### Added (phase 8g: subtitles, SRT import and editing)
 
 - `kadr-core`: subtitle tracks (`TrackKind::Subtitle`) whose cues
@@ -154,7 +181,7 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   - sized from the canvas: a vertical canvas keeps them a quarter of the height
     above the bottom, clear of TikTok's, Reels' and Shorts' buttons.
   
-  Cue texts keep `<i>`, `<b>` and line breaks. File format 4, with a migration from 3.
+  Cue texts keep `<i>`, `<b>` and line breaks. File format 5, with a migration from 4.
 - `kadr-core::srt` reads `.srt` files forgivingly:
   - a byte-order mark, Windows or old Mac line endings, `,` or `.` milliseconds;
   - multi-line cues, numbering gaps, cues out of order or overlapping;

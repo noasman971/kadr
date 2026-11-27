@@ -4,40 +4,204 @@
 //! [`Keyframe`]s. Keyframe times are measured **from the start of the clip**, so
 //! moving a clip on the timeline moves its animation with it.
 //!
-//! Between two keyframes, the value is interpolated according to the first
-//! keyframe's [`Interpolation`]. Before the first keyframe the value is the first
-//! keyframe's value; after the last one, the last keyframe's value.
+//! Between two keyframes, the value follows the first keyframe's
+//! [`Interpolation`]: a straight line, an eased curve, a hold, or a cubic Bézier
+//! curve ([`BezierCurve`]). Before the first keyframe the value is the first
+//! keyframe's value; after the last one, the last keyframe's value. Every curve
+//! stays between the values of its two keyframes, so the rules on keyframe values
+//! cover every moment of the animation.
 
 use serde::{Deserialize, Serialize};
 
 use crate::time::TimeSpan;
 
 /// How the value travels from one keyframe to the next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+///
+/// Saved as `"linear"`, `"ease_in"`, `"ease_out"`, `"ease_in_out"`, `"hold"`, or
+/// `{"cubic_bezier": {…}}`.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Interpolation {
     /// Straight line, constant speed.
     #[default]
     Linear,
-    /// Starts slowly, speeds up, slows down before the next keyframe.
+    /// Starts slowly and speeds up until the next keyframe (p²).
+    EaseIn,
+    /// Starts fast and slows down before the next keyframe (1 − (1 − p)²).
+    EaseOut,
+    /// Starts slowly, speeds up, slows down before the next keyframe (smoothstep,
+    /// 3p² − 2p³).
     EaseInOut,
     /// Keeps the value, then jumps to the next keyframe's value.
     Hold,
+    /// A curve shaped by two handles, like CSS `cubic-bezier()`.
+    CubicBezier(BezierCurve),
 }
 
 impl Interpolation {
+    /// The same curve as a cubic Bézier curve, or `None` for [`Interpolation::Hold`]
+    /// (a jump is not a curve).
+    ///
+    /// The presets are cubic Bézier curves whose handles sit at a third and two
+    /// thirds of the time, so a curve editor can start from them without changing
+    /// the animation.
+    pub fn as_bezier_curve(self) -> Option<BezierCurve> {
+        let curve = |start_progress, end_progress| {
+            Some(BezierCurve {
+                start_handle: BezierHandle {
+                    time_fraction: ONE_THIRD,
+                    progress_fraction: start_progress,
+                },
+                end_handle: BezierHandle {
+                    time_fraction: TWO_THIRDS,
+                    progress_fraction: end_progress,
+                },
+            })
+        };
+        match self {
+            Interpolation::Linear => curve(ONE_THIRD, TWO_THIRDS),
+            Interpolation::EaseIn => curve(0.0, ONE_THIRD),
+            Interpolation::EaseOut => curve(TWO_THIRDS, 1.0),
+            Interpolation::EaseInOut => curve(0.0, 1.0),
+            Interpolation::Hold => None,
+            Interpolation::CubicBezier(curve) => Some(curve),
+        }
+    }
+
     /// Maps the elapsed proportion between two keyframes (0 to 1) to the
     /// proportion of the value change already done (0 to 1).
     fn apply_to_progress(self, linear_progress: f64) -> f64 {
-        match self {
-            Interpolation::Linear => linear_progress,
-            // Smoothstep: 3p² − 2p³, flat at both ends.
-            Interpolation::EaseInOut => {
-                linear_progress * linear_progress * (3.0 - 2.0 * linear_progress)
-            }
+        let progress = linear_progress.clamp(0.0, 1.0);
+        let eased_progress = match self {
+            Interpolation::Linear => progress,
+            Interpolation::EaseIn => progress * progress,
+            Interpolation::EaseOut => 1.0 - (1.0 - progress) * (1.0 - progress),
+            Interpolation::EaseInOut => progress * progress * (3.0 - 2.0 * progress),
             Interpolation::Hold => 0.0,
+            Interpolation::CubicBezier(curve) => curve.progress_at(progress),
+        };
+        eased_progress.clamp(0.0, 1.0)
+    }
+}
+
+const ONE_THIRD: f32 = 1.0 / 3.0;
+const TWO_THIRDS: f32 = 2.0 / 3.0;
+
+/// One handle of a [`BezierCurve`], as fractions of the stretch between two
+/// keyframes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BezierHandle {
+    /// Along the time between the two keyframes: 0 at the first, 1 at the next.
+    pub time_fraction: f32,
+    /// Along the value change between them: 0 at the first keyframe's value, 1 at
+    /// the next one's.
+    pub progress_fraction: f32,
+}
+
+impl BezierHandle {
+    /// Whether both fractions are finite numbers from 0 to 1, as the project
+    /// rules require.
+    pub fn is_inside_the_unit_square(self) -> bool {
+        [self.time_fraction, self.progress_fraction]
+            .into_iter()
+            .all(|fraction| fraction.is_finite() && (0.0..=1.0).contains(&fraction))
+    }
+}
+
+/// A cubic Bézier timing curve between two keyframes, like CSS
+/// `cubic-bezier(x1, y1, x2, y2)`.
+///
+/// It is drawn in a unit square: time goes from 0 (this keyframe) to 1 (the next
+/// one) along x, and the value change done so far from 0 to 1 along y. The curve
+/// starts at (0, 0), ends at (1, 1), and leans towards its two handles.
+///
+/// The project rules keep every handle coordinate from 0 to 1 (see
+/// [`BezierHandle::is_inside_the_unit_square`]). Then the curve never goes back in
+/// time, and the value always stays between the values of the two keyframes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BezierCurve {
+    /// The handle leaving this keyframe (x1, y1).
+    pub start_handle: BezierHandle,
+    /// The handle arriving at the next keyframe (x2, y2).
+    pub end_handle: BezierHandle,
+}
+
+/// How close the curve's x must come to the asked time.
+const BEZIER_TIME_TOLERANCE: f64 = 1e-9;
+/// Newton's method usually settles in two to four steps.
+const BEZIER_NEWTON_STEPS: usize = 8;
+/// Bisection, when Newton's method does not settle (flat stretches of x).
+const BEZIER_BISECTION_STEPS: usize = 64;
+
+impl BezierCurve {
+    /// Whether both handles are inside the unit square, as the project rules
+    /// require.
+    pub fn has_handles_inside_the_unit_square(self) -> bool {
+        self.start_handle.is_inside_the_unit_square() && self.end_handle.is_inside_the_unit_square()
+    }
+
+    /// The proportion of the value change done when `time_progress` (0 to 1) of
+    /// the time between the keyframes has passed.
+    ///
+    /// Finds the curve parameter whose x is `time_progress` (Newton's method, then
+    /// bisection if it does not settle), and returns its y. The preview and the
+    /// export run these same steps, so both show the same value.
+    pub fn progress_at(self, time_progress: f64) -> f64 {
+        let x1 = f64::from(self.start_handle.time_fraction);
+        let x2 = f64::from(self.end_handle.time_fraction);
+        let y1 = f64::from(self.start_handle.progress_fraction);
+        let y2 = f64::from(self.end_handle.progress_fraction);
+        let parameter = curve_parameter_at(x1, x2, time_progress.clamp(0.0, 1.0));
+        cubic_bezier_coordinate(y1, y2, parameter)
+    }
+}
+
+/// One coordinate of a cubic Bézier curve going from 0 to 1, whose two middle
+/// control points have the coordinates `first` and `second`, at parameter `t`.
+fn cubic_bezier_coordinate(first: f64, second: f64, t: f64) -> f64 {
+    let rest = 1.0 - t;
+    3.0 * rest * rest * t * first + 3.0 * rest * t * t * second + t * t * t
+}
+
+/// The derivative of [`cubic_bezier_coordinate`] with respect to `t`.
+fn cubic_bezier_slope(first: f64, second: f64, t: f64) -> f64 {
+    let rest = 1.0 - t;
+    3.0 * rest * rest * first + 6.0 * rest * t * (second - first) + 3.0 * t * t * (1.0 - second)
+}
+
+/// The parameter where the curve's x is `target`. With both x controls from 0 to
+/// 1, x never decreases, so bisection always finds it.
+fn curve_parameter_at(x1: f64, x2: f64, target: f64) -> f64 {
+    let mut parameter = target;
+    for _ in 0..BEZIER_NEWTON_STEPS {
+        let error = cubic_bezier_coordinate(x1, x2, parameter) - target;
+        if error.abs() < BEZIER_TIME_TOLERANCE {
+            return parameter;
+        }
+        let slope = cubic_bezier_slope(x1, x2, parameter);
+        if slope.abs() < BEZIER_TIME_TOLERANCE {
+            break;
+        }
+        parameter -= error / slope;
+        if !(0.0..=1.0).contains(&parameter) {
+            break;
         }
     }
+    let (mut low, mut high) = (0.0_f64, 1.0_f64);
+    parameter = target;
+    for _ in 0..BEZIER_BISECTION_STEPS {
+        let error = cubic_bezier_coordinate(x1, x2, parameter) - target;
+        if error.abs() < BEZIER_TIME_TOLERANCE {
+            break;
+        }
+        if error < 0.0 {
+            low = parameter;
+        } else {
+            high = parameter;
+        }
+        parameter = (low + high) / 2.0;
+    }
+    parameter
 }
 
 /// A value fixed at a given moment of a clip.
@@ -146,8 +310,9 @@ impl AnimatedValue {
     ///
     /// The first part ends with a keyframe holding the value at the cut, and the
     /// second part starts with one. With linear and hold interpolation the result
-    /// is exactly the original animation. With ease-in-out, the segment containing
-    /// the cut is eased again over each shorter half, so it changes slightly.
+    /// is exactly the original animation. With the eased and Bézier curves, the
+    /// stretch containing the cut follows the same curve again over each shorter
+    /// part, so it changes slightly.
     pub fn split_at(&self, split_offset: TimeSpan) -> (AnimatedValue, AnimatedValue) {
         if !self.is_animated() {
             return (self.clone(), self.clone());
@@ -224,8 +389,12 @@ impl AnimatedValue {
         }
     }
 
-    /// The interpolation of the segment containing `time_offset`.
-    fn interpolation_in_effect_at(&self, time_offset: TimeSpan) -> Interpolation {
+    /// The interpolation of the stretch containing `time_offset`: the one of the
+    /// last keyframe at or before it, or of the first keyframe before the
+    /// animation starts. Linear when there are no keyframes. A keyframe added in
+    /// the middle of a stretch takes it, so both halves keep the same kind of
+    /// curve.
+    pub fn interpolation_in_effect_at(&self, time_offset: TimeSpan) -> Interpolation {
         self.keyframes
             .iter()
             .rev()
@@ -374,5 +543,160 @@ mod tests {
         let extended = fade.after_extending_start(seconds(5));
         assert_eq!(extended.keyframes()[0].time_offset, seconds(7));
         assert_eq!(extended.value_at(seconds(8)), fade.value_at(seconds(3)));
+    }
+
+    /// From 0 at 0 s to 100 at 10 s with `interpolation`.
+    fn ramp(interpolation: Interpolation) -> AnimatedValue {
+        let mut ramp = AnimatedValue::constant(0.0);
+        ramp.set_keyframe(keyframe(0, 0.0, interpolation));
+        ramp.set_keyframe(keyframe(10, 100.0, Interpolation::Linear));
+        ramp
+    }
+
+    fn bezier(x1: f32, y1: f32, x2: f32, y2: f32) -> Interpolation {
+        Interpolation::CubicBezier(BezierCurve {
+            start_handle: BezierHandle {
+                time_fraction: x1,
+                progress_fraction: y1,
+            },
+            end_handle: BezierHandle {
+                time_fraction: x2,
+                progress_fraction: y2,
+            },
+        })
+    }
+
+    #[test]
+    fn ease_in_starts_slowly_and_ease_out_ends_slowly() {
+        let ease_in = ramp(Interpolation::EaseIn);
+        assert_eq!(ease_in.value_at(seconds(5)), 25.0);
+        assert!(ease_in.value_at(seconds(1)) < 2.0, "slow start");
+
+        let ease_out = ramp(Interpolation::EaseOut);
+        assert_eq!(ease_out.value_at(seconds(5)), 75.0);
+        assert!(ease_out.value_at(seconds(9)) > 98.0, "slow end");
+    }
+
+    #[test]
+    fn every_curve_starts_and_ends_on_its_keyframes() {
+        for interpolation in [
+            Interpolation::Linear,
+            Interpolation::EaseIn,
+            Interpolation::EaseOut,
+            Interpolation::EaseInOut,
+            bezier(0.9, 0.0, 0.1, 1.0),
+            bezier(0.0, 1.0, 1.0, 0.0),
+        ] {
+            let animation = ramp(interpolation);
+            assert_eq!(animation.value_at(seconds(0)), 0.0, "{interpolation:?}");
+            assert_eq!(animation.value_at(seconds(10)), 100.0, "{interpolation:?}");
+        }
+    }
+
+    #[test]
+    fn the_presets_are_the_same_as_their_bezier_curves() {
+        for preset in [
+            Interpolation::Linear,
+            Interpolation::EaseIn,
+            Interpolation::EaseOut,
+            Interpolation::EaseInOut,
+        ] {
+            let curve = preset.as_bezier_curve().unwrap();
+            assert!(curve.has_handles_inside_the_unit_square());
+            let as_preset = ramp(preset);
+            let as_curve = ramp(Interpolation::CubicBezier(curve));
+            for millisecond in (0..=10_000).step_by(250) {
+                let offset = TimeSpan::from_milliseconds(millisecond);
+                let difference = (as_preset.value_at(offset) - as_curve.value_at(offset)).abs();
+                assert!(
+                    difference < 1e-3,
+                    "{preset:?} at {millisecond} ms: {difference}"
+                );
+            }
+        }
+        assert_eq!(Interpolation::Hold.as_bezier_curve(), None);
+    }
+
+    #[test]
+    fn a_bezier_curve_follows_its_handles() {
+        // CSS "ease-out": quick at first, then slow.
+        let css_ease_out = ramp(bezier(0.0, 0.0, 0.58, 1.0));
+        let at_quarter = css_ease_out.value_at(TimeSpan::from_milliseconds(2_500));
+        // Solved by hand: x(t) = 0.25 at t ≈ 0.41803, where y ≈ 0.37810.
+        assert!((at_quarter - 37.81).abs() < 0.01, "{at_quarter}");
+        // Values only go up, and stay between the keyframes' values.
+        let mut previous = 0.0;
+        for millisecond in (0..=10_000).step_by(100) {
+            let value = css_ease_out.value_at(TimeSpan::from_milliseconds(millisecond));
+            assert!(
+                value >= previous && value <= 100.0,
+                "{value} at {millisecond} ms"
+            );
+            previous = value;
+        }
+    }
+
+    #[test]
+    fn a_bezier_curve_with_vertical_stretches_is_still_solved() {
+        // Both handles on the left edge: x is nearly flat at the start, where
+        // Newton's method has no slope to follow.
+        let steep = BezierCurve {
+            start_handle: BezierHandle {
+                time_fraction: 0.0,
+                progress_fraction: 1.0,
+            },
+            end_handle: BezierHandle {
+                time_fraction: 0.0,
+                progress_fraction: 1.0,
+            },
+        };
+        for step in 0..=100 {
+            let time_progress = f64::from(step) / 100.0;
+            let progress = steep.progress_at(time_progress);
+            assert!((0.0..=1.0).contains(&progress), "{progress}");
+        }
+        assert!(steep.progress_at(0.01) > 0.5, "a fast start");
+    }
+
+    #[test]
+    fn handles_outside_the_unit_square_are_detected() {
+        let Interpolation::CubicBezier(mut curve) = bezier(0.2, 0.0, 0.8, 1.0) else {
+            unreachable!()
+        };
+        assert!(curve.has_handles_inside_the_unit_square());
+        curve.end_handle.progress_fraction = 1.5;
+        assert!(!curve.has_handles_inside_the_unit_square());
+        curve.end_handle.progress_fraction = f32::NAN;
+        assert!(!curve.has_handles_inside_the_unit_square());
+    }
+
+    #[test]
+    fn curves_are_saved_with_readable_names() {
+        let saved = |interpolation| serde_json::to_string(&interpolation).unwrap();
+        assert_eq!(saved(Interpolation::EaseIn), "\"ease_in\"");
+        assert_eq!(saved(Interpolation::EaseInOut), "\"ease_in_out\"");
+        assert_eq!(
+            saved(bezier(0.25, 0.0, 0.75, 1.0)),
+            "{\"cubic_bezier\":{\"start_handle\":{\"time_fraction\":0.25,\"progress_fraction\":0.0},\
+             \"end_handle\":{\"time_fraction\":0.75,\"progress_fraction\":1.0}}}"
+        );
+    }
+
+    #[test]
+    fn a_keyframe_in_the_middle_takes_the_curve_of_its_stretch() {
+        let mut animation = ramp(Interpolation::EaseOut);
+        animation.set_keyframe(keyframe(10, 100.0, Interpolation::Hold));
+        assert_eq!(
+            animation.interpolation_in_effect_at(seconds(4)),
+            Interpolation::EaseOut
+        );
+        assert_eq!(
+            animation.interpolation_in_effect_at(seconds(12)),
+            Interpolation::Hold
+        );
+        assert_eq!(
+            AnimatedValue::constant(1.0).interpolation_in_effect_at(seconds(1)),
+            Interpolation::Linear
+        );
     }
 }

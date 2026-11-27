@@ -222,8 +222,10 @@ top-left corner, x to the right, y down: the canvas centre of a 1080×1920 proje
 960). center_x/center_y place the clip's centre. scale 1 makes the picture fit entirely inside \
 the canvas; \"fit\": \"fill_canvas\" computes the scale that covers the whole canvas (cutting \
 the edges), for example a landscape video in a vertical project. Crop values remove a fraction \
-(0 to 1) of the source picture from each edge. Omitted values are unchanged. Check the result \
-with get_frame (without clip_id).
+(0 to 1) of the source picture from each edge. Omitted values are unchanged. A position, scale \
+or rotation animated with keyframes (null in get_clip's transform) is changed with \
+set_keyframes instead; an animated opacity is scaled, keeping its shape. Check the result with \
+get_frame (without clip_id).
 
 Examples: {\"clip_id\": 3, \"fit\": \"fill_canvas\"}; picture-in-picture in the top-right corner \
 of a 1920×1080 canvas: {\"clip_id\": 8, \"scale\": 0.3, \"center_x_in_pixels\": 1600, \

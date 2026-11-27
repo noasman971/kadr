@@ -90,10 +90,27 @@ exact fractions too (1.5× is stored as 3/2).
 An `AnimatedValue` is either a constant or a curve defined by `Keyframe`s. Keyframe
 times are measured **from the start of the clip**, so moving a clip moves its
 animation. Between two keyframes the value follows the first keyframe's
-interpolation: linear, ease-in-out, or hold.
+`Interpolation` (decision record 0054):
 
+| Curve | Shape (p: share of the time between the keyframes) |
+|---|---|
+| `Linear` | p |
+| `EaseIn` | p²: starts slowly |
+| `EaseOut` | 1 − (1 − p)²: slows down as it arrives |
+| `EaseInOut` | 3p² − 2p³ (smoothstep) |
+| `Hold` | keeps the value, then jumps to the next one |
+| `CubicBezier` | a curve shaped by two handles, as CSS `cubic-bezier(x1, y1, x2, y2)` |
+
+- A Bézier curve's handles (`BezierHandle { time_fraction, progress_fraction }`) are
+  from 0 to 1 on both axes: the curve never goes back in time, and **every value
+  stays between its two keyframes**, so the rule on keyframe values covers every
+  moment. Its value is found by Newton's method, then bisection, in `f64`; preview
+  and export both call `AnimatedValue::value_at`.
+- `Interpolation::as_bezier_curve` gives the Bézier shape of each preset (handles at
+  ⅓ and ⅔), so a curve editor can start from it without changing anything.
 - Splitting a clip splits its animations: each part gets a keyframe at the cut, so
-  linear and hold animations look exactly the same afterwards.
+  linear and hold animations look exactly the same afterwards; an eased or Bézier
+  stretch containing the cut follows the same curve again over each shorter part.
 - Trimming the start shifts the keyframes so the animation stays aligned with the
   picture.
 - Changing the speed keeps keyframes where they are on the timeline.
@@ -127,7 +144,7 @@ a small struct implementing `EditCommand`:
 | Tracks | `AddTrack`, `RemoveTrack`, `SetTrackMuted`, `SetTrackHidden` |
 | Clips | `AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `RemoveClipParts` (cut ranges out and close the gaps on the clip's track and on the subtitle tracks: silence removal), `SetClipSpeed`, `SetClipPropertyValue`, `SetClipCrop`, `SetClipText` |
 | Subtitles | `AddSubtitleCues`, `SetSubtitleStyle`, `SetSubtitleCueText`, `SetSubtitleCueTiming`, `MergeSubtitleCues`, `RemoveTimeFromSubtitleTracks` (cues follow the timeline; `SplitClip` shares a cue's words) |
-| Keyframes | `SetKeyframe`, `RemoveKeyframe` |
+| Keyframes | `SetKeyframe` (add, or replace the one at that moment), `MoveKeyframe` (keeps its value and curve; may pass others, never lands on one), `RemoveKeyframe` (`.keeping_the_value_when_last()` keeps the last keyframe's value instead of the value from before the animation) |
 | Effects | `AddEffect`, `RemoveEffect`, `ReplaceEffect`, `SetEffectEnabled` |
 | Transitions | `SetClipTransition`, `SetTextAnimation` |
 
@@ -167,7 +184,7 @@ command and on every loaded file.
   margin (0–8192), outline width (0.1–100) and widest line (20–100 % of the canvas)
   are in range.
 - Properties: inside their ranges (opacity 0–1, volume 0–4, scale 0.01–100…),
-  keyframes in strictly increasing time order.
+  keyframes in strictly increasing time order, Bézier handles from 0 to 1.
 - Crop: each edge from 0 to below 1, opposite edges not removing the whole picture.
 - Effects: picture effects only on clips with a picture, tracked blur only on media
   clips, settings in range, region samples sorted and well formed.
@@ -181,7 +198,7 @@ A `.kadr` file is indented JSON:
 
 ```json
 {
-  "format_version": 4,
+  "format_version": 5,
   "project": {
     "settings": { "canvas_size": { "width_in_pixels": 1080, "height_in_pixels": 1920 }, … },
     "media_assets": [ … ],
@@ -204,11 +221,12 @@ is kept as a snapshot test in
   | 1 | First format (phase 1) |
   | 2 | `entry_transition` and `exit_transition` on clips, `entry_animation` and `exit_animation` on texts (phase 8) |
   | 3 | The `color_lut` effect (phase 8c). Nothing to convert: the new number makes an older Kadr say "newer version" instead of "damaged file" |
-  | 4 | Subtitle tracks (`"kind": "subtitle"`) with their `subtitle_style`, subtitle cues (`"type": "subtitle"`) (phase 8g). Every track gets `"subtitle_style": null` |
+  | 4 | The keyframe curves `ease_in`, `ease_out` and `{"cubic_bezier": {…}}` (phase 8e). Nothing to convert, for the same reason |
+  | 5 | Subtitle tracks (`"kind": "subtitle"`) with their `subtitle_style`, subtitle cues (`"type": "subtitle"`) (phase 8g). Every track gets `"subtitle_style": null` |
 
-  The snapshots of versions 1, 2 and 3 are kept as
-  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr`, `…_format_2.kadr`
-  and `…_format_3.kadr`; tests check they still open as the same project.
+  The snapshots of versions 1 to 4 are kept as
+  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr` to
+  `…_format_4.kadr`; tests check they still open as the same project.
 - `kadr_core::srt` reads and writes `.srt` subtitle files (text to cues and back);
   reading them from disk is `kadr_engine::subtitle_files`.
 - A file from a **newer** Kadr is refused with a message asking to update, rather than

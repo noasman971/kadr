@@ -61,7 +61,7 @@ which is more detailed and is the reference for its phase.
 | 5. MCP server | Done, tagged `v0.6.0` | `main` (#9) | — (owner's Claude Desktop test still to do) |
 | 6. Desktop app | Done, tagged `v0.7.0` | `main` (#6, #10, #14, #15, #16; fix #18 after the tag) | — (owner's edit-and-export test still to do) |
 | 7. Blur and Claude in the app | 7a–7e merged (#17, #19, #20, #21, #24), blur inspector fix merged (#25) | `main` | The owner's end test |
-| 8. Features | 8a, 8b and 8c merged (#11, #23, #27) | `main` | Owner: which feature next |
+| 8. Features | 8a, 8b and 8c merged (#11, #23, #27), 8e in #28 | `main` | Owner: which feature next |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -163,9 +163,23 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
   Resolve on a real video (the tests use small generated tables). Owner's check:
   `kadr-cli assemble -o graded.kadr --lut <a .cube> <a video>`, then
   `kadr-cli render graded.kadr graded.mp4`, or the inspector's Colour section.
+- **8e, editable keyframes with curves** (#28, decision record 0054, file format 4):
+  - core: the curves ease in, ease out and cubic Bézier (handles kept from 0 to 1),
+    `MoveKeyframe`;
+  - the app: a diamond per setting in the inspector adds or removes a keyframe at
+    the playhead, the field sets the value at the playhead, a lane per animated
+    value moves keyframes, the *Curve* menu and a small curve editor change the
+    curve; diamonds on the timeline clip;
+  - Claude's `set_keyframes`.
+
+  Owner's check, in French: *sélectionner un titre, mettre la tête de lecture à son
+  début, cliquer sur ◇ devant Position X et Opacité, mettre l'opacité à 0 et la
+  position X à −600 ; avancer d'une seconde, remettre l'opacité à 100 % et la
+  position X à 0 ; choisir « Arrivée en douceur » dans Courbe ; lire, annuler
+  (Ctrl+Z), rétablir, enregistrer, rouvrir, exporter.*
 - **8g, subtitles with SRT import and editing** (branch
   `claude/phase-8g-subtitles-6c3b24`, decision record 0056, [subtitles.md](subtitles.md)):
-  - subtitle tracks whose cues share the track's style (file format 4);
+  - subtitle tracks whose cues share the track's style (file format 5);
   - a forgiving `.srt` reader with line-numbered errors, and a writer;
   - cues burned in identically by the CPU and the GPU;
   - cues follow the timeline, and silence removal removes the same moments from
@@ -181,11 +195,10 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
   1. In the app, Text tab → *Import subtitles (.srt)…* on a video's `.srt`.
   2. Fix a few cues in the inspector.
   3. Export the video, and *Export as .srt…*.
-- **Next step:** the owner chooses the next feature.
+- **Next step:** the owner chooses the next feature (8d stabilisation and 8f
+  proxies are being built in parallel).
 - **Left, proposed in the specification's order:** stabilisation (`kadr-vision`'s
-  optical flow and smoothing), editable keyframes in the interface, automatic
-  proxies for heavy 4K videos (8d, 8e and 8f were started in parallel sessions).
-  Also waiting:
+  optical flow and smoothing), automatic proxies for heavy 4K videos. Also waiting:
   Claude's `add_transition` still makes fades from opacity keyframes, and the
   inspector has no transition controls yet.
 - Decision records 0050–0059.

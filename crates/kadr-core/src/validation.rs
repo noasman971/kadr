@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 
+use crate::animation::Interpolation;
 use crate::clip::{AnimatableProperty, Clip, ClipContent, CropInsets, MediaSegment, TextContent};
 use crate::effect::{BlurStyle, ColorAdjustment, ColorLut, Effect, EffectKind, TrackedBlur};
 use crate::ids::{ClipId, EffectId, MediaAssetId, TrackId};
@@ -183,6 +184,19 @@ pub enum ValidationError {
         clip_id: ClipId,
         /// The property.
         property: AnimatableProperty,
+    },
+
+    /// A keyframe's Bézier curve has a handle outside the unit square.
+    #[error(
+        "the curve after the {property} keyframe of clip {clip_id} at {time_offset} from the clip start is invalid: its handles must have coordinates from 0 to 1"
+    )]
+    InvalidKeyframeCurve {
+        /// The clip.
+        clip_id: ClipId,
+        /// The property.
+        property: AnimatableProperty,
+        /// The keyframe, from the clip start.
+        time_offset: TimeSpan,
     },
 
     /// A clip's crop is impossible.
@@ -716,6 +730,18 @@ fn validate_animated_properties(clip: &Clip) -> Result<(), ValidationError> {
                 maximum,
             });
         }
+        // Handles inside the unit square keep every value between the two
+        // keyframes' values, so the range check above covers every moment.
+        if let Some(keyframe) = animated_value.keyframes().iter().find(|keyframe| {
+            matches!(keyframe.interpolation_to_next,
+                Interpolation::CubicBezier(curve) if !curve.has_handles_inside_the_unit_square())
+        }) {
+            return Err(ValidationError::InvalidKeyframeCurve {
+                clip_id: clip.id,
+                property,
+                time_offset: keyframe.time_offset,
+            });
+        }
     }
     Ok(())
 }
@@ -1136,6 +1162,59 @@ mod tests {
             .unwrap();
         let error = refused_rule(fixture.session.execute(SetClipText::new(clip_id, "   ")));
         assert!(matches!(error, ValidationError::InvalidText { .. }));
+    }
+
+    #[test]
+    fn bezier_curve_handles_must_stay_inside_the_unit_square() {
+        use crate::animation::{BezierCurve, BezierHandle, Keyframe};
+        use crate::commands::SetKeyframe;
+
+        let mut fixture = fixture();
+        let clip_id = fixture
+            .session
+            .execute(AddClip::text(
+                fixture.video_track_id,
+                "Title",
+                TimeSpan::from_whole_seconds(2),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let keyframe_with_end_handle = |progress_fraction| Keyframe {
+            time_offset: TimeSpan::from_milliseconds(500),
+            value: 0.0,
+            interpolation_to_next: Interpolation::CubicBezier(BezierCurve {
+                start_handle: BezierHandle {
+                    time_fraction: 0.25,
+                    progress_fraction: 0.0,
+                },
+                end_handle: BezierHandle {
+                    time_fraction: 0.75,
+                    progress_fraction,
+                },
+            }),
+        };
+        // An overshoot would take the opacity above 1 between the keyframes.
+        let error = refused_rule(fixture.session.execute(SetKeyframe::new(
+            clip_id,
+            AnimatableProperty::Opacity,
+            keyframe_with_end_handle(1.4),
+        )));
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "the curve after the opacity keyframe of clip {clip_id} at 0.500 s from the clip start is invalid: its handles must have coordinates from 0 to 1"
+            )
+        );
+        fixture
+            .session
+            .execute(SetKeyframe::new(
+                clip_id,
+                AnimatableProperty::Opacity,
+                keyframe_with_end_handle(1.0),
+            ))
+            .unwrap();
     }
 
     #[test]

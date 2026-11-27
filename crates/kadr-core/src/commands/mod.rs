@@ -32,7 +32,7 @@ pub use clip_commands::{
 };
 pub use clip_part_commands::RemoveClipParts;
 pub use effect_commands::{AddEffect, RemoveEffect, ReplaceEffect, SetEffectEnabled};
-pub use keyframe_commands::{RemoveKeyframe, SetKeyframe};
+pub use keyframe_commands::{MoveKeyframe, RemoveKeyframe, SetKeyframe};
 pub use media_commands::{ImportMedia, RemoveMedia};
 pub use project_commands::ChangeProjectSettings;
 pub use subtitle_commands::{

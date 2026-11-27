@@ -23,7 +23,7 @@ use kadr_core::timeline::{Track, TrackKind};
 use serde::Serialize;
 
 use crate::blur_overlay::ConfidenceView;
-use crate::editing::{BackdropChoice, BlurSettings, PlacementChoice};
+use crate::editing::{BackdropChoice, BlurSettings, KeyframeCurve, PlacementChoice};
 
 /// Everything the interface shows about the open project.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -218,13 +218,25 @@ pub enum ClipKindView {
 }
 
 /// A value that may be animated.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropertyView {
     /// The value when it is not animated.
     pub value: f32,
-    /// Number of keyframes; 0 when the value is constant.
-    pub keyframe_count: usize,
+    /// The keyframes, sorted by time; empty when the value is constant.
+    pub keyframes: Vec<KeyframeView>,
+}
+
+/// One keyframe of a value.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyframeView {
+    /// When, from the clip's start.
+    pub offset_ticks: u64,
+    /// The value then, in the value's own unit (multiplier, pixels, degrees).
+    pub value: f32,
+    /// How the value travels to the next keyframe.
+    pub curve: KeyframeCurve,
 }
 
 /// Picture removed from each edge, as fractions of the picture.
@@ -492,7 +504,15 @@ fn track_view_of(project: &Project, track: &Track) -> TrackView {
 fn property_view_of(value: &AnimatedValue) -> PropertyView {
     PropertyView {
         value: value.constant_value,
-        keyframe_count: value.keyframes().len(),
+        keyframes: value
+            .keyframes()
+            .iter()
+            .map(|keyframe| KeyframeView {
+                offset_ticks: keyframe.time_offset.ticks(),
+                value: keyframe.value,
+                curve: keyframe.interpolation_to_next.into(),
+            })
+            .collect(),
     }
 }
 

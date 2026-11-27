@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 mod arrangement;
 mod blur_settings;
 mod clip_settings;
+mod keyframes;
 mod silences;
 mod subtitles;
 mod titles;
@@ -35,6 +36,7 @@ pub use blur_settings::{
 pub use clip_settings::{
     ClipValue, ColorChanges, CropChanges, LutChanges, TextAlignmentChoice, TextChanges,
 };
+pub use keyframes::KeyframeCurve;
 pub use silences::TickRange;
 pub use subtitles::{
     BackdropChoice, CueChanges, NEW_CUE_DURATION, PlacementChoice, SUBTITLES_TRACK_NAME,
@@ -133,7 +135,9 @@ pub enum EditRequest {
         /// The track.
         track_id: TrackId,
     },
-    /// Sets one value of a clip (inspector number fields and sliders).
+    /// Sets one value of a clip (inspector number fields and sliders). When the
+    /// value is animated, sets its keyframe at `time_ticks` (the playhead),
+    /// adding one there if needed.
     SetClipValue {
         /// The clip.
         clip_id: ClipId,
@@ -141,6 +145,52 @@ pub enum EditRequest {
         value: ClipValue,
         /// The new value, in the value's own unit (multiplier, pixels, degrees).
         amount: f32,
+        /// The playhead, on the timeline; used only when the value is animated.
+        time_ticks: Option<u64>,
+    },
+    /// Adds a keyframe at `time_ticks` (the playhead) holding the value the
+    /// property has there. The first one turns the animation on.
+    AddKeyframe {
+        /// The clip.
+        clip_id: ClipId,
+        /// Which value.
+        value: ClipValue,
+        /// Where, on the timeline.
+        time_ticks: u64,
+    },
+    /// Moves keyframes in time: those of `values` at `from_offset_ticks`, or every
+    /// keyframe there when `values` is empty.
+    MoveKeyframe {
+        /// The clip.
+        clip_id: ClipId,
+        /// Which values (empty: all of those with a keyframe there).
+        values: Vec<ClipValue>,
+        /// Where the keyframes are, from the clip's start.
+        from_offset_ticks: u64,
+        /// Where they go, from the clip's start.
+        to_offset_ticks: u64,
+    },
+    /// Changes the curve from a keyframe to the next one.
+    SetKeyframeCurve {
+        /// The clip.
+        clip_id: ClipId,
+        /// Which value.
+        value: ClipValue,
+        /// The keyframe, from the clip's start.
+        offset_ticks: u64,
+        /// The new curve.
+        curve: KeyframeCurve,
+    },
+    /// Removes keyframes: those of `values` at `offset_ticks`, or every keyframe
+    /// there when `values` is empty. A value losing its last keyframe keeps its
+    /// value.
+    RemoveKeyframe {
+        /// The clip.
+        clip_id: ClipId,
+        /// Which values (empty: all of those with a keyframe there).
+        values: Vec<ClipValue>,
+        /// The keyframes, from the clip's start.
+        offset_ticks: u64,
     },
     /// Crops a clip's picture: the sides given change, the others keep the value
     /// they have in the project when the request is applied.
@@ -394,7 +444,58 @@ pub fn apply_edit_request(
             clip_id,
             value,
             amount,
-        } => clip_settings::set_clip_value(session, *clip_id, *value, *amount),
+            time_ticks,
+        } => clip_settings::set_clip_value(
+            session,
+            *clip_id,
+            *value,
+            *amount,
+            time_ticks.map(Timestamp::from_ticks),
+        ),
+        EditRequest::AddKeyframe {
+            clip_id,
+            value,
+            time_ticks,
+        } => keyframes::add_keyframe(
+            session,
+            *clip_id,
+            *value,
+            Timestamp::from_ticks(*time_ticks),
+        ),
+        EditRequest::MoveKeyframe {
+            clip_id,
+            values,
+            from_offset_ticks,
+            to_offset_ticks,
+        } => keyframes::move_keyframes(
+            session,
+            *clip_id,
+            values,
+            TimeSpan::from_ticks(*from_offset_ticks),
+            TimeSpan::from_ticks(*to_offset_ticks),
+        ),
+        EditRequest::SetKeyframeCurve {
+            clip_id,
+            value,
+            offset_ticks,
+            curve,
+        } => keyframes::set_keyframe_curve(
+            session,
+            *clip_id,
+            *value,
+            TimeSpan::from_ticks(*offset_ticks),
+            *curve,
+        ),
+        EditRequest::RemoveKeyframe {
+            clip_id,
+            values,
+            offset_ticks,
+        } => keyframes::remove_keyframes(
+            session,
+            *clip_id,
+            values,
+            TimeSpan::from_ticks(*offset_ticks),
+        ),
         EditRequest::SetClipCrop { clip_id, changes } => {
             clip_settings::set_clip_crop(session, *clip_id, *changes)
         }
@@ -1299,6 +1400,7 @@ mod tests {
                     clip_id,
                     value,
                     amount,
+                    time_ticks: None,
                 },
             )
             .unwrap();
@@ -1772,6 +1874,306 @@ mod tests {
         assert_eq!(session.next_undo_label(), Some("changeCrop"));
     }
 
+    // ----- Keyframes (docs/ux.md, "Animate a clip") -----
+
+    /// A 3 s title at 1 s, and its clip id.
+    fn session_with_a_title() -> (EditSession, ClipId) {
+        let (mut session, _) = arranged_session();
+        let title = apply(
+            &mut session,
+            EditRequest::AddTitle {
+                start_ticks: seconds(1),
+                text: "Hello".to_string(),
+                style: TitleStyle::Title,
+            },
+        )
+        .unwrap()
+        .created_clip_ids[0];
+        (session, title)
+    }
+
+    fn keyframes_of(
+        session: &EditSession,
+        clip_id: ClipId,
+        property: AnimatableProperty,
+    ) -> Vec<kadr_core::animation::Keyframe> {
+        clip_of(session, clip_id)
+            .animated_property(property)
+            .keyframes()
+            .to_vec()
+    }
+
+    fn add_keyframe(session: &mut EditSession, clip_id: ClipId, value: ClipValue, at: u64) {
+        apply(
+            session,
+            EditRequest::AddKeyframe {
+                clip_id,
+                value,
+                time_ticks: at,
+            },
+        )
+        .unwrap();
+    }
+
+    fn set_value_at(
+        session: &mut EditSession,
+        clip_id: ClipId,
+        value: ClipValue,
+        amount: f32,
+        at: u64,
+    ) {
+        apply(
+            session,
+            EditRequest::SetClipValue {
+                clip_id,
+                value,
+                amount,
+                time_ticks: Some(at),
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_title_is_animated_by_mouse_and_each_gesture_is_one_undo_step() {
+        use kadr_core::animation::Interpolation;
+
+        let (mut session, title) = session_with_a_title();
+        let start_x = clip_of(&session, title)
+            .animated_property(AnimatableProperty::PositionX)
+            .constant_value;
+
+        // The first keyframe, at the playhead on the title's first frame, holds
+        // the current value: nothing moves yet.
+        add_keyframe(&mut session, title, ClipValue::PositionX, seconds(1));
+        assert_eq!(session.next_undo_label(), Some("addKeyframe"));
+        let keyframes = keyframes_of(&session, title, AnimatableProperty::PositionX);
+        assert_eq!(keyframes.len(), 1);
+        assert_eq!(keyframes[0].time_offset, TimeSpan::ZERO);
+        assert_eq!(keyframes[0].value, start_x);
+        // Adding it again changes nothing and makes no undo step.
+        let step_count = session.undo_history_labels().len();
+        add_keyframe(&mut session, title, ClipValue::PositionX, seconds(1));
+        assert_eq!(session.undo_history_labels().len(), step_count);
+
+        // At the start, the title comes from the left; a second later it is in place.
+        set_value_at(
+            &mut session,
+            title,
+            ClipValue::PositionX,
+            -600.0,
+            seconds(1),
+        );
+        assert_eq!(session.next_undo_label(), Some("changePosition"));
+        set_value_at(&mut session, title, ClipValue::PositionX, 0.0, seconds(2));
+        let keyframes = keyframes_of(&session, title, AnimatableProperty::PositionX);
+        assert_eq!(
+            keyframes.iter().map(|it| it.value).collect::<Vec<_>>(),
+            [-600.0, 0.0]
+        );
+
+        // Ease out, then a hand-drawn curve.
+        apply(
+            &mut session,
+            EditRequest::SetKeyframeCurve {
+                clip_id: title,
+                value: ClipValue::PositionX,
+                offset_ticks: 0,
+                curve: KeyframeCurve::EaseOut,
+            },
+        )
+        .unwrap();
+        assert_eq!(session.next_undo_label(), Some("changeKeyframeCurve"));
+        let position_x = clip_of(&session, title).transform.position_x_in_pixels;
+        assert_eq!(
+            position_x.value_at(TimeSpan::from_milliseconds(500)),
+            -150.0
+        );
+        let bezier = KeyframeCurve::Bezier {
+            x1: 0.2,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 1.0,
+        };
+        apply(
+            &mut session,
+            EditRequest::SetKeyframeCurve {
+                clip_id: title,
+                value: ClipValue::PositionX,
+                offset_ticks: 0,
+                curve: bezier,
+            },
+        )
+        .unwrap();
+        let keyframes = keyframes_of(&session, title, AnimatableProperty::PositionX);
+        assert!(matches!(
+            keyframes[0].interpolation_to_next,
+            Interpolation::CubicBezier(_)
+        ));
+        assert_eq!(
+            KeyframeCurve::from(keyframes[0].interpolation_to_next),
+            bezier
+        );
+
+        // Moving the arrival later keeps its value; undo puts it back.
+        apply(
+            &mut session,
+            EditRequest::MoveKeyframe {
+                clip_id: title,
+                values: vec![ClipValue::PositionX],
+                from_offset_ticks: TimeSpan::from_whole_seconds(1).ticks(),
+                to_offset_ticks: TimeSpan::from_milliseconds(1_500).ticks(),
+            },
+        )
+        .unwrap();
+        assert_eq!(session.next_undo_label(), Some("moveKeyframe"));
+        let keyframes = keyframes_of(&session, title, AnimatableProperty::PositionX);
+        assert_eq!(keyframes[1].time_offset, TimeSpan::from_milliseconds(1_500));
+        assert_eq!(keyframes[1].value, 0.0);
+        session.undo().unwrap();
+        let keyframes = keyframes_of(&session, title, AnimatableProperty::PositionX);
+        assert_eq!(keyframes[1].time_offset, TimeSpan::from_whole_seconds(1));
+    }
+
+    #[test]
+    fn a_mark_on_the_timeline_moves_and_removes_every_keyframe_at_its_time() {
+        let (mut session, title) = session_with_a_title();
+        for value in [ClipValue::Opacity, ClipValue::Scale] {
+            add_keyframe(&mut session, title, value, seconds(1));
+            add_keyframe(&mut session, title, value, seconds(2));
+        }
+        add_keyframe(&mut session, title, ClipValue::Rotation, seconds(3));
+        apply(
+            &mut session,
+            EditRequest::MoveKeyframe {
+                clip_id: title,
+                values: Vec::new(),
+                from_offset_ticks: TimeSpan::from_whole_seconds(1).ticks(),
+                to_offset_ticks: TimeSpan::from_milliseconds(1_200).ticks(),
+            },
+        )
+        .unwrap();
+        for property in [AnimatableProperty::Opacity, AnimatableProperty::Scale] {
+            let keyframes = keyframes_of(&session, title, property);
+            assert_eq!(keyframes[1].time_offset, TimeSpan::from_milliseconds(1_200));
+        }
+        assert_eq!(
+            keyframes_of(&session, title, AnimatableProperty::Rotation)[0].time_offset,
+            TimeSpan::from_whole_seconds(2)
+        );
+
+        // Changing the opacity there, then removing the mark: each value keeps
+        // the value it had, the opacity keeps its keyframe at the start.
+        set_value_at(&mut session, title, ClipValue::Opacity, 0.0, seconds(1));
+        apply(
+            &mut session,
+            EditRequest::RemoveKeyframe {
+                clip_id: title,
+                values: Vec::new(),
+                offset_ticks: TimeSpan::from_milliseconds(1_200).ticks(),
+            },
+        )
+        .unwrap();
+        assert_eq!(session.next_undo_label(), Some("removeKeyframe"));
+        assert_eq!(
+            keyframes_of(&session, title, AnimatableProperty::Scale).len(),
+            1
+        );
+        assert_eq!(
+            keyframes_of(&session, title, AnimatableProperty::Opacity).len(),
+            1
+        );
+        session.undo().unwrap();
+        assert_eq!(
+            keyframes_of(&session, title, AnimatableProperty::Scale).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn removing_the_last_keyframe_keeps_the_value_on_screen() {
+        let (mut session, title) = session_with_a_title();
+        add_keyframe(&mut session, title, ClipValue::Scale, seconds(1));
+        set_value_at(&mut session, title, ClipValue::Scale, 1.4, seconds(1));
+        apply(
+            &mut session,
+            EditRequest::RemoveKeyframe {
+                clip_id: title,
+                values: vec![ClipValue::Scale],
+                offset_ticks: 0,
+            },
+        )
+        .unwrap();
+        let scale = clip_of(&session, title).transform.scale_factor;
+        assert!(!scale.is_animated());
+        assert!((scale.constant_value - 1.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn keyframe_gestures_outside_the_clip_or_onto_another_are_refused() {
+        let (mut session, title) = session_with_a_title();
+        let history_length = session.undo_history_labels().len();
+        let refused = [
+            // The playhead before the title, then on its end (already the next moment).
+            EditRequest::AddKeyframe {
+                clip_id: title,
+                value: ClipValue::Opacity,
+                time_ticks: seconds(0),
+            },
+            EditRequest::AddKeyframe {
+                clip_id: title,
+                value: ClipValue::Opacity,
+                time_ticks: seconds(4),
+            },
+        ];
+        for request in refused {
+            assert!(apply(&mut session, request).is_err());
+        }
+        add_keyframe(&mut session, title, ClipValue::Opacity, seconds(1));
+        add_keyframe(&mut session, title, ClipValue::Opacity, seconds(2));
+        let onto_another = apply(
+            &mut session,
+            EditRequest::MoveKeyframe {
+                clip_id: title,
+                values: vec![ClipValue::Opacity],
+                from_offset_ticks: 0,
+                to_offset_ticks: TimeSpan::from_whole_seconds(1).ticks(),
+            },
+        );
+        assert!(matches!(
+            onto_another,
+            Err(EditError::KeyframeAlreadyThere { .. })
+        ));
+        let past_the_end = apply(
+            &mut session,
+            EditRequest::MoveKeyframe {
+                clip_id: title,
+                values: vec![ClipValue::Opacity],
+                from_offset_ticks: 0,
+                to_offset_ticks: TimeSpan::from_whole_seconds(4).ticks(),
+            },
+        );
+        assert!(matches!(
+            past_the_end,
+            Err(EditError::KeyframeOutsideClip { .. })
+        ));
+        // An animated value with no playhead given is refused, not made constant.
+        let without_time = apply(
+            &mut session,
+            EditRequest::SetClipValue {
+                clip_id: title,
+                value: ClipValue::Opacity,
+                amount: 0.3,
+                time_ticks: None,
+            },
+        );
+        assert!(matches!(
+            without_time,
+            Err(EditError::PropertyIsAnimated { .. })
+        ));
+        assert_eq!(session.undo_history_labels().len(), history_length + 2);
+    }
+
     #[test]
     fn every_request_reads_from_the_front_end_json() {
         let requests = [
@@ -1801,6 +2203,12 @@ mod tests {
             r#"{ "type": "addSubtitleCue", "startTicks": 0, "trackId": null, "text": "New" }"#,
             r#"{ "type": "mergeSubtitleWithNext", "clipId": 2 }"#,
             r##"{ "type": "setSubtitleStyle", "trackId": 3, "changes": { "backdrop": "box", "backdropColor": "#000000B3", "placement": "top", "margin": 40, "maximumLineWidth": 0.9, "isBold": false } }"##,
+            r#"{ "type": "setClipValue", "clipId": 2, "value": "opacity", "amount": 0.5, "timeTicks": 10 }"#,
+            r#"{ "type": "addKeyframe", "clipId": 2, "value": "scale", "timeTicks": 10 }"#,
+            r#"{ "type": "moveKeyframe", "clipId": 2, "values": [], "fromOffsetTicks": 0, "toOffsetTicks": 10 }"#,
+            r#"{ "type": "setKeyframeCurve", "clipId": 2, "value": "positionX", "offsetTicks": 0, "curve": { "type": "easeOut" } }"#,
+            r#"{ "type": "setKeyframeCurve", "clipId": 2, "value": "positionX", "offsetTicks": 0, "curve": { "type": "bezier", "x1": 0.2, "y1": 0, "x2": 0, "y2": 1 } }"#,
+            r#"{ "type": "removeKeyframe", "clipId": 2, "values": ["opacity"], "offsetTicks": 0 }"#,
         ];
         for json in requests {
             assert!(

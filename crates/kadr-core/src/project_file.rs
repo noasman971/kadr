@@ -31,8 +31,9 @@ use crate::validation::{ValidationError, validate_project};
 /// | 1 | First format (phase 1) |
 /// | 2 | Transitions on clips, animations on texts (phase 8) |
 /// | 3 | Colour LUT effects on clips (phase 8c) |
-/// | 4 | Subtitle tracks, with their style, and subtitle cues (phase 8g) |
-pub const CURRENT_FORMAT_VERSION: u32 = 4;
+/// | 4 | Keyframe curves: ease in, ease out and cubic Bézier (phase 8e) |
+/// | 5 | Subtitle tracks, with their style, and subtitle cues (phase 8g) |
+pub const CURRENT_FORMAT_VERSION: u32 = 5;
 
 /// The recommended file extension, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
@@ -106,6 +107,10 @@ pub const MIGRATIONS: &[Migration] = &[
     },
     Migration {
         from_version: 3,
+        upgrade_document: allow_more_keyframe_curves,
+    },
+    Migration {
+        from_version: 4,
         upgrade_document: add_subtitle_styles_to_tracks,
     },
 ];
@@ -146,8 +151,17 @@ fn allow_color_luts(_document: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Version 3 → 4: subtitle tracks and cues. Every track gets
-/// `"subtitle_style": null`: a version 3 file has no subtitle track.
+/// Version 3 → 4: new keyframe curves (`ease_in`, `ease_out`, `cubic_bezier`). A
+/// version 3 file uses only `linear`, `ease_in_out` and `hold`, which keep their
+/// names and shapes, so nothing changes; the version goes up so that an older
+/// Kadr opening a file with a new curve says "please update Kadr" instead of
+/// "the file is damaged".
+fn allow_more_keyframe_curves(_document: &mut Value) -> Result<(), String> {
+    Ok(())
+}
+
+/// Version 4 → 5: subtitle tracks and cues. Every track gets
+/// `"subtitle_style": null`: a version 4 file has no subtitle track.
 fn add_subtitle_styles_to_tracks(document: &mut Value) -> Result<(), String> {
     let tracks = document
         .pointer_mut("/project/timeline/tracks")
@@ -252,7 +266,7 @@ mod tests {
     fn an_empty_project_round_trips() {
         let project = Project::new(ProjectSettings::vertical_1080x1920());
         let json_text = save_project_to_json(&project).unwrap();
-        assert!(json_text.contains("\"format_version\": 4"));
+        assert!(json_text.contains("\"format_version\": 5"));
         assert_eq!(load_project_from_json(&json_text).unwrap(), project);
     }
 
@@ -305,17 +319,38 @@ mod tests {
         });
         assert!(!has_a_lut);
         let saved_again = save_project_to_json(&project).unwrap();
-        assert!(saved_again.contains("\"format_version\": 4"));
+        assert!(saved_again.contains("\"format_version\": 5"));
         assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
     }
 
     /// A version 3 file (phase 8c), kept from the editing scenario's snapshot
-    /// before subtitle tracks changed the format.
+    /// before the new keyframe curves changed the format.
     const VERSION_3_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_3.kadr");
 
     #[test]
-    fn version_3_files_are_upgraded_without_subtitles() {
+    fn version_3_files_are_upgraded_with_the_same_curves() {
+        use crate::animation::Interpolation;
+
         let project = load_project_from_json(VERSION_3_FILE).unwrap();
+        let curves: Vec<Interpolation> = project
+            .timeline()
+            .all_clips()
+            .flat_map(|(_, clip)| clip.opacity.keyframes().to_vec())
+            .map(|keyframe| keyframe.interpolation_to_next)
+            .collect();
+        assert_eq!(curves, [Interpolation::EaseInOut, Interpolation::EaseInOut]);
+        let saved_again = save_project_to_json(&project).unwrap();
+        assert!(saved_again.contains("\"format_version\": 5"));
+        assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
+    }
+
+    /// A version 4 file (phase 8e), kept from the editing scenario's snapshot
+    /// before subtitle tracks changed the format.
+    const VERSION_4_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_4.kadr");
+
+    #[test]
+    fn version_4_files_are_upgraded_without_subtitles() {
+        let project = load_project_from_json(VERSION_4_FILE).unwrap();
         assert!(
             project
                 .timeline()

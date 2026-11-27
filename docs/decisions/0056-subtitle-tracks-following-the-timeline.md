@@ -47,8 +47,8 @@ Five questions had to be answered:
 
 ## Decision
 
-- **Model** (option 3), file format 4 (a migration adds `"subtitle_style": null` to
-  every track of a version 3 file):
+- **Model** (option 3), file format 5 (a migration adds `"subtitle_style": null` to
+  every track of a version 4 file):
   - a subtitle track has a `SubtitleStyle`, other tracks have none (rule in
     `validation.rs`);
   - a cue is `ClipContent::Subtitle(SubtitleCue { text, duration })`, only on subtitle
