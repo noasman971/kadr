@@ -123,7 +123,7 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 | Tool | What it does |
 |---|---|
 | `get_timeline` | Canvas, duration, tracks from the bottom up with a line per clip. |
-| `get_clip` | Everything about one clip: times, source range, speed, volume, opacity, placement (`center_x_in_pixels`/`center_y_in_pixels` on the canvas, `scale`, rotation, crop), text style, animations, effects. |
+| `get_clip` | Everything about one clip: times, source range, speed, volume, opacity, placement (`center_x_in_pixels`/`center_y_in_pixels` on the canvas, `scale`, rotation, crop), text style, animations, effects. A value animated with keyframes is `null` there and listed under `animations`: each keyframe's `time_in_clip_in_seconds`, `value` (in the same unit as the tool parameter: positions on the canvas from the top-left corner), `curve` and, for `bezier`, `bezier_handles`. |
 | `add_track` / `remove_track` | `kind` video or audio, `name`, `position` top or bottom. Removing a track removes its clips (undoable). |
 | `add_clip` | Places a media: whole file by default, or `source_start_in_seconds`–`source_end_in_seconds`; at the end of the first track of the right kind (created if needed) or at `start_time_in_seconds` / on `track_id`; `duration_in_seconds` for still images (default 5). |
 | `remove_clip` | With `close_gap`, later clips of the same track move earlier (ripple delete). |
@@ -137,7 +137,13 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 |---|---|
 | `set_clip_speed` | 0.1× to 16×, sound keeps its pitch; `shift_later_clips` moves the following clips along. |
 | `set_clip_volume` | Multiplier 0 to 4. If the clip has a sound fade, the fade keeps its shape. |
-| `set_transform` | Centre on the canvas, `scale` (1 = fits inside), `fit` `fit_inside` / `fill_canvas` (computes the covering scale, for example a landscape video in a vertical project), rotation, opacity, crop fractions. |
+| `set_transform` | Centre on the canvas, `scale` (1 = fits inside), `fit` `fit_inside` / `fill_canvas` (computes the covering scale, for example a landscape video in a vertical project), rotation, opacity, crop fractions. An animated position, scale or rotation is refused there: use `set_keyframes`. |
+
+### Keyframes
+
+| Tool | What it does |
+|---|---|
+| `set_keyframes` | Replaces the keyframes of one `property` of a clip (`center_x_in_pixels`, `center_y_in_pixels`, `scale`, `rotation_in_degrees`, `opacity`, `volume`) with a list, in any order. Each keyframe: `time_in_clip_in_seconds` (from the clip's start, rounded to the nearest frame, at most the clip's duration), `value` in the property's unit, `curve` to the next keyframe (`linear` by default, `ease_in`, `ease_out`, `ease_in_out`, `hold`, or `bezier` with `bezier_handles` `[x1, y1, x2, y2]` from 0 to 1, as CSS `cubic-bezier()`). Moving or changing a keyframe is sending the list again; an empty list removes the animation, keeping the last keyframe's value (as the app does). Refuses a sound property on a title or a picture property on a sound, two keyframes on one frame, a value out of range, a keyframe past the clip's end. One undo step. Decision record 0054. |
 
 ### Content
 

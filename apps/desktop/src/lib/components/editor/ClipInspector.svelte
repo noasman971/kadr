@@ -1,14 +1,15 @@
 <!--
   The settings of one selected clip (docs/ux.md, "Adjust a clip"): picture,
   sound, speed, colour (with a colour LUT) and text, each shown only for the
-  clips it applies to, each with a Reset. Every finished change is one edit, so
-  one undo step.
+  clips it applies to, each with a Reset. Position, scale, rotation, opacity and
+  volume can be animated with keyframes (`AnimatableField`). Every finished
+  change is one edit, so one undo step.
 -->
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { tick, untrack } from "svelte";
 
-  import type { ClipValueName, ClipView, ColorSettings, CropView, EditRequest, TextAlignment, TextSettings } from "../../api/types";
+  import type { ClipView, ColorSettings, CropView, EditRequest, TextAlignment, TextSettings } from "../../api/types";
   import { quoted, t, translations } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
   import { TICKS_PER_SECOND } from "../../time/ticks";
@@ -17,6 +18,7 @@
   import IconButton from "../../ui/IconButton.svelte";
   import type { IconName } from "../../ui/icons";
   import NumberField from "../../ui/NumberField.svelte";
+  import AnimatableField from "./AnimatableField.svelte";
   import BlurInspector from "./BlurInspector.svelte";
   import SilenceRemovalDialog from "./SilenceRemovalDialog.svelte";
 
@@ -102,8 +104,9 @@
     void editor.edit(request);
   }
 
-  function setValue(value: ClipValueName, amount: number): void {
-    edit({ type: "setClipValue", clipId, value, amount });
+  /** The volume of a clip that is not animated (the slider and Reset). */
+  function setVolume(amount: number): void {
+    edit({ type: "setClipValue", clipId, value: "volume", amount, timeTicks: editor.playheadTicks });
   }
 
   // Crop, colour and text changes name only what changed. The project here can
@@ -204,11 +207,11 @@
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
-    <NumberField label={t("inspector.positionX")} unit="px" value={clip.positionX.value} keyframeCount={clip.positionX.keyframeCount} onCommit={(value) => setValue("positionX", value)} />
-    <NumberField label={t("inspector.positionY")} unit="px" value={clip.positionY.value} keyframeCount={clip.positionY.keyframeCount} onCommit={(value) => setValue("positionY", value)} />
-    <NumberField label={t("inspector.scale")} unit="%" min={1} max={1000} value={clip.scale.value * 100} keyframeCount={clip.scale.keyframeCount} onCommit={(value) => setValue("scale", value / 100)} />
-    <NumberField label={t("inspector.rotation")} unit="°" min={-360} max={360} value={clip.rotation.value} keyframeCount={clip.rotation.keyframeCount} onCommit={(value) => setValue("rotation", value)} />
-    <NumberField label={t("inspector.opacity")} unit="%" min={0} max={100} value={clip.opacity.value * 100} keyframeCount={clip.opacity.keyframeCount} onCommit={(value) => setValue("opacity", value / 100)} />
+    <AnimatableField {clip} value="positionX" label={t("inspector.positionX")} unit="px" />
+    <AnimatableField {clip} value="positionY" label={t("inspector.positionY")} unit="px" />
+    <AnimatableField {clip} value="scale" label={t("inspector.scale")} unit="%" min={1} max={1000} fieldFactor={100} />
+    <AnimatableField {clip} value="rotation" label={t("inspector.rotation")} unit="°" min={-360} max={360} />
+    <AnimatableField {clip} value="opacity" label={t("inspector.opacity")} unit="%" min={0} max={100} fieldFactor={100} />
     {#if clip.kind !== "text"}
       <details>
         <summary>{t("inspector.crop")}</summary>
@@ -227,12 +230,12 @@
   <section class="section">
     <div class="section-head">
       <h3>{t("inspector.sound")}</h3>
-      <IconButton size="small" label={t("inspector.reset")} disabled={clip.volume.keyframeCount > 0} onclick={() => setValue("volume", 1)}>
+      <IconButton size="small" label={t("inspector.reset")} disabled={clip.volume.keyframes.length > 0} onclick={() => setVolume(1)}>
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
-    <NumberField label={t("inspector.volume")} unit="%" min={0} max={400} value={clip.volume.value * 100} keyframeCount={clip.volume.keyframeCount} onCommit={(value) => setValue("volume", value / 100)} />
-    {#if clip.volume.keyframeCount === 0}
+    <AnimatableField {clip} value="volume" label={t("inspector.volume")} unit="%" min={0} max={400} fieldFactor={100} />
+    {#if clip.volume.keyframes.length === 0}
       <input
         class="slider"
         type="range"
@@ -241,7 +244,7 @@
         step="1"
         aria-label={t("inspector.volume")}
         value={clip.volume.value * 100}
-        onchange={(event) => setValue("volume", Number(event.currentTarget.value) / 100)}
+        onchange={(event) => setVolume(Number(event.currentTarget.value) / 100)}
       />
     {/if}
     <Button onclick={() => (isSilenceDialogOpen = true)}><Icon name="scissors" size={14} />{t("inspector.removeSilences")}</Button>

@@ -1,19 +1,22 @@
 <!--
   One clip on the timeline: its kind's colour and icon, its name, badges for a
-  changed speed or volume, thumbnails along pictures, a waveform along sound, and
-  trim handles on its edges when it is selected. Never colour alone: every clip
-  has an icon and a name (docs/ux.md).
+  changed speed or volume, thumbnails along pictures, a waveform along sound, its
+  keyframes as diamonds along the bottom (click: go there; drag: move every
+  keyframe at that moment), and trim handles on its edges when it is selected.
+  Never colour alone: every clip has an icon and a name (docs/ux.md).
 -->
 <script lang="ts">
-  import type { ClipView, MediaView } from "../../api/types";
+  import type { ClipValueName, ClipView, MediaView } from "../../api/types";
   import { t, translations } from "../../i18n/i18n.svelte";
-  import { ticksToPixels } from "../../timeline/timelineGeometry";
+  import { keyframeOffsetsOf } from "../../keyframes/keyframes";
+  import { pixelsToTicks, ticksToPixels } from "../../timeline/timelineGeometry";
+  import { pointerOffsetX } from "../../ui/pointer";
   import Icon from "../../ui/Icon.svelte";
   import type { IconName } from "../../ui/icons";
   import { claudeActivity } from "../../state/claude.svelte";
   import { editor } from "../../state/editor.svelte";
   import { playback } from "../../state/playback.svelte";
-  import { formatTimecode } from "../../time/ticks";
+  import { formatTimecode, snapToFrame, ticksPerFrame } from "../../time/ticks";
   import ClipFilmstrip from "./ClipFilmstrip.svelte";
   import ClipWaveform from "./ClipWaveform.svelte";
 
@@ -85,9 +88,109 @@
     playback.seek(Math.floor((range.startTicks + range.endTicks) / 2));
   }
 
+  /** The animated values, in the inspector's order, with the names it shows. */
+  const ANIMATED_VALUES: Array<{ value: ClipValueName; label: "inspector.positionX" | "inspector.positionY" | "inspector.scale" | "inspector.rotation" | "inspector.opacity" | "inspector.volume" }> = [
+    { value: "positionX", label: "inspector.positionX" },
+    { value: "positionY", label: "inspector.positionY" },
+    { value: "scale", label: "inspector.scale" },
+    { value: "rotation", label: "inspector.rotation" },
+    { value: "opacity", label: "inspector.opacity" },
+    { value: "volume", label: "inspector.volume" },
+  ];
+  /** Below this many pixels of movement, a press on a mark is a click. */
+  const DRAG_THRESHOLD_IN_PIXELS = 3;
+  /** A mark is drawn only when it has this much room from the previous one. */
+  const MINIMUM_MARK_SPACING_IN_PIXELS = 4;
+  /** How far a mark stays from the clip's edges: clear of the trim handles, not cut. */
+  const MARK_EDGE_MARGIN_IN_PIXELS = 13;
+
+  let clipElement: HTMLDivElement | undefined = $state();
+  /** The keyframe mark being dragged, and where it would land (from the clip's start). */
+  let draggedMark = $state<{ fromOffsetTicks: number; toOffsetTicks: number; isRefused: boolean } | null>(null);
+
+  const keyframeOffsets = $derived(keyframeOffsetsOf(ANIMATED_VALUES.map(({ value }) => clip[value])));
+  /** Keyframe marks on screen, with the names of the values keyed there. */
+  const keyframeMarks = $derived.by(() => {
+    const marks: Array<{ offsetTicks: number; left: number; names: string[] }> = [];
+    for (const offsetTicks of keyframeOffsets) {
+      const markLeft = markPosition(offsetTicks);
+      const previous = marks.at(-1);
+      const isCrowded = previous !== undefined && markLeft - previous.left < MINIMUM_MARK_SPACING_IN_PIXELS;
+      if (markLeft < visibleStart - 8 || markLeft > visibleEnd + 8 || isCrowded) {
+        continue;
+      }
+      const names = ANIMATED_VALUES.filter(({ value }) => clip[value].keyframes.some((keyframe) => keyframe.offsetTicks === offsetTicks)).map(
+        ({ label }) => t(label),
+      );
+      marks.push({ offsetTicks, left: markLeft, names });
+    }
+    return marks;
+  });
+
+  /** Where a mark is drawn, kept whole inside the clip's edges. */
+  function markPosition(offsetTicks: number): number {
+    const position = ticksToPixels(Math.min(offsetTicks, clip.durationTicks), pixelsPerSecond);
+    return Math.min(Math.max(position, MARK_EDGE_MARGIN_IN_PIXELS), width - MARK_EDGE_MARGIN_IN_PIXELS);
+  }
+
+  /** The moment under a pointer, from the clip's start, on a frame of the timeline. */
+  function markOffsetAtPointer(clientX: number): number {
+    if (!clipElement) {
+      return 0;
+    }
+    const offset = pixelsToTicks(pointerOffsetX(clientX, clipElement), pixelsPerSecond);
+    const snapped = snapToFrame(clip.startTicks + Math.max(0, offset), editor.frameRate) - clip.startTicks;
+    return Math.min(Math.max(0, clip.durationTicks - ticksPerFrame(editor.frameRate)), Math.max(0, snapped));
+  }
+
+  /** A click goes to the keyframes' moment; a drag moves them all (one undo step). */
+  function startMarkDrag(event: PointerEvent, fromOffsetTicks: number): void {
+    if (event.button !== 0 || isGhost) {
+      return;
+    }
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const clipId = clip.id;
+    const startX = event.clientX;
+    let hasMoved = false;
+    const move = (moveEvent: PointerEvent) => {
+      hasMoved ||= Math.abs(moveEvent.clientX - startX) >= DRAG_THRESHOLD_IN_PIXELS;
+      if (hasMoved) {
+        const toOffsetTicks = markOffsetAtPointer(moveEvent.clientX);
+        const isRefused = keyframeOffsets.some((offset) => offset === toOffsetTicks && offset !== fromOffsetTicks);
+        draggedMark = { fromOffsetTicks, toOffsetTicks, isRefused };
+      }
+    };
+    const end = () => {
+      target.removeEventListener("pointermove", move);
+      const landing = draggedMark;
+      draggedMark = null;
+      editor.selectedClipIds = [clipId];
+      if (!hasMoved) {
+        playback.seek(clip.startTicks + fromOffsetTicks);
+      } else if (landing && !landing.isRefused && landing.toOffsetTicks !== fromOffsetTicks) {
+        const toOffsetTicks = landing.toOffsetTicks;
+        void editor
+          .edit({ type: "moveKeyframe", clipId, values: [], fromOffsetTicks, toOffsetTicks })
+          .then(() => playback.seek(clip.startTicks + toOffsetTicks));
+      }
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", end, { once: true });
+    target.addEventListener(
+      "pointercancel",
+      () => {
+        target.removeEventListener("pointermove", move);
+        draggedMark = null;
+      },
+      { once: true },
+    );
+  }
+
   const speedBadge = $derived(clip.speed !== 1 ? `${translations.formatNumber(clip.speed, 2)}Ã—` : null);
   const volumeBadge = $derived(
-    clip.hasSound && clip.volume.keyframeCount === 0 && Math.abs(clip.volume.value - 1) > 0.005
+    clip.hasSound && clip.volume.keyframes.length === 0 && Math.abs(clip.volume.value - 1) > 0.005
       ? `${Math.round(clip.volume.value * 100)} %`
       : null,
   );
@@ -98,6 +201,7 @@
   class:selected={isSelected}
   class:ghost={isGhost}
   class:changed-by-claude={claudeActivity.highlightedClipIds.includes(clip.id)}
+  bind:this={clipElement}
   style:left="{left}px"
   style:width="{width}px"
   role="button"
@@ -163,6 +267,27 @@
       {#if band.width >= 16}<Icon name="alert" size={10} />{/if}
     </button>
   {/each}
+  {#if !isGhost}
+    {#each keyframeMarks as mark (mark.offsetTicks)}
+      {@const isDragged = draggedMark?.fromOffsetTicks === mark.offsetTicks}
+      {@const description = t("keyframes.timelineMark", {
+        time: formatTimecode(clip.startTicks + mark.offsetTicks, editor.frameRate),
+        names: mark.names.join(", "),
+      })}
+      <button
+        type="button"
+        class="keyframe-mark"
+        class:dragged={isDragged}
+        class:refused={isDragged && draggedMark?.isRefused}
+        class:current={clip.startTicks + mark.offsetTicks === editor.playheadTicks}
+        style:left="{isDragged && draggedMark ? markPosition(draggedMark.toOffsetTicks) : mark.left}px"
+        title={isDragged && draggedMark?.isRefused ? t("keyframes.cannotLandOnAnother") : description}
+        aria-label={description}
+        tabindex="-1"
+        onpointerdown={(event) => startMarkDrag(event, mark.offsetTicks)}
+      ></button>
+    {/each}
+  {/if}
   {#if isSelected && !isGhost}
     <span
       class="handle start"
@@ -300,6 +425,32 @@
   .unsure-band :global(svg) {
     color: var(--color-over-video);
     filter: drop-shadow(0 0 1px var(--color-over-video-shadow));
+  }
+  /* Keyframes: diamonds along the bottom edge, above the pictures. */
+  .keyframe-mark {
+    position: absolute;
+    bottom: 3px;
+    width: 9px;
+    height: 9px;
+    margin-left: -4.5px;
+    padding: 0;
+    border: 1.5px solid var(--color-over-video);
+    border-radius: 2px;
+    background: var(--color-accent);
+    box-shadow: 0 0 2px var(--color-over-video-shadow);
+    transform: rotate(45deg);
+    cursor: ew-resize;
+    z-index: 2;
+  }
+  .keyframe-mark.current {
+    background: var(--color-over-video);
+  }
+  .keyframe-mark.dragged {
+    z-index: 3;
+  }
+  .keyframe-mark.refused {
+    border-color: var(--color-danger);
+    background: var(--color-danger-soft);
   }
   .pictures,
   .sound {
