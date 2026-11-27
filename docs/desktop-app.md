@@ -215,8 +215,23 @@ where they apply. Each change sends one request (`editing/clip_settings.rs`), so
 undo step:
 
 - `NumberField` takes typing, ↑ / ↓ (Shift for steps ten times bigger) and dragging
-  its label sideways; the value is sent when the gesture ends. A value animated with
-  keyframes shows *Animated (n keyframes)* and is not editable yet (phase 8).
+  its label sideways; the value is sent when the gesture ends.
+- **Keyframes** (phase 8e, decision record 0054): the five picture values and the
+  volume are `AnimatableField`s.
+  - The field shows the value at the playhead (`src/lib/keyframes/keyframes.ts`
+    repeats the engine's curves only for that number and for drawing).
+  - Its diamond sends `addKeyframe` or `removeKeyframe`.
+  - Changing an animated value sends `setClipValue` with `timeTicks`, the playhead:
+    the back end sets the keyframe there if the value is animated in the project as
+    it is then (`editing/keyframes.rs`, `clip_settings.rs`).
+  - `KeyframeLane` moves keyframes (`moveKeyframe`, snapped to the timeline's frames).
+    `CurveEditor` sends `setKeyframeCurve` with a `bezier` curve when a handle is
+    released.
+  - `TimelineClip` draws one diamond per moment with keyframes; dragging it sends
+    `moveKeyframe` with empty `values` (every keyframe at that moment).
+  - Keyframes are named by their moment from the clip's start (`offsetTicks`).
+    The back end reads the rest (the value at that time, the curve of the stretch)
+    when it applies the request.
 - Crop, colour and text requests name **only the settings that change**
   (`changes: { alignment: "left" }`); the back end reads the others from the project
   when it applies the request. The view the inspector draws can be behind: an
