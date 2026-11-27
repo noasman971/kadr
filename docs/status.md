@@ -119,7 +119,7 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
    `cargo build --release -p kadr-mcp`, puis depuis `apps/desktop` :
    `npx tauri build --no-bundle`. Les deux programmes sont alors dans
    `target\release\`.
-2. Lancer `target\release\kadr-desktop.exe`, ouvrir **Paramètres → Claude →
+2. Lancer `target\release\kadr.exe`, ouvrir **Paramètres → Claude →
    Connecter à Claude…**, ajouter le dossier qui contient `interview.mp4` (une vidéo
    avec deux personnes) et celui des exports, puis **Connecter Kadr à Claude
    Desktop**.
