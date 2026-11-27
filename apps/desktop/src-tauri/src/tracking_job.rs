@@ -50,6 +50,8 @@ pub enum TrackingEvent {
         clip_id: ClipId,
         /// The blur created or corrected.
         effect_id: EffectId,
+        /// Whether an existing blur was corrected (rather than a new one added).
+        is_correction: bool,
         /// Stretches where the tracker was uncertain.
         uncertain_range_count: usize,
         /// Stretches where the tracker lost the region.
@@ -67,11 +69,13 @@ pub enum TrackingEvent {
 }
 
 impl TrackingEvent {
-    /// The event of a result that was added to the project.
+    /// The event of a result that was added to the project; `unsure_ranges`
+    /// are the blur's, after it.
     pub fn finished(
         view: ProjectView,
         clip_id: ClipId,
         effect_id: EffectId,
+        is_correction: bool,
         unsure_ranges: &[UnsureRange],
     ) -> Self {
         let count_of = |confidence| {
@@ -84,6 +88,7 @@ impl TrackingEvent {
             view: Box::new(view),
             clip_id,
             effect_id,
+            is_correction,
             uncertain_range_count: count_of(TrackingConfidence::Uncertain),
             lost_range_count: count_of(TrackingConfidence::Lost),
         }

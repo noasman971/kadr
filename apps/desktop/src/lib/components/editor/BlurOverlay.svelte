@@ -4,7 +4,9 @@
   - with the blur tool on, the box being drawn or adjusted, with its handles,
     and a bar to confirm or cancel; then the analysis' progress;
   - otherwise, for the selected clip, each tracked blur's box at the playhead:
-    solid where the tracker was sure, dashed with ⚠ where it was not.
+    solid where the tracker was sure, dashed with ⚠ where it was not. Dragging
+    a box starts correcting that blur from this frame (docs/ux.md, "Check and
+    correct").
 
   Boxes live in the source video's pixels; they are drawn through the clip's
   mapping (`blur/sourceMapping.ts`), so they sit on what the export shows.
@@ -144,8 +146,20 @@
     );
   }
 
+  /** Dragging an existing blur's box starts correcting it, the drag moving the box. */
+  function startCorrectionFrom(event: PointerEvent): boolean {
+    const effectId = Number((event.target as Element | null)?.getAttribute("data-effect-id") ?? NaN);
+    const box = overlay?.blurBoxes.find((candidate) => candidate.effectId === effectId);
+    if (!overlay || !box || blurTool.phase !== "off") {
+      return false;
+    }
+    blurTool.startCorrection(overlay.clipId, box.effectId, box.region, box.shape);
+    blurTool.overlay = overlay;
+    return true;
+  }
+
   function handlePointerDown(event: PointerEvent): void {
-    if (!blurTool.isActive || event.button !== 0) {
+    if (event.button !== 0 || !(blurTool.isActive || startCorrectionFrom(event))) {
       return;
     }
     const point = sourcePointOf(event);
@@ -219,6 +233,7 @@
     blurTool.secondsLeft === null ? "" : t("blur.secondsLeft", { seconds: translations.formatNumber(Math.ceil(blurTool.secondsLeft), 0) }),
   );
   const isPlayheadOutsideClip = $derived(blurTool.isActive && overlay === null && !playback.isPlaying);
+  const isCorrecting = $derived(blurTool.correctedEffectId !== null);
 </script>
 
 <svg
@@ -235,7 +250,7 @@
   onpointercancel={handlePointerUp}
 >
   {#if overlay && displayMatrix}
-    {#each overlay.blurBoxes as box (box.effectId)}
+    {#each overlay.blurBoxes.filter((box) => box.effectId !== blurTool.correctedEffectId) as box (box.effectId)}
       {@const isSure = box.confidence === "confident"}
       <g class="blur-box" class:unsure={box.confidence === "uncertain"} class:lost={box.confidence === "lost"} class:off={!box.isEnabled}>
         {#if box.shape === "ellipse"}
@@ -263,6 +278,11 @@
         {#if !isSure}
           {@const corner = applyMatrix(displayMatrix, { x: box.region.left, y: box.region.top })}
           <text class="warning-mark" x={corner.x + 4} y={corner.y - 6}>⚠</text>
+        {/if}
+        {#if blurTool.phase === "off" && box.isEnabled}
+          <polygon class="grab" data-effect-id={box.effectId} points={pointsOf(box.region)}>
+            <title>{t("blur.dragToCorrect")}</title>
+          </polygon>
         {/if}
       </g>
     {/each}
@@ -338,23 +358,27 @@
           {t("blur.drawHint")}
         {:else if !blurTool.isRegionLargeEnough}
           {t("blur.tooSmall")}
+        {:else if isCorrecting}
+          {t("blur.correctHint")}
         {:else}
           {t("blur.adjustHint")}
         {/if}
       </span>
-      <div class="segmented" role="group" aria-label={t("blur.shape")}>
-        <button type="button" aria-pressed={blurTool.shape === "ellipse"} onclick={() => (blurTool.shape = "ellipse")}>{t("blur.shape.ellipse")}</button>
-        <button type="button" aria-pressed={blurTool.shape === "rectangle"} onclick={() => (blurTool.shape = "rectangle")}>{t("blur.shape.rectangle")}</button>
-      </div>
+      {#if !isCorrecting}
+        <div class="segmented" role="group" aria-label={t("blur.shape")}>
+          <button type="button" aria-pressed={blurTool.shape === "ellipse"} onclick={() => (blurTool.shape = "ellipse")}>{t("blur.shape.ellipse")}</button>
+          <button type="button" aria-pressed={blurTool.shape === "rectangle"} onclick={() => (blurTool.shape = "rectangle")}>{t("blur.shape.rectangle")}</button>
+        </div>
+      {/if}
       <Button variant="ghost" title="{t('blur.cancel')} (Esc)" onclick={() => blurTool.cancel()}>{t("blur.cancel")}</Button>
       {#if blurTool.phase === "adjusting"}
         <Button
           variant="primary"
-          title="{t('blur.confirm')} (Enter)"
+          title="{isCorrecting ? t('blur.correct') : t('blur.confirm')} (Enter)"
           disabled={!blurTool.isRegionLargeEnough || isPlayheadOutsideClip}
           onclick={() => void blurTool.confirm()}
         >
-          {t("blur.confirm")}
+          {isCorrecting ? t("blur.correct") : t("blur.confirm")}
         </Button>
       {/if}
     {/if}
@@ -396,6 +420,12 @@
   }
   .blur-box.off {
     opacity: 0.45;
+  }
+  .grab {
+    fill: transparent;
+    stroke: none;
+    pointer-events: all;
+    cursor: move;
   }
   .warning-mark {
     fill: var(--color-over-video-unsure);

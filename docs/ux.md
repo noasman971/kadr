@@ -321,7 +321,8 @@ The full list is also in the app (`?`). Shortcuts do not fire while typing in a 
 | | Undo / redo | Ctrl+Z / Ctrl+Y, Ctrl+Shift+Z |
 | | Deselect | Esc |
 | | Add a title at the playhead | T |
-| | Blur a region (draw a box on the preview); then Enter to follow it, Esc to leave | B |
+| | Blur a region (draw a box on the preview); then Enter to follow it, Esc to leave, arrows to move the box | B |
+| | Next moment of a blur to check | Shift+B |
 | Timeline | Zoom in / out | + / − , Ctrl + wheel |
 | | Fit the whole edit | Shift+Z |
 | | Snapping on / off | N |
