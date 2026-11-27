@@ -17,6 +17,7 @@ pushed; nothing lives only on the laptop.
 | 8d, stabilisation | Branch `feature/phase-8d-stabilization` and its draft pull request (#30) | Steps 1–8 of 14 are done (motion measurement, path smoothing, the effect in file format 5, the renderer, the analysis, the benchmark) and the composer draws stabilised clips. On the benchmark the centre of the picture is steady to half a pixel; the roll is measured less well. [stabilization-plan.md](stabilization-plan.md), "Where the work stands", gives the numbers and the next things to do |
 | 8f, automatic proxies | Branch `claude/phase-8f-proxies-98d76d` and its pull request | Proxies are made, used by the preview and shown in the app. Docs and the end checks were left: see its "Status for resuming" |
 | 8g, SRT subtitles | Pull request #29 | Code and docs written. One CI job (Ubuntu) failed when work stopped: see its "Status for resuming" |
+| CI fix | Pull request #32 (auto-merge on) | The Linux CI job crashed now and then in the GPU tests (`gpu_matches_cpu`, software GPU), on `main` too since #28, which blocks the auto-merge of #29 and #31. #32 makes those tests render one at a time. Once it is merged, merge `origin/main` into the open pull requests |
 | Automatic subtitles | Not started | Approved by the owner, as the step after 8g (below) |
 
 To resume 8d: *"Resume phase 8d of Kadr (stabilisation): read CLAUDE.md,
