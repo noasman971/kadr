@@ -26,7 +26,8 @@ use kadr_media::{
     EncodingSpeed, ExportSink, ExportSinkSettings, MediaBackend, MediaError, VideoEncoderPreference,
 };
 use kadr_render::{
-    MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, RenderError, RendererPreference, create_renderer,
+    MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, MAXIMUM_COLOR_LUTS_PER_LAYER, RenderError,
+    RendererPreference, create_renderer,
 };
 
 use audio_mixer::mix_timeline_sound;
@@ -100,7 +101,8 @@ pub struct ExportReport {
     pub video_encoder_name: String,
     /// What rendered the frames, for example `"GPU: Intel(R) Arc(TM) Graphics (Vulkan)"` or `"CPU"`.
     pub renderer_description: String,
-    /// Parts of the project that were not rendered yet, in plain words.
+    /// Parts of the project that were not rendered as asked, in plain words (a
+    /// blur with no tracked region, a colour LUT whose file cannot be read…).
     pub warnings: Vec<String>,
 }
 
@@ -251,7 +253,7 @@ fn write_export(
         duration,
         video_encoder_name,
         renderer_description,
-        warnings: describe_unrendered_parts(project),
+        warnings: describe_unrendered_parts(project, &mut composer),
     })
 }
 
@@ -272,12 +274,15 @@ fn write_sound_range(
     ))
 }
 
-/// Lists, in plain words, what could not be rendered as asked.
-fn describe_unrendered_parts(project: &Project) -> Vec<String> {
+/// Lists, in plain words, what could not be rendered as asked. LUT files are
+/// asked of `composer`, which read them while rendering (or reads them now, for
+/// clips that were never shown).
+fn describe_unrendered_parts(project: &Project, composer: &mut FrameComposer) -> Vec<String> {
     let mut warnings = Vec::new();
     for (_, clip) in project.timeline().all_clips() {
         let enabled_effects = clip.effects.iter().filter(|effect| effect.is_enabled);
         let mut color_adjustment_count = 0;
+        let mut color_lut_count = 0;
         for effect in enabled_effects {
             match &effect.kind {
                 EffectKind::TrackedBlur(tracked_blur) if tracked_blur.region_samples.is_empty() => {
@@ -287,12 +292,30 @@ fn describe_unrendered_parts(project: &Project) -> Vec<String> {
                     ));
                 }
                 EffectKind::ColorAdjustment(_) => color_adjustment_count += 1,
+                EffectKind::ColorLut(color_lut) => {
+                    color_lut_count += 1;
+                    let is_applied = color_lut_count <= MAXIMUM_COLOR_LUTS_PER_LAYER
+                        && color_lut.strength_fraction > 0.0;
+                    if is_applied && let Err(error) = composer.color_table_at(&color_lut.file_path)
+                    {
+                        warnings.push(format!(
+                            "the colour LUT (effect {}) of clip {} was not applied: {error}",
+                            effect.id, clip.id
+                        ));
+                    }
+                }
                 EffectKind::TrackedBlur(_) => {}
             }
         }
         if color_adjustment_count > MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER {
             warnings.push(format!(
                 "clip {} has {color_adjustment_count} colour adjustments; only the first {MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER} were applied",
+                clip.id
+            ));
+        }
+        if color_lut_count > MAXIMUM_COLOR_LUTS_PER_LAYER {
+            warnings.push(format!(
+                "clip {} has {color_lut_count} colour LUTs; only the first was applied",
                 clip.id
             ));
         }

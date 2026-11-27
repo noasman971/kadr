@@ -5,6 +5,7 @@
 //!
 //! - [`project_files`]: save and open `.kadr` files (atomically);
 //! - [`export`]: render a project to an MP4 file, with progress and cancellation;
+//! - [`color_grading`]: read the `.cube` files of colour LUT effects;
 //! - [`clip_geometry`]: where a clip's source picture is on the canvas, for
 //!   interfaces drawing on top of the preview;
 //! - [`export_presets`]: the export sizes, and a project scaled to another size;
@@ -32,6 +33,7 @@
 //! See `docs/architecture.md`.
 
 pub mod clip_geometry;
+pub mod color_grading;
 pub mod export;
 pub mod export_presets;
 pub mod media_overview;

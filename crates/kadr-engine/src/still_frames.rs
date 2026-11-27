@@ -121,8 +121,9 @@ pub struct ClipPicture {
 
 /// The source pictures clip `clip_id` shows at each of `timeline_times`.
 ///
-/// Media clips give their source picture (tracked blurs applied, crop, position
-/// and colour adjustments not applied); text clips give their rasterised text.
+/// Media clips give their source picture (tracked blurs applied; crop, position,
+/// colour adjustments and colour LUT not applied: the timeline's pictures,
+/// [`timeline_pictures_at`], show them); text clips give their rasterised text.
 ///
 /// # Errors
 ///

@@ -1,5 +1,6 @@
 //! Effects in exports: tracked blurs hide the right area at the right time, colour
-//! adjustments change the colours, and a blur without tracked regions is reported.
+//! adjustments and colour LUTs change the colours (in that order), and a blur
+//! without tracked regions or a LUT that cannot be read is reported.
 
 // Test helpers panic with the error on failure, which is how a test should fail.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -9,10 +10,10 @@ use std::path::{Path, PathBuf};
 use image::{Rgba, RgbaImage};
 use kadr_core::color::Color;
 use kadr_core::commands::{
-    AddClip, AddEffect, AddTrack, CreatedObjectsExt, ImportMedia, TrackPosition,
+    AddClip, AddEffect, AddTrack, CreatedObjectsExt, ImportMedia, SetEffectEnabled, TrackPosition,
 };
 use kadr_core::effect::{
-    BlurShape, BlurStyle, ColorAdjustment, EffectKind, PixelRegion, RegionSample,
+    BlurShape, BlurStyle, ColorAdjustment, ColorLut, EffectKind, PixelRegion, RegionSample,
     RegionSampleOrigin, TrackedBlur, TrackingConfidence,
 };
 use kadr_core::history::EditSession;
@@ -20,6 +21,7 @@ use kadr_core::media_asset::PictureSize;
 use kadr_core::project::{Project, ProjectSettings};
 use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
+use kadr_engine::preview::PreviewRenderer;
 use kadr_engine::{
     ExportCancellation, ExportReport, ExportRequest, RendererPreference, export_project,
 };
@@ -270,4 +272,216 @@ fn a_tracked_blur_without_regions_is_reported() {
         "{:?}",
         report.warnings
     );
+}
+
+/// A 2 × 2 × 2 LUT turning every colour into its opposite (red into cyan).
+const INVERTING_CUBE: &str = "TITLE \"Invert\"\nLUT_3D_SIZE 2\n\
+    1 1 1\n0 1 1\n1 0 1\n0 0 1\n1 1 0\n0 1 0\n1 0 0\n0 0 0\n";
+/// A 2 × 2 × 2 LUT giving every colour pure green.
+const ALL_GREEN_CUBE: &str = "TITLE \"All green, a longer title\"\nLUT_3D_SIZE 2\n\
+    0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n";
+
+const BOTH_RENDERERS: [RendererPreference; 2] = [
+    RendererPreference::CpuOnly,
+    RendererPreference::GpuIfAvailable,
+];
+
+fn write_cube(directory: &Path, name: &str, text: &str) -> PathBuf {
+    let path = directory.join(name);
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+fn color_lut(file_path: &Path, strength_fraction: f32) -> EffectKind {
+    EffectKind::ColorLut(ColorLut {
+        file_path: file_path.to_path_buf(),
+        strength_fraction,
+    })
+}
+
+/// The chroma values (U, V) in the middle of the picture's top-left quarter.
+fn middle_chroma(picture: &kadr_media::YuvPicture) -> (u8, u8) {
+    let index = ((HEIGHT / 4) * (WIDTH / 2) + WIDTH / 4) as usize;
+    (picture.u_plane()[index], picture.v_plane()[index])
+}
+
+/// The chroma values (U, V) of an exported video at 0.5 s.
+fn exported_middle_chroma(output: &Path) -> (u8, u8) {
+    let VideoFrame::Yuv420(picture) = frame_at(output, 500) else {
+        panic!("decoded videos are YUV");
+    };
+    middle_chroma(&picture)
+}
+
+/// The brightness in the middle of an exported video at 0.5 s.
+fn exported_middle_luma(output: &Path) -> u8 {
+    let VideoFrame::Yuv420(picture) = frame_at(output, 500) else {
+        panic!("decoded videos are YUV");
+    };
+    picture.y_plane()[((HEIGHT / 2) * WIDTH + WIDTH / 2) as usize]
+}
+
+#[test]
+fn a_colour_lut_grades_a_video_the_size_of_the_canvas() {
+    // The video is the canvas's size, so without colour changes it would be
+    // passed through untouched: the LUT must still apply.
+    let directory = tempfile::tempdir().unwrap();
+    let red = red_video(directory.path());
+    let invert = write_cube(directory.path(), "invert.cube", INVERTING_CUBE);
+    let project = project_with_effects(&red, 1, vec![color_lut(&invert, 1.0)]);
+    for renderer_preference in BOTH_RENDERERS {
+        let (output, report) = export(&project, directory.path(), renderer_preference);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        // Red (V high) became cyan (V low, U above grey).
+        let (u, v) = exported_middle_chroma(&output);
+        assert!(
+            v < 40 && u > 140,
+            "{}: U = {u}, V = {v}",
+            report.renderer_description
+        );
+    }
+}
+
+#[test]
+fn half_strength_mixes_the_look_with_the_picture() {
+    let directory = tempfile::tempdir().unwrap();
+    let red = red_video(directory.path());
+    let invert = write_cube(directory.path(), "invert.cube", INVERTING_CUBE);
+    let project = project_with_effects(&red, 1, vec![color_lut(&invert, 0.5)]);
+    for renderer_preference in BOTH_RENDERERS {
+        let (output, report) = export(&project, directory.path(), renderer_preference);
+        // Half red, half cyan: mid grey.
+        let (u, v) = exported_middle_chroma(&output);
+        assert!(
+            u.abs_diff(128) <= 6 && v.abs_diff(128) <= 6,
+            "{}: U = {u}, V = {v}",
+            report.renderer_description
+        );
+    }
+}
+
+#[test]
+fn the_lut_applies_after_the_colour_adjustments_whatever_the_list_order() {
+    // The LUT comes first in the list, then an exposure that makes everything
+    // black. Exposure then LUT gives white; the other way round would be black.
+    let directory = tempfile::tempdir().unwrap();
+    let red = red_video(directory.path());
+    let invert = write_cube(directory.path(), "invert.cube", INVERTING_CUBE);
+    let darkest = EffectKind::ColorAdjustment(ColorAdjustment {
+        exposure_in_stops: -10.0,
+        ..ColorAdjustment::NEUTRAL
+    });
+    let project = project_with_effects(&red, 1, vec![color_lut(&invert, 1.0), darkest]);
+    for renderer_preference in BOTH_RENDERERS {
+        let (output, report) = export(&project, directory.path(), renderer_preference);
+        let luma = exported_middle_luma(&output);
+        assert!(luma > 225, "{}: Y = {luma}", report.renderer_description);
+    }
+}
+
+#[test]
+fn a_disabled_lut_or_one_at_zero_strength_changes_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let red = red_video(directory.path());
+    let invert = write_cube(directory.path(), "invert.cube", INVERTING_CUBE);
+
+    let at_zero = project_with_effects(&red, 1, vec![color_lut(&invert, 0.0)]);
+    let mut session =
+        EditSession::new(project_with_effects(&red, 1, vec![color_lut(&invert, 1.0)])).unwrap();
+    let clip = session.project().timeline().all_clips().next().unwrap().1;
+    let (clip_id, effect_id) = (clip.id, clip.effects[0].id);
+    session
+        .execute(SetEffectEnabled::new(clip_id, effect_id, false))
+        .unwrap();
+    let disabled = session.into_project();
+
+    for project in [at_zero, disabled] {
+        let (output, report) = export(
+            &project,
+            directory.path(),
+            RendererPreference::GpuIfAvailable,
+        );
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        let (_, v) = exported_middle_chroma(&output);
+        assert!(v > 220, "{}: V = {v}", report.renderer_description);
+    }
+}
+
+#[test]
+fn a_missing_lut_is_reported_and_the_clip_is_drawn_without_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let red = red_video(directory.path());
+    let missing = directory.path().join("moved away.cube");
+    let project = project_with_effects(&red, 1, vec![color_lut(&missing, 1.0)]);
+    let clip = project.timeline().all_clips().next().unwrap().1;
+    let (clip_id, effect_id) = (clip.id, clip.effects[0].id);
+
+    let (output, report) = export(&project, directory.path(), RendererPreference::CpuOnly);
+
+    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+    let warning = &report.warnings[0];
+    assert!(
+        warning.contains(&format!(
+            "the colour LUT (effect {effect_id}) of clip {clip_id} was not applied"
+        )),
+        "{warning}"
+    );
+    assert!(warning.contains("moved away.cube"), "{warning}");
+    let (_, v) = exported_middle_chroma(&output);
+    assert!(v > 220, "still red: V = {v}");
+}
+
+#[test]
+fn a_second_lut_on_a_clip_is_reported_and_ignored() {
+    let directory = tempfile::tempdir().unwrap();
+    let red = red_video(directory.path());
+    let invert = write_cube(directory.path(), "invert.cube", INVERTING_CUBE);
+    let green = write_cube(directory.path(), "green.cube", ALL_GREEN_CUBE);
+    let project = project_with_effects(
+        &red,
+        1,
+        vec![color_lut(&invert, 1.0), color_lut(&green, 1.0)],
+    );
+
+    let (output, report) = export(&project, directory.path(), RendererPreference::CpuOnly);
+
+    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+    assert!(
+        report.warnings[0].contains("has 2 colour LUTs; only the first was applied"),
+        "{:?}",
+        report.warnings
+    );
+    let (u, v) = exported_middle_chroma(&output);
+    assert!(v < 40 && u > 140, "inverted, not green: U = {u}, V = {v}");
+}
+
+#[test]
+fn the_preview_follows_a_lut_file_written_again() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = FfmpegBackend::new().unwrap();
+    let red = red_video(directory.path());
+    let look = write_cube(directory.path(), "look.cube", INVERTING_CUBE);
+    let project = project_with_effects(&red, 1, vec![color_lut(&look, 1.0)]);
+    let canvas = small_settings().canvas_size;
+    let mut renderer = PreviewRenderer::new(RendererPreference::GpuIfAvailable).unwrap();
+    let mut preview_chroma = || {
+        let picture = renderer
+            .render_frame(
+                &project,
+                &backend,
+                Timestamp::from_milliseconds(500),
+                canvas,
+            )
+            .unwrap();
+        middle_chroma(&picture)
+    };
+
+    let (u, v) = preview_chroma();
+    assert!(v < 40 && u > 140, "cyan: U = {u}, V = {v}");
+
+    // Written again by a grading tool (with another length, so the change shows
+    // even where the file clock is coarse): the next frame shows the new look.
+    std::fs::write(&look, ALL_GREEN_CUBE).unwrap();
+    let (u, v) = preview_chroma();
+    assert!(u < 80 && v < 80, "green: U = {u}, V = {v}");
 }
