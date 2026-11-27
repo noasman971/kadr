@@ -7,6 +7,9 @@
 // Test helpers panic with the error on failure, which is how a test should fail.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::cell::RefCell;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use image::{Rgba, RgbaImage};
 use kadr_core::clip::{CropInsets, TextStyle};
 use kadr_core::color::Color;
@@ -21,8 +24,30 @@ use kadr_render::{
     text_animation_frame, transition_motion,
 };
 
+/// Makes the tests of this file render one at a time: the calling test waits for
+/// its turn, and keeps it until its thread ends.
+///
+/// Software GPUs (WARP on Windows, lavapipe on Linux) crash now and then when
+/// several tests render at once (an access violation on the owner's computers,
+/// a segmentation fault on CI's Linux, more often as tests were added). Real
+/// GPUs never did, but taking turns costs them next to nothing.
+fn wait_for_a_turn_on_the_gpu() {
+    static TURN: Mutex<()> = Mutex::new(());
+    thread_local! {
+        static HELD_TURN: RefCell<Option<MutexGuard<'static, ()>>> = const { RefCell::new(None) };
+    }
+    HELD_TURN.with(|held_turn| {
+        let mut held_turn = held_turn.borrow_mut();
+        if held_turn.is_none() {
+            // A test that failed while holding the turn must not fail the others.
+            *held_turn = Some(TURN.lock().unwrap_or_else(PoisonError::into_inner));
+        }
+    });
+}
+
 /// The GPU renderer, or `None` (test skipped) when there is no GPU and it is not required.
 fn gpu_renderer() -> Option<GpuRenderer> {
+    wait_for_a_turn_on_the_gpu();
     match GpuRenderer::new() {
         Ok(renderer) => Some(renderer),
         Err(error) if std::env::var("KADR_REQUIRE_GPU").is_ok_and(|value| value == "1") => {
