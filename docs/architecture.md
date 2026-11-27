@@ -78,6 +78,11 @@ flowchart LR
     encoder --> export[Exported MP4]
 ```
 
+Colour LUT files (`.cube`) are read by `kadr-engine` (`color_grading`, which keeps
+them between frames and reads a file again when it changes) and parsed and applied by
+`kadr-render` (`color_lookup_table`, on the CPU and the GPU); the project only names
+the file (decision record 0052).
+
 Preview and export use the same renderer, so what the user sees is what they get: the
 desktop app's preview frames come from `kadr_engine::preview`, which composes frames
 with the export's own code and only shrinks the result to the panel's size (see

@@ -1,7 +1,7 @@
 # Status, and how to resume
 
 Last updated: **2026-11-27**, on the laptop, after phase 7's last pull requests
-(7d, 7e) and phase 8b were merged.
+(7d, 7e, the blur inspector fix) and phases 8b and 8c were merged.
 
 This page says where every phase stands and how to pick the work up on another
 computer. Each open pull request starts with a **"Status for resuming"** section,
@@ -60,8 +60,8 @@ which is more detailed and is the reference for its phase.
 | 4. Tracking and blur | Done, tagged `v0.5.0` | `main` (#7, #8) | — (owner's real-video test still to do) |
 | 5. MCP server | Done, tagged `v0.6.0` | `main` (#9) | — (owner's Claude Desktop test still to do) |
 | 6. Desktop app | Done, tagged `v0.7.0` | `main` (#6, #10, #14, #15, #16; fix #18 after the tag) | — (owner's edit-and-export test still to do) |
-| 7. Blur and Claude in the app | 7a–7e merged (#17, #19, #20, #21, #24); blur inspector fix in #25 | `main`; `fix/blur-inspector-edit-race`, [#25](https://github.com/noasman971/kadr/pull/25) | Merge #25 once green, then the owner's end test |
-| 8. Features | 8a and 8b merged (#11, #23) | `main` | Owner: which feature next |
+| 7. Blur and Claude in the app | 7a–7e merged (#17, #19, #20, #21, #24), blur inspector fix merged (#25) | `main` | The owner's end test |
+| 8. Features | 8a, 8b and 8c merged (#11, #23, #27) | `main` | Owner: which feature next |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -104,9 +104,9 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
      Claude writes the Claude Desktop configuration and manages the allowed folders,
      read by `kadr-mcp --kadr-settings` before every call. Docs in the README,
      `docs/mcp-server.md`, `docs/ux.md` and `docs/desktop-app.md`.
-- **Fix in review:** #25 (`fix/blur-inspector-edit-race`): the inspector's Blur section
-  had the race #18 fixed for the other settings (two quick changes, the second
-  undoing the first). Blur requests now name only what changes. Merge once green.
+- **Fix merged:** #25: the inspector's Blur section had the race #18 fixed for the
+  other settings (two quick changes, the second undoing the first). Blur requests now
+  name only what changes.
 - **Next step: the owner's end test.** Its steps, in French, are below. After it, the
   owner validates phase 7, and it is tagged `v0.8.0`.
 - **Not done yet (not blocking):** the installer does not ship `kadr-mcp` next to the
@@ -149,10 +149,24 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
   remove-silences` and the desktop app part (decision record 0051). Merging it with
   phases 7d and 7e needed one fix: tools now receive a `ToolCall`, not the
   `KadrToolbox`.
+- **8c, colour grading with `.cube` LUTs** (merged, #27):
+  - the `color_lut` effect (file format 3);
+  - the parser and the CPU/GPU application in `kadr-render`;
+  - reading and caching in the engine (a LUT that cannot be read is skipped with an
+    export warning);
+  - Claude's `add_color_lut`;
+  - the inspector's LUT row;
+  - `kadr-cli assemble --lut`;
+  - decision record 0052.
+
+  Not tried by a person yet: the inspector's native picker, and a real LUT from
+  Resolve on a real video (the tests use small generated tables). Owner's check:
+  `kadr-cli assemble -o graded.kadr --lut <a .cube> <a video>`, then
+  `kadr-cli render graded.kadr graded.mp4`, or the inspector's Colour section.
 - **Next step:** the owner chooses the next feature.
-- **Left, proposed in the specification's order:** LUT `.cube` files for colour grading,
-  stabilisation (`kadr-vision`'s optical flow and smoothing), editable keyframes in
-  the interface, automatic proxies for heavy 4K videos, SRT subtitles. Also waiting:
+- **Left, proposed in the specification's order:** stabilisation (`kadr-vision`'s
+  optical flow and smoothing), editable keyframes in the interface, automatic
+  proxies for heavy 4K videos, SRT subtitles. Also waiting:
   Claude's `add_transition` still makes fades from opacity keyframes, and the
   inspector has no transition controls yet.
 - Decision records 0050–0059.

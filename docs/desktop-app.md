@@ -228,6 +228,20 @@ undo step:
   is being typed. Leaving the field sends the words only if the user changed them.
 - The colour adjustment is an effect added on the first change, replaced afterwards,
   and removed by *Reset*.
+- The Colour section's **LUT** row:
+  - Choosing a `.cube` file (the native picker, filtered on `.cube`) calls its own
+    command, `choose_clip_lut_file`. It reads and parses the file in the
+    background, then applies `SetClipLut` with that file.
+  - An unreadable file is answered with the error code `lutUnreadable` and changes
+    nothing.
+  - The strength field and slider send `setClipLut` with the strength only. A
+    `filePath` sent through `apply_edit` is refused like any unknown name: the
+    front end cannot name a file the back end has not read.
+  - A new file keeps the strength the project has then. A first file starts at
+    100 %.
+  - *Reset* removes the colour adjustment and the LUT in one step.
+  - The view says when the file has gone (`isMissing`): the clip is then shown
+    without its look.
 - A speed change keeps the clip's start; a clip that would then overlap the next one
   is refused by the engine.
 
@@ -422,6 +436,13 @@ view in [ux.md](ux.md#connecting-claude-settings--claude).
    go to the back end **one at a time, in the order they were made**
    (`editor.svelte.ts`, `inOrder`): Tauri runs commands on a pool of threads, so
    two requests sent together could otherwise be applied in either order.
+
+An edit that must read a file first (importing media, choosing a LUT) gets its own
+command: it reads the file in `spawn_blocking`, then applies its `EditRequest`
+through `open_project.edit`. The front end sends it through the same queue
+(`editor.chooseLutFile` uses `applyChange`, like `edit`). The file's path is filled
+by the back end after reading it (`#[serde(skip_deserializing)]`), never taken from
+the front end's JSON.
 
 ## Languages
 

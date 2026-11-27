@@ -168,7 +168,7 @@ value typed) is one undo step.
 | **Picture** | Position X/Y (pixels), scale (%), rotation (°), opacity (%). *Advanced: crop* (left, top, right, bottom) | Videos, pictures, titles |
 | **Sound** | Volume (0–400 %) | Clips with sound |
 | **Speed** | 0.5×, 1×, 1.5×, 2×, or a custom value. Voices keep their pitch; the clip's length changes, later clips do not move (a longer clip that would overlap is refused with a message) | Videos and sounds |
-| **Colour** | Exposure, contrast, saturation, temperature; off until first touched | Videos and pictures |
+| **Colour** | Exposure, contrast, saturation, temperature; off until first touched. Then a **LUT**: *Choose a .cube file…* (DaVinci Resolve, Premiere…), its strength (0–100 %, field and slider), *Choose another LUT*, *Remove the LUT*. The LUT applies after the four settings. *Reset* removes both | Videos and pictures |
 | **Text** | Words, font, size, colour, alignment, duration | Titles |
 | **Blur** | Each tracked blur: style, strength, shape, margin, on / off, delete; *Add* starts the blur tool (see [Blurring a face](#blurring-a-face-phase-7)) | Videos |
 
@@ -334,7 +334,7 @@ and say which folders Claude may touch.
 | Loading | A spinner where the content will be; the rest stays usable |
 | Error | What happened, why, what to do; never a raw code. Engine messages are translated for the cases the app knows, and shown as they are otherwise |
 | Long text | Names are cut with an ellipsis and shown whole in a tooltip; French, about 20 % longer than English, is the reference for widths |
-| Missing file | A media file moved since the project was saved: its tile and clips are marked *Missing*, the preview shows a placeholder. Relinking arrives after the MVP |
+| Missing file | A media file moved since the project was saved: its tile and clips are marked *Missing*, the preview shows a placeholder. A LUT file moved: the clip is shown without its look, and the inspector says so under the LUT's name (*"… cannot be found: … Choose the file again."*). Relinking arrives after the MVP |
 
 ## Notifications
 
@@ -402,7 +402,7 @@ sizes and dates use the language's conventions (*17,6 Mo* / *17.6 MB*).
 |---|---|
 | *Connect to Claude* screen | 7 |
 | Moving and resizing clips directly in the preview, with guides | 7 |
-| Transitions, keyframe curves, silence removal, stabilisation, LUTs, subtitles | 8 |
+| Transitions, keyframe curves, silence removal, stabilisation, subtitles | 8 |
 | First-launch tour and sample project; customisable shortcuts; relinking moved files | after the MVP |
 
 The layout keeps room for them: phase 7's blur tools live in the inspector (a
