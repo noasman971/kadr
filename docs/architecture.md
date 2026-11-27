@@ -88,7 +88,11 @@ sequenceDiagram
     Claude->>Mcp: get_frame(clip, 2.0 s)
     Mcp-->>Claude: image of the frame
     Claude->>Mcp: blur_region(clip, 2.0 s, rectangle)
-    Mcp->>Engine: tracked blur command (one undo group)
+    Mcp->>Engine: track the region in the background
+    Mcp-->>Claude: task id
+    Claude->>Mcp: get_blur_status(task id)
+    Mcp-->>Claude: tracked blur added (one undo group), ranges to check
+    Claude->>Mcp: get_frame(clip, a time in each range)
     Claude->>Mcp: export(preset = vertical 1080×1920)
     Mcp->>Engine: start export task
     Mcp-->>Claude: task id, then progress

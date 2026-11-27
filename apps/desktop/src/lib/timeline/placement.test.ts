@@ -31,6 +31,7 @@ function clip(id: number, startSeconds: number, durationSeconds: number, overrid
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     text: null,
     colorAdjustment: null,
+    trackedBlurs: [],
     effectCount: 0,
     ...overrides,
   };

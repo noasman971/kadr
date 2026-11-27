@@ -62,6 +62,84 @@ export interface ColorAdjustmentView {
   temperature: number;
 }
 
+export type BlurStyleChoice = "blur" | "pixels" | "mask";
+export type BlurShapeChoice = "ellipse" | "rectangle";
+export type Confidence = "confident" | "uncertain" | "lost";
+
+/** What the inspector shows and changes about a tracked blur (`editing/blur_settings.rs`). */
+export interface BlurSettings {
+  style: BlurStyleChoice;
+  /** Blur radius or square size, in source pixels. */
+  strength: number;
+  /** `#RRGGBB`, for the mask. */
+  maskColor: string;
+  shape: BlurShapeChoice;
+  marginInPercent: number;
+}
+
+/** A stretch where a blur's tracker was not sure, on the timeline. */
+export interface UnsureRangeView {
+  startTicks: number;
+  /** Excluded. */
+  endTicks: number;
+  confidence: Exclude<Confidence, "confident">;
+}
+
+export interface TrackedBlurView {
+  effectId: number;
+  isEnabled: boolean;
+  settings: BlurSettings;
+  correctionCount: number;
+  unsureRanges: UnsureRangeView[];
+}
+
+/** A box in the source video's pixels. */
+export interface SourceRegion {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface BlurBoxView {
+  effectId: number;
+  isEnabled: boolean;
+  shape: BlurShapeChoice;
+  region: SourceRegion;
+  hiddenArea: SourceRegion;
+  confidence: Confidence;
+}
+
+/** What the preview draws on top of a clip at one moment (`blur_overlay.rs`). */
+export interface ClipOverlay {
+  clipId: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourceTimeTicks: number;
+  /** Source pixels to canvas pixels, in SVG's `matrix(a, b, c, d, e, f)` order. */
+  sourceToCanvas: [number, number, number, number, number, number];
+  /** Left, top, right, bottom of the visible part of the source. */
+  visibleSource: [number, number, number, number];
+  /** The shortest side a box may have to be followed, in source pixels. */
+  minimumRegionSide: number;
+  blurBoxes: BlurBoxView[];
+}
+
+/** What a running analysis reports (`tracking_job.rs`). */
+export type TrackingEvent =
+  | { type: "progress"; analysedFrameCount: number; totalFrameCount: number; elapsedSeconds: number }
+  | {
+      type: "finished";
+      view: ProjectView;
+      clipId: number;
+      effectId: number;
+      isCorrection: boolean;
+      uncertainRangeCount: number;
+      lostRangeCount: number;
+    }
+  | { type: "failed"; code: ErrorCode; details: string }
+  | { type: "cancelled" };
+
 export interface ClipView {
   id: number;
   trackId: number;
@@ -85,6 +163,7 @@ export interface ClipView {
   crop: CropView;
   text: TextView | null;
   colorAdjustment: ColorAdjustmentView | null;
+  trackedBlurs: TrackedBlurView[];
   effectCount: number;
 }
 
@@ -139,13 +218,22 @@ export type EditRequest =
   | { type: "setCanvasSize"; width: number; height: number }
   /** Units: volume and scale are multipliers, opacity 0–1, positions pixels from the centre, rotation degrees. */
   | { type: "setClipValue"; clipId: number; value: ClipValueName; amount: number }
-  | { type: "setClipCrop"; clipId: number; left: number; top: number; right: number; bottom: number }
+  /**
+   * Crop, colour and text requests name only the settings they change: the back
+   * end keeps the others as the project has them when it applies the request.
+   * The view here can be behind (an earlier change not answered yet), so sending
+   * every setting from it would put old values back.
+   */
+  | { type: "setClipCrop"; clipId: number; changes: Partial<CropView> }
   | { type: "resetClipPicture"; clipId: number }
   | { type: "setClipSpeed"; clipId: number; speed: number }
-  | { type: "setClipColor"; clipId: number; settings: ColorSettings }
+  | { type: "setClipColor"; clipId: number; changes: Partial<ColorSettings> }
   | { type: "resetClipColor"; clipId: number }
-  | { type: "setClipText"; clipId: number; settings: TextSettings }
+  | { type: "setClipText"; clipId: number; changes: Partial<TextSettings> }
   | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle }
+  | { type: "setBlurSettings"; clipId: number; effectId: number; settings: BlurSettings }
+  | { type: "setBlurEnabled"; clipId: number; effectId: number; isEnabled: boolean }
+  | { type: "removeBlur"; clipId: number; effectId: number }
   /** Cuts the parts the silence dialog found and closes the gaps on the clip's track. */
   | { type: "removeSilences"; clipId: number; cuts: TickRange[] };
 
@@ -244,6 +332,13 @@ export type ErrorCode =
   | "exportAlreadyRunning"
   | "exportFileExists"
   | "exportOtherShape"
+  | "blurRegionTooSmall"
+  | "blurRegionOutsidePicture"
+  | "blurRegionWithoutDetail"
+  | "blurClipNotShown"
+  | "trackingAlreadyRunning"
+  | "trackingFailed"
+  | "trackingProjectClosed"
   | "internal";
 
 /** The size of an exported video (`export_job.rs`). */

@@ -14,6 +14,8 @@ import {
   type YuvFrame,
 } from "./binaryMessages";
 import type {
+  BlurShapeChoice,
+  ClipOverlay,
   EditRequest,
   EditResponse,
   ExportEvent,
@@ -25,6 +27,8 @@ import type {
   RecentProject,
   SilencePlan,
   SilenceSearchSettings,
+  SourceRegion,
+  TrackingEvent,
 } from "./types";
 
 export const backend = {
@@ -93,6 +97,35 @@ export const backend = {
   stopSilenceSearch: () => invoke<void>("stop_silence_search"),
   revealExportedFile: (filePath: string) => invoke<void>("reveal_exported_file", { filePath }),
   openExportedFile: (filePath: string) => invoke<void>("open_exported_file", { filePath }),
+
+  /** Where a clip's picture is on the canvas at `timeTicks`, and its blurs' boxes; `null` without a picture then. */
+  getClipOverlay: (clipId: number, timeTicks: number) =>
+    invoke<ClipOverlay | null>("get_clip_overlay", { clipId, timeTicks: Math.max(0, Math.round(timeTicks)) }),
+
+  /**
+   * Follows `region` (source pixels) through the clip, for a new blur, or to correct
+   * blur `effectId`; `onEvent` receives the progress, then the result.
+   */
+  startRegionTracking(
+    clipId: number,
+    timeTicks: number,
+    region: SourceRegion,
+    shape: BlurShapeChoice,
+    effectId: number | null,
+    onEvent: (event: TrackingEvent) => void,
+  ): Promise<{ clipId: number }> {
+    const channel = new Channel<TrackingEvent>();
+    channel.onmessage = onEvent;
+    return invoke<{ clipId: number }>("start_region_tracking", {
+      clipId,
+      timeTicks: Math.max(0, Math.round(timeTicks)),
+      region,
+      shape,
+      effectId,
+      onEvent: channel,
+    });
+  },
+  cancelRegionTracking: () => invoke<void>("cancel_region_tracking"),
 
   async getWaveform(mediaId: number): Promise<Waveform> {
     return decodeWaveform(await invoke<ArrayBuffer>("get_waveform", { mediaId }));

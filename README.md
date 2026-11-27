@@ -203,8 +203,9 @@ leaves longer pauses):
 .\target\release\kadr-cli remove-silences interview.mp4 -o interview-short.mp4
 ```
 
-Current limits: the face tracking that fills tracked blurs arrives in phase 4, and
-phone videos with a rotation flag are not rotated yet.
+`kadr-cli blur` blurs a face from one rectangle (see
+[docs/tracking-and-blur.md](docs/tracking-and-blur.md)). Current limit: phone videos
+with a rotation flag are not rotated yet.
 
 ---
 
@@ -287,6 +288,11 @@ Five requests to try:
 4. *"Lower the music to 30 %, make the second clip a bit warmer and brighter, and show
    me a frame so I can check."*
 5. *"Undo that last change, then export the project in 1080p to D:\Edits\final.mp4."*
+
+And for the face blur: *"Blur the face of the person on the left in interview.mp4 and
+export it for TikTok."* Claude looks at a frame, gives the rectangle around the face,
+Kadr follows it through the clip, and Claude checks the moments where the tracker was
+unsure.
 
 Claude looks at the video through pictures Kadr sends back (a frame, or thumbnails
 across a clip), so it can check its own work. Every request it carries out is one

@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use kadr_core::error::EditError;
 use kadr_core::history::EditSession;
@@ -20,9 +21,14 @@ use crate::project_view::{ProjectView, ViewContext, build_project_view};
 /// Extension of Kadr project files.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
 
+/// Numbers the projects opened since the app started (see [`OpenProject::identity`]).
+static LAST_OPENING_NUMBER: AtomicU64 = AtomicU64::new(0);
+
 /// The project being edited.
 pub struct OpenProject {
     session: EditSession,
+    /// Which opening this is, unchanged by renaming or "save as".
+    identity: u64,
     file_path: PathBuf,
     revision: u64,
     /// The format follows the first video placed on the timeline ("Automatic").
@@ -86,6 +92,7 @@ impl OpenProject {
         })?;
         Ok(Self {
             session,
+            identity: LAST_OPENING_NUMBER.fetch_add(1, Ordering::Relaxed) + 1,
             file_path,
             revision: 1,
             adopts_first_video_format,
@@ -107,6 +114,13 @@ impl OpenProject {
     /// The `.kadr` file.
     pub fn file_path(&self) -> &Path {
         &self.file_path
+    }
+
+    /// A number naming this opening of the project: background work started on
+    /// it (a tracking analysis) checks it is still the open project before
+    /// changing it. Renaming or "save as" keeps it; closing and reopening does not.
+    pub fn identity(&self) -> u64 {
+        self.identity
     }
 
     /// The change counter.

@@ -26,8 +26,9 @@ It is the source of truth for scope, phases and rules.
   with a draft pull request whose description starts with "Status for resuming".
   **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
   another computer, and the prompt to start each session with: read it first.**
-  Phase 9 is paused by the owner; phase 8 resumed on 2026-11-26. Phase 7 waits
-  for 4 and 6; phase 10 (iOS) needs a Mac. Versions are tagged in phase order
+  Phase 9 is paused by the owner; phase 8 resumed on 2026-11-26. Phase 7
+  (blur and Claude in the app) started on 2026-11-26, in small PRs 7a–7e (plan in
+  docs/status.md); phase 10 (iOS) needs a Mac. Versions are tagged in phase order
   (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
 
 ## Decisions taken with the owner
@@ -215,6 +216,12 @@ Details: [docs/architecture.md](docs/architecture.md).
 - Halving an image by averaging 2 × 2 blocks aliases badly; the pyramid blurs with
   weights 1, 3, 3, 1 first.
 - `rustfft`'s inverse transform is not normalised (results are N times larger).
+- Tracked blur corrections: `TrackedBlur::region_at` at a sample's exact time takes
+  the less sure of that sample and the next one. Code that needs a frame's own
+  confidence (the correction merge) reads the sample itself.
+- Tool answers end with a "Meanwhile, in the background" text block when an analysis
+  finished; tests that parse a tool's JSON details must not expect it (it is left out
+  of `get_blur_status` answers).
 - `cargo doc` runs with `-D warnings` in CI: public docs must not link to private
   modules (`[crate::optical_flow]`); name the file in backticks instead.
 - Long Python patch scripts in a Bash heredoc can fail with "unexpected EOF": write
@@ -245,6 +252,10 @@ Details: [docs/architecture.md](docs/architecture.md).
   track list in code (an empty timeline had a 70 px ruler).
 - Checking the running app from a script (DevTools port, faking the file dialog and
   file drops): see docs/desktop-app.md, "Driving the running app from a script".
+  When another session's app is running, start yours on other ports **and** with
+  its own `WEBVIEW2_USER_DATA_FOLDER`, or WebView2 fails with `0x8007139F`.
+- In scripts, `.picture` also matches the library's thumbnails: aim at the preview
+  through `svg.surface` (the blur overlay) or `section.preview`.
   Computer use may be refused; the script route needs no permission.
 - Svelte components that close while a field is focused: WebView2 fires `blur` (and
   `change`, for an open colour picker) on the field **while it is being removed**, and
@@ -270,3 +281,18 @@ Details: [docs/architecture.md](docs/architecture.md).
   `vertical_interview_format_1.kadr`) with a test that it still opens. A new enum
   variant (effect kind…) needs a version bump too, even with a no-op migration: an
   older Kadr must say "newer version" rather than "damaged file".
+- Desktop edit requests must never carry settings the user did not change: the view
+  the front end draws can be behind the back end (an earlier change not answered
+  yet, or Claude's change). Crop, colour and text requests take `changes` with
+  optional fields, applied to the project as it is then. `editor.edit`, `undo` and
+  `redo` go one at a time, in order (`inOrder`): Tauri runs commands on a thread
+  pool, so two requests sent together can be applied in either order. To reproduce
+  such races, wrap `window.fetch` in the page and hold back `apply_edit` requests or
+  answers (DevTools port).
+- Running the app while another session runs its own: port 1420 is then taken, and
+  a `tauri dev` whose Vite fails still starts its window on the **other** session's
+  front end. Use other ports and a separate WebView2 folder: a `--config` file
+  setting `build.devUrl` to `http://localhost:1430` and `build.beforeDevCommand` to
+  `npx vite --port 1430 --strictPort`, with `WEBVIEW2_USER_DATA_FOLDER` set and
+  another `--remote-debugging-port`. A running `kadr.exe` cannot be deleted but can
+  be renamed, which unblocks a rebuild.

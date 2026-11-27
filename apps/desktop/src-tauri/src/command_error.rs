@@ -40,6 +40,20 @@ pub enum ErrorCode {
     ExportFileExists,
     /// The export size has another shape than the project (change the project first).
     ExportOtherShape,
+    /// The box drawn to blur is too small to follow.
+    BlurRegionTooSmall,
+    /// The box drawn to blur is outside the video's picture.
+    BlurRegionOutsidePicture,
+    /// The box drawn to blur (or its surroundings) has no detail to follow.
+    BlurRegionWithoutDetail,
+    /// The clip cannot be blurred there: not a video, or not on screen at that time.
+    BlurClipNotShown,
+    /// A region is already being followed.
+    TrackingAlreadyRunning,
+    /// Following the region failed.
+    TrackingFailed,
+    /// The project was closed while the region was being followed.
+    TrackingProjectClosed,
     /// Something that should not happen; the details say what.
     Internal,
 }
@@ -94,6 +108,28 @@ impl From<kadr_core::error::EditError> for CommandError {
             EditError::NothingToRedo => ErrorCode::NothingToRedo,
             EditError::InternalInconsistency { .. } => ErrorCode::Internal,
             _ => ErrorCode::EditRefused,
+        };
+        Self::new(code, error)
+    }
+}
+
+impl From<kadr_engine::RegionTrackingError> for CommandError {
+    fn from(error: kadr_engine::RegionTrackingError) -> Self {
+        use kadr_engine::RegionTrackingError;
+        let code = match &error {
+            RegionTrackingError::Edit(edit_error) => {
+                return Self::from(edit_error.clone());
+            }
+            RegionTrackingError::SelectionTooSmall { .. } => ErrorCode::BlurRegionTooSmall,
+            RegionTrackingError::SelectionOutsidePicture { .. } => {
+                ErrorCode::BlurRegionOutsidePicture
+            }
+            RegionTrackingError::SelectionWithoutTexture
+            | RegionTrackingError::SelectionWithoutDetail => ErrorCode::BlurRegionWithoutDetail,
+            RegionTrackingError::NotAVideoClip { .. }
+            | RegionTrackingError::NotATrackedBlur { .. }
+            | RegionTrackingError::TimeOutsideClip { .. } => ErrorCode::BlurClipNotShown,
+            _ => ErrorCode::TrackingFailed,
         };
         Self::new(code, error)
     }

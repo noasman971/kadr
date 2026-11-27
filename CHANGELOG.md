@@ -151,6 +151,47 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   another size, shared by Claude's tools and the app, and `refit_clips_to_canvas`,
   which keeps titles in place when the canvas changes shape.
 
+### Added (phase 7a: blur tools for Claude)
+
+- MCP tools `blur_region`, `get_blur_status` and `cancel_blur`: Claude gives the
+  rectangle around a face on one frame, the analysis runs in the background (task
+  `blur-1`), the tracked blur is added to the project as one undo step, and the status
+  lists the ranges to check in timeline seconds. `blur_region` with an `effect_id`
+  corrects a blur: tracking restarts from the redrawn rectangle.
+- `kadr-engine`: `RegionTrackingRequest::for_correction` and `corrected_tracked_blur`
+  re-track from a correction up to the neighbouring anchors (the selection and other
+  corrections) and keep, frame by frame, the surer of the old and new answers;
+  `RegionTrackingRequest::check_selection` checks a selection without decoding;
+  `find_tracked_blur`.
+- `kadr-core`: `Clip::timeline_time_showing`, the timeline moment showing a source
+  moment.
+- `kadr-mcp` adds finished analyses to the project every second, so the file is up to
+  date even if Claude makes no further call.
+
+### Added (phase 7b: blur in the desktop app)
+
+- Blur tool on the preview (**B**, the preview's button, or *Add* in the inspector):
+  draw a box on a face, move and resize it, ellipse or rectangle, *Blur and follow*
+  (Enter). The analysis runs in the background with its progress and *Stop*; the
+  result is one undo step, announced with *Undo*.
+- The inspector's *Blur* section: style (blur, pixels, mask), strength, shape, margin,
+  on / off, delete; how many moments the tracker was unsure about.
+- The preview draws each blur's box at the playhead for the selected clip (dashed
+  with ⚠ where the tracker was unsure); blurred clips get a badge on the timeline.
+- `kadr_engine::clip_geometry` and `kadr_render::SourceToCanvasMapping`: where a
+  clip's source picture is on the canvas, for interfaces drawing on top of it.
+
+### Added (phase 7c: checking and correcting a blur in the app)
+
+- The moments a blur's tracker was unsure about are striped on the clip in the
+  timeline (amber uncertain, red lost, with ⚠ and a tooltip); a click goes there.
+  **Shift+B** and the inspector's *Next* go to the next one.
+- Correcting: drag a blur's box on the preview (or *Correct the box here*, then the
+  arrow keys) where the face is, then *Correct from here* (Enter): the tracking runs
+  again from that frame up to the neighbouring corrections or the selection, and keeps
+  the surer answer frame by frame. One undo step, announced with what is left to
+  check.
+
 ### Added (phase 8a: transitions and text animations)
 
 - `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`
@@ -200,6 +241,17 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   speed, colour, font size, length): the field sends its value while it is being
   removed, when the inspector no longer has its clip. The change now goes to the
   clip the inspector was showing.
+- Desktop inspector: two quick changes to the same clip could make the second undo
+  the first. New words typed in a title, then a click on an alignment button before
+  the first answer arrived, brought the old words back; the same could happen to
+  the font, size and colour of a title, to the colour settings and to the crop.
+  Crop, colour and text requests now name only what changes, and the back end
+  keeps the rest as the project has it.
+- Desktop app: edits, undo and redo are sent one at a time, in order. Two requests
+  sent together could be applied in either order (left then right alignment could
+  end up left), and an undo pressed right after a change could be ignored.
+- Desktop inspector: words being typed in a title were replaced by the saved words
+  when the answer to an earlier change (a font size, say) arrived.
 - Number fields: after ↑ or ↓, leaving the field put the old value back.
 - Number fields in English: a value of 1000 or more was shown as "1,200", read back
   as 1.2, so just entering and leaving the field changed it (Position X 1200 px

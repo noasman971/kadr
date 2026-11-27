@@ -6,7 +6,8 @@
 //! samples kept around it gives its region within
 //! [`SIMPLIFICATION_TOLERANCE_IN_PIXELS`]. Frames where the confidence changes,
 //! and the user's selection, are always kept, so that the stored confidences
-//! (and the uncertain ranges shown on the timeline) stay exact.
+//! (and the uncertain ranges shown on the timeline) stay exact; so are the
+//! user's selection and corrections.
 
 use kadr_core::effect::{PixelRegion, RegionSample, RegionSampleOrigin};
 
@@ -28,7 +29,7 @@ pub(super) fn simplified_samples(frames: &[TrackedFrame]) -> Vec<RegionSample> {
         let differs_from = |other: usize| frames[other].confidence != frames[index].confidence;
         index == 0
             || index == last
-            || frames[index].origin == RegionSampleOrigin::UserSelection
+            || frames[index].origin != RegionSampleOrigin::Tracker
             || differs_from(index - 1)
             || differs_from(index + 1)
     };

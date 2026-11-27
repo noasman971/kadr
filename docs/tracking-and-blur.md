@@ -370,6 +370,39 @@ session.execute(AddEffect::new(clip_id, EffectKind::TrackedBlur(blur)))?;
 The samples are stored in the project's `TrackedBlur`, so the analysis never runs
 twice for the same selection; exports only read them.
 
+## Correcting a tracked blur
+
+Where the tracker was unsure or wrong, the user (or Claude) redraws the region on one
+frame and the tracking starts again from there:
+
+```rust
+let request =
+    RegionTrackingRequest::for_correction(&project, clip_id, effect_id, timeline_time, region)?;
+let report = track_region(&backend, &request, &mut on_progress, &cancellation)?;
+let current = find_tracked_blur(&project, clip_id, effect_id)?;
+let corrected = corrected_tracked_blur(current, &request, &report);
+session.execute(ReplaceEffect::new(clip_id, effect_id, EffectKind::TrackedBlur(corrected)))?;
+```
+
+- **Anchors.** The first selection (`UserSelection`) and every correction
+  (`ManualCorrection`) are frames where someone said where the region is. A
+  correction is analysed forwards and backwards only **up to the nearest anchor on
+  each side** (or the clip's ends): the rest of the track does not change, and an
+  earlier correction is never undone by a later one.
+- **Frame by frame, the surer answer wins.** Within that stretch, each frame keeps the
+  old region unless the new analysis is surer there (confident beats uncertain, which
+  beats lost). When both are as sure, the analysis started from the **nearer anchor**
+  wins: near the correction the new one, near the selection the old one. A correction
+  can only make the blur surer.
+- The merged frames are simplified into samples like a first analysis; anchors are
+  always kept as samples. The style, shape and margin stay unless the correction
+  changes them.
+
+A correction in a lost range after an obstacle typically turns everything after it
+confident again, while the frames where the region was really hidden stay lost: the
+blur keeps its widened margin there (`tests/region_tracking.rs`,
+`a_correction_retracks_from_the_redrawn_region_up_to_the_selection`).
+
 ## From the command line
 
 ```powershell

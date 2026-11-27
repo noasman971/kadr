@@ -6,10 +6,13 @@
 -->
 <script lang="ts">
   import type { ClipView, MediaView } from "../../api/types";
-  import { translations } from "../../i18n/i18n.svelte";
+  import { t, translations } from "../../i18n/i18n.svelte";
   import { ticksToPixels } from "../../timeline/timelineGeometry";
   import Icon from "../../ui/Icon.svelte";
   import type { IconName } from "../../ui/icons";
+  import { editor } from "../../state/editor.svelte";
+  import { playback } from "../../state/playback.svelte";
+  import { formatTimecode } from "../../time/ticks";
   import ClipFilmstrip from "./ClipFilmstrip.svelte";
   import ClipWaveform from "./ClipWaveform.svelte";
 
@@ -62,7 +65,26 @@
   const filmstripHeight = $derived(
     innerHeight - LABEL_HEIGHT_IN_PIXELS - (showsWaveform ? WAVEFORM_UNDER_PICTURE_HEIGHT_IN_PIXELS : 0),
   );
-  const speedBadge = $derived(clip.speed !== 1 ? `${translations.formatNumber(clip.speed, 2)}×` : null);
+  /** The stretches where a blur's tracker was unsure, in pixels from the clip's left edge. */
+  const unsureBands = $derived(
+    clip.trackedBlurs
+      .filter((blur) => blur.isEnabled)
+      .flatMap((blur) => blur.unsureRanges)
+      .map((range) => ({
+        range,
+        left: ticksToPixels(range.startTicks - clip.startTicks, pixelsPerSecond),
+        width: Math.max(3, ticksToPixels(range.endTicks - range.startTicks, pixelsPerSecond)),
+      })),
+  );
+
+  /** A click on a band puts the playhead in its middle, to look at it and correct it. */
+  function lookAtRange(event: PointerEvent, range: { startTicks: number; endTicks: number }): void {
+    event.stopPropagation();
+    editor.selectedClipIds = [clip.id];
+    playback.seek(Math.floor((range.startTicks + range.endTicks) / 2));
+  }
+
+  const speedBadge = $derived(clip.speed !== 1 ? `${translations.formatNumber(clip.speed, 2)}Ã—` : null);
   const volumeBadge = $derived(
     clip.hasSound && clip.volume.keyframeCount === 0 && Math.abs(clip.volume.value - 1) > 0.005
       ? `${Math.round(clip.volume.value * 100)} %`
@@ -87,6 +109,9 @@
     <span class="name">{clip.name}</span>
     {#if speedBadge}<span class="badge">{speedBadge}</span>{/if}
     {#if volumeBadge}<span class="badge">{volumeBadge}</span>{/if}
+    {#if clip.trackedBlurs.length > 0}
+      <span class="badge blurred" title={t("blur.clipBadge")} aria-label={t("blur.clipBadge")}><Icon name="scanFace" size={11} /></span>
+    {/if}
   </div>
   {#if isOnScreen && showsPictures && media}
     <div class="pictures" style:height="{filmstripHeight}px">
@@ -119,6 +144,23 @@
       />
     </div>
   {/if}
+  {#each unsureBands as band (band.range.startTicks)}
+    {@const description = t(band.range.confidence === "lost" ? "blur.rangeLost" : "blur.rangeUncertain", {
+      start: formatTimecode(band.range.startTicks, editor.frameRate),
+      end: formatTimecode(band.range.endTicks, editor.frameRate),
+    })}
+    <button
+      type="button"
+      class="unsure-band {band.range.confidence}"
+      style:left="{band.left}px"
+      style:width="{band.width}px"
+      title={description}
+      aria-label={description}
+      onpointerdown={(event) => lookAtRange(event, band.range)}
+    >
+      {#if band.width >= 16}<Icon name="alert" size={10} />{/if}
+    </button>
+  {/each}
   {#if isSelected && !isGhost}
     <span
       class="handle start"
@@ -203,6 +245,36 @@
     border-radius: var(--radius-sm);
     background: rgba(0, 0, 0, 0.35);
     line-height: 15px;
+  }
+  .badge.blurred {
+    display: grid;
+    place-items: center;
+  }
+  /* Never colour alone: the stripes carry a warning icon and a tooltip. */
+  .unsure-band {
+    position: absolute;
+    top: 18px;
+    height: 12px;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    display: flex;
+    align-items: center;
+    color: var(--color-bg-inset);
+    cursor: pointer;
+    z-index: 1;
+  }
+  .unsure-band.uncertain {
+    background: repeating-linear-gradient(135deg, var(--color-over-video-unsure) 0 4px, transparent 4px 7px),
+      var(--color-warning-soft);
+  }
+  .unsure-band.lost {
+    background: repeating-linear-gradient(135deg, var(--color-over-video-lost) 0 4px, transparent 4px 7px),
+      var(--color-danger-soft);
+  }
+  .unsure-band :global(svg) {
+    color: var(--color-over-video);
+    filter: drop-shadow(0 0 1px var(--color-over-video-shadow));
   }
   .pictures,
   .sound {

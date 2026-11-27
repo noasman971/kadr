@@ -40,6 +40,8 @@
         { action: "shortcuts.split", keys: ["S"] },
         { action: "shortcuts.delete", keys: ["key.delete"] },
         { action: "shortcuts.addTitle", keys: ["T"] },
+        { action: "shortcuts.blur", keys: ["B"] },
+        { action: "shortcuts.nextMomentToCheck", keys: ["key.shift", "B"] },
         { action: "shortcuts.undo", keys: ["Ctrl", "Z"] },
         { action: "shortcuts.redo", keys: ["Ctrl", "Y"] },
         { action: "shortcuts.deselect", keys: ["key.escape"] },
