@@ -61,9 +61,9 @@
 //!    and no change of size.
 //! 6. **Not measured.** The motion is reported as unknown when too few points were
 //!    followed (fewer than 8, or under a quarter of those tried), when too few agree
-//!    with the result (fewer than 8, or under 40 % of the followed ones) and no
-//!    majority moves together either (otherwise that majority's shift is kept,
-//!    without roll or change of size), when the
+//!    with the result (fewer than 8, or under 40 % of the followed ones: the
+//!    median shift of the followed points is then kept, without roll or change of
+//!    size, rather than nothing), when the
 //!    result is implausible for one frame (a roll over 5°, a change of size over
 //!    5 %), or when the two frames do not show the same scene: a cut. A cut is
 //!    recognised by the brightness histograms of the two frames (32 levels): the
@@ -343,19 +343,27 @@ fn fit_camera_motion(
             least_squares_similarity(&agreeing, center)
         }
     });
-    if let Some(motion) = similarity.filter(is_plausible_for_one_frame) {
-        return Some(motion);
+    if let Some(motion) = similarity {
+        // Enough points agree on it: it is the camera's motion, unless it is too
+        // large for one frame to be a shake.
+        return is_plausible_for_one_frame(&motion).then_some(motion);
     }
-    // No plausible similarity explains enough points, but most of them may still
-    // move together: their shift is then a better answer than "not measured",
-    // which would let the whole shake through at this frame.
+    // No similarity explains enough points, yet the frames show the same scene and
+    // enough points were followed. Their shift is then a better answer than "not
+    // measured", which would let the whole shake through at this frame and start
+    // the smoothing again: the shift of those moving together if they are enough,
+    // or else the median shift of all.
     let majority = points_moving_like(
         followed,
         median_shift,
         center,
         MEDIAN_TOLERANCES_PER_DISTANCE[0],
     );
-    is_enough_of(majority.len(), followed.len()).then(|| shift_only(&majority, center))
+    Some(if is_enough_of(majority.len(), followed.len()) {
+        shift_only(&majority, center)
+    } else {
+        shift_only(followed, center)
+    })
 }
 
 /// Whether `agreeing_count` points out of `followed_count` are enough to trust
@@ -906,12 +914,16 @@ mod tests {
         assert!(fit_camera_motion(&pairs[..7], 7, CENTER, 734.0).is_none());
         // Most points tried were lost.
         assert!(fit_camera_motion(&pairs[..40], 200, CENTER, 734.0).is_none());
-        // A roll of 8° in one frame is not a shake.
+        // A roll of 8° in one frame is not a shake: no similarity is trusted, and
+        // only the shift of the followed points is kept (none here).
         let rolled = SimilarityTransform {
             rotation_in_degrees: 8.0,
             ..truth
         };
-        assert!(fit_camera_motion(&pairs_moved_by(&rolled), 192, CENTER, 734.0).is_none());
+        let kept = fit_camera_motion(&pairs_moved_by(&rolled), 192, CENTER, 734.0).unwrap();
+        assert_eq!(kept.rotation_in_degrees, 0.0);
+        assert_eq!(kept.scale_factor, 1.0);
+        assert!(kept.shift_x_in_pixels.hypot(kept.shift_y_in_pixels) < 1.0);
     }
 
     #[test]
