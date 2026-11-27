@@ -20,6 +20,8 @@ pub enum ErrorCode {
     ProjectNameTaken,
     /// A media file is not a video, picture or sound Kadr can read.
     MediaUnreadable,
+    /// A colour LUT file cannot be read, or is not a `.cube` table Kadr reads.
+    LutUnreadable,
     /// The engine refused an edit (overlap, out of range…).
     EditRefused,
     /// There is nothing to undo.

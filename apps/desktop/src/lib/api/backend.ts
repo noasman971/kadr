@@ -48,6 +48,9 @@ export const backend = {
   undo: () => invoke<ProjectView>("undo"),
   redo: () => invoke<ProjectView>("redo"),
   importMedia: (filePaths: string[]) => invoke<ImportResponse>("import_media", { filePaths }),
+  /** Reads a `.cube` file, then gives the clip its look (one undo step). */
+  chooseClipLutFile: (clipId: number, filePath: string) =>
+    invoke<EditResponse>("choose_clip_lut_file", { clipId, filePath }),
 
   async renderPreviewFrame(timeTicks: number, maxWidth: number, maxHeight: number): Promise<YuvFrame> {
     const buffer = await invoke<ArrayBuffer>("render_preview_frame", {

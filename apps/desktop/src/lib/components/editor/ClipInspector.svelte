@@ -1,13 +1,15 @@
 <!--
   The settings of one selected clip (docs/ux.md, "Adjust a clip"): picture,
-  sound, speed, colour and text, each shown only for the clips it applies to,
-  each with a Reset. Every finished change is one edit, so one undo step.
+  sound, speed, colour (with a colour LUT) and text, each shown only for the
+  clips it applies to, each with a Reset. Every finished change is one edit, so
+  one undo step.
 -->
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
   import { tick, untrack } from "svelte";
 
   import type { ClipValueName, ClipView, ColorSettings, CropView, EditRequest, TextAlignment, TextSettings } from "../../api/types";
-  import { t, translations } from "../../i18n/i18n.svelte";
+  import { quoted, t, translations } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
   import { TICKS_PER_SECOND } from "../../time/ticks";
   import Button from "../../ui/Button.svelte";
@@ -119,6 +121,28 @@
   function setColor(changes: Partial<ColorSettings>): void {
     if (currentClip()) {
       edit({ type: "setClipColor", clipId, changes });
+    }
+  }
+
+  /** Asks for a `.cube` file; the back end reads it before the clip takes its look. */
+  async function chooseLutFile(): Promise<void> {
+    const current = currentClip()?.colorLut;
+    const file = await open({
+      title: t("dialog.chooseLut"),
+      multiple: false,
+      directory: false,
+      defaultPath: current && !current.isMissing ? current.filePath : undefined,
+      filters: [{ name: t("dialog.lutFiles"), extensions: ["cube"] }],
+    });
+    // The clip may have been deleted while the dialog was open.
+    if (typeof file === "string" && currentClip()) {
+      await editor.chooseLutFile(clipId, file);
+    }
+  }
+
+  function setLutStrength(percent: number): void {
+    if (currentClip()?.colorLut) {
+      edit({ type: "setClipLut", clipId, changes: { strength: percent / 100 } });
     }
   }
 
@@ -256,7 +280,7 @@
   <section class="section">
     <div class="section-head">
       <h3>{t("inspector.color")}</h3>
-      <IconButton size="small" label={t("inspector.reset")} disabled={clip.colorAdjustment === null} onclick={() => edit({ type: "resetClipColor", clipId })}>
+      <IconButton size="small" label={t("inspector.reset")} disabled={clip.colorAdjustment === null && clip.colorLut === null} onclick={() => edit({ type: "resetClipColor", clipId })}>
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
@@ -265,6 +289,38 @@
     <NumberField label={t("inspector.contrast")} unit="%" min={0} max={200} value={colorSettings.contrast * 100} onCommit={(value) => setColor({ contrast: value / 100 })} />
     <NumberField label={t("inspector.saturation")} unit="%" min={0} max={200} value={colorSettings.saturation * 100} onCommit={(value) => setColor({ saturation: value / 100 })} />
     <NumberField label={t("inspector.temperature")} min={-100} max={100} value={colorSettings.temperature * 100} onCommit={(value) => setColor({ temperature: value / 100 })} />
+    <div class="lut-row">
+      <span class="lut-label">{t("inspector.lut")}</span>
+      {#if clip.colorLut}
+        <span class="lut-name" title={clip.colorLut.filePath}>{clip.colorLut.fileName}</span>
+        <IconButton size="small" label={t("inspector.lutChange")} onclick={() => void chooseLutFile()}>
+          <Icon name="folderOpen" size={14} />
+        </IconButton>
+        <IconButton size="small" label={t("inspector.lutRemove")} onclick={() => edit({ type: "removeClipLut", clipId })}>
+          <Icon name="trash" size={14} />
+        </IconButton>
+      {:else}
+        <Button onclick={() => void chooseLutFile()}><Icon name="palette" size={14} />{t("inspector.lutChoose")}</Button>
+      {/if}
+    </div>
+    {#if clip.colorLut}
+      {#if clip.colorLut.isMissing}
+        <p class="hint lut-missing"><Icon name="alert" size={12} />{t("inspector.lutMissing", { name: quoted(clip.colorLut.fileName) })}</p>
+      {/if}
+      <NumberField label={t("inspector.lutStrength")} unit="%" min={0} max={100} value={clip.colorLut.strength * 100} onCommit={setLutStrength} />
+      <input
+        class="slider"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        aria-label={t("inspector.lutStrength")}
+        value={clip.colorLut.strength * 100}
+        onchange={(event) => setLutStrength(Number(event.currentTarget.value))}
+      />
+    {:else}
+      <p class="hint">{t("inspector.lutHint")}</p>
+    {/if}
   </section>
 {/if}
 
@@ -366,6 +422,30 @@
   .slider {
     width: 100%;
     accent-color: var(--color-accent);
+  }
+  .lut-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+  .lut-label {
+    color: var(--color-text-secondary);
+  }
+  .lut-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+  }
+  .lut-missing {
+    display: flex;
+    gap: var(--space-1);
+    align-items: flex-start;
+    color: var(--color-warning);
   }
   .segmented {
     display: flex;
