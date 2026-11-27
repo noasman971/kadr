@@ -14,13 +14,17 @@
   import { t } from "./lib/i18n/i18n.svelte";
   import { claudeActivity } from "./lib/state/claude.svelte";
   import { editor } from "./lib/state/editor.svelte";
+  import { isSubtitleFilePath } from "./lib/subtitles/subtitleSettings";
   import Icon from "./lib/ui/Icon.svelte";
   import ToastStack from "./lib/ui/ToastStack.svelte";
 
   let openDialog = $state<"settings" | "shortcuts" | "claude" | null>(null);
   let isDraggingFilesOver = $state(false);
 
-  /** Dropped files: imported into the open project, or into a new automatic project. */
+  /**
+   * Dropped files: imported into the open project, or into a new automatic
+   * project. `.srt` files become subtitle tracks, after the media.
+   */
   async function importDroppedFiles(filePaths: string[]): Promise<void> {
     if (filePaths.length === 0) {
       return;
@@ -31,7 +35,14 @@
         return;
       }
     }
-    await editor.importFiles(filePaths);
+    const subtitleFiles = filePaths.filter(isSubtitleFilePath);
+    const mediaFiles = filePaths.filter((filePath) => !isSubtitleFilePath(filePath));
+    if (mediaFiles.length > 0) {
+      await editor.importFiles(mediaFiles);
+    }
+    for (const subtitleFile of subtitleFiles) {
+      await editor.importSubtitleFile(subtitleFile);
+    }
   }
 
   // Claude's changes, made through kadr-mcp, show at once (decision record 0030).

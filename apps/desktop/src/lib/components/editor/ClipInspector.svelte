@@ -49,7 +49,13 @@
       : NEUTRAL_COLOR;
   }
 
-  const KIND_ICONS: Record<ClipView["kind"], IconName> = { video: "film", audio: "music", image: "image", text: "type" };
+  const KIND_ICONS: Record<ClipView["kind"], IconName> = {
+    video: "film",
+    audio: "music",
+    image: "image",
+    text: "type",
+    subtitle: "captions",
+  };
   const SPEED_CHOICES = [0.5, 1, 1.5, 2];
   const FONT_FAMILIES = ["Inter", "Arial", "Georgia", "Times New Roman", "Courier New", "Impact", "Segoe UI", "Verdana"];
   const ALIGNMENTS: Array<{ value: TextAlignment; icon: IconName; label: "inspector.alignLeft" | "inspector.alignCenter" | "inspector.alignRight" }> = [

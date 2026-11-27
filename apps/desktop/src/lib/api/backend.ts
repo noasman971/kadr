@@ -51,6 +51,11 @@ export const backend = {
   /** Reads a `.cube` file, then gives the clip its look (one undo step). */
   chooseClipLutFile: (clipId: number, filePath: string) =>
     invoke<EditResponse>("choose_clip_lut_file", { clipId, filePath }),
+  /** Reads an `.srt` file, then adds its cues on a new subtitle track (one undo step). */
+  importSubtitleFile: (filePath: string) => invoke<EditResponse>("import_subtitle_file", { filePath }),
+  /** Writes a subtitle track's cues to an `.srt` file; answers how many. */
+  exportSubtitleFile: (trackId: number, filePath: string) =>
+    invoke<number>("export_subtitle_file", { trackId, filePath }),
 
   async renderPreviewFrame(timeTicks: number, maxWidth: number, maxHeight: number): Promise<YuvFrame> {
     const buffer = await invoke<ArrayBuffer>("render_preview_frame", {

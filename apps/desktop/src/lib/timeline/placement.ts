@@ -81,9 +81,18 @@ export function findOverlappingClip(
   );
 }
 
-/** Which tracks a clip can go on: same kind as its own track (videos, pictures and titles on video tracks). */
+/**
+ * Which tracks a clip can go on: same kind as its own track (videos, pictures and
+ * titles on video tracks, sounds on audio tracks, cues on subtitle tracks).
+ */
 export function trackAcceptsClip(track: TrackView, clipKind: ClipView["kind"]): boolean {
-  return clipKind === "audio" ? track.kind === "audio" : track.kind === "video";
+  if (clipKind === "audio") {
+    return track.kind === "audio";
+  }
+  if (clipKind === "subtitle") {
+    return track.kind === "subtitle";
+  }
+  return track.kind === "video";
 }
 
 /** Limits of a trim gesture on one edge of a clip, in timeline ticks. */
@@ -114,7 +123,7 @@ export function trimLimits(
     Number.POSITIVE_INFINITY,
     ...track.clips.filter((other) => other.id !== clip.id && other.startTicks >= clipEnd).map((other) => other.startTicks),
   );
-  const isStill = clip.kind === "image" || clip.kind === "text";
+  const isStill = clip.kind === "image" || clip.kind === "text" || clip.kind === "subtitle";
   if (edge === "start") {
     // Source time available before the clip's current start, at the clip's speed.
     const roomInSource = isStill ? Number.POSITIVE_INFINITY : (clip.sourceStartTicks ?? 0) / clip.speed;

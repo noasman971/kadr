@@ -8,6 +8,7 @@
   import { formatTimecode } from "../../time/ticks";
   import { editor } from "../../state/editor.svelte";
   import ClipInspector from "./ClipInspector.svelte";
+  import SubtitleInspector from "./SubtitleInspector.svelte";
   import { aspectRatioName, formatFrameRate } from "./projectFormat";
 
   interface Props {
@@ -30,7 +31,13 @@
   </div>
   <div class="body">
     {#if selectedClip}
-      {#key selectedClip.id}<ClipInspector clip={selectedClip} />{/key}
+      {#key selectedClip.id}
+        {#if selectedClip.kind === "subtitle"}
+          <SubtitleInspector clip={selectedClip} />
+        {:else}
+          <ClipInspector clip={selectedClip} />
+        {/if}
+      {/key}
     {:else}
     {#if editor.selectedClipIds.length > 1}
       <section class="section"><p class="hint">{t("inspector.severalClips", { count: editor.selectedClipIds.length })}</p></section>

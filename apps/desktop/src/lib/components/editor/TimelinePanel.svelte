@@ -33,6 +33,7 @@
   } from "../../timeline/timelineGeometry";
   import { TICKS_PER_SECOND, formatTimecode, snapToFrame, ticksPerFrame } from "../../time/ticks";
   import Icon from "../../ui/Icon.svelte";
+  import type { IconName } from "../../ui/icons";
   import IconButton from "../../ui/IconButton.svelte";
   import TimelineClip from "./TimelineClip.svelte";
   import { pointerOffsetX } from "../../ui/pointer";
@@ -51,7 +52,22 @@
   const ZOOM_STEP = 1.25;
   const RULER_HEIGHT_IN_PIXELS = 28;
   const NEW_TRACK_ZONE_HEIGHT_IN_PIXELS = 36;
-  const TRACK_HEIGHTS_IN_PIXELS: Record<TrackView["kind"], number> = { video: 68, audio: 52 };
+  const TRACK_HEIGHTS_IN_PIXELS: Record<TrackView["kind"], number> = { video: 68, audio: 52, subtitle: 44 };
+  const TRACK_ICONS: Record<TrackView["kind"], IconName> = { video: "film", audio: "music", subtitle: "captions" };
+  const REFUSAL_KEYS = {
+    audio: "timeline.refused.needsAudioTrack",
+    subtitle: "timeline.refused.needsSubtitleTrack",
+    other: "timeline.refused.needsVideoTrack",
+  } as const;
+  const NEW_TRACK_KEYS = {
+    audio: "timeline.newAudioTrack",
+    subtitle: "timeline.newSubtitleTrack",
+    other: "timeline.newVideoTrack",
+  } as const;
+  /** Which message family a clip kind uses. */
+  function kindFamily(kind: ClipKind): "audio" | "subtitle" | "other" {
+    return kind === "audio" || kind === "subtitle" ? kind : "other";
+  }
   const STILL_IMAGE_SECONDS = 5;
   /** A press must travel this far before it moves a clip. */
   const DRAG_START_DISTANCE_IN_PIXELS = 4;
@@ -169,7 +185,7 @@
       return null;
     }
     if (!trackAcceptsClip(track, kind)) {
-      preview.refusal = t(kind === "audio" ? "timeline.refused.needsAudioTrack" : "timeline.refused.needsVideoTrack");
+      preview.refusal = t(REFUSAL_KEYS[kindFamily(kind)]);
       return preview;
     }
     const overlapping = findOverlappingClip(track, startTicks, durationTicks, ignored);
@@ -451,6 +467,9 @@
     <IconButton label={t("title.add")} shortcut="T" onclick={() => void editor.addTitle("title")}>
       <Icon name="type" />
     </IconButton>
+    <IconButton label={t("subtitles.addCue")} onclick={() => void editor.addSubtitleCue(null)}>
+      <Icon name="captions" />
+    </IconButton>
     <span class="spacer"></span>
     <IconButton
       label={preferences.isSnappingOn ? t("timeline.snappingOn") : t("timeline.snappingOff")}
@@ -507,9 +526,9 @@
 
       {#each view.tracks as track (track.id)}
         <div class="track-header" class:dimmed={track.isHidden || track.isMuted} style:height="{TRACK_HEIGHTS_IN_PIXELS[track.kind]}px">
-          <Icon name={track.kind === "video" ? "film" : "music"} size={14} />
+          <Icon name={TRACK_ICONS[track.kind]} size={14} />
           <span class="track-name" title={trackDisplayName(track.name)}>{trackDisplayName(track.name)}</span>
-          {#if track.kind === "video"}
+          {#if track.kind !== "audio"}
             <IconButton
               size="small"
               label={track.isHidden ? t("timeline.showTrack") : t("timeline.hideTrack")}
@@ -519,14 +538,16 @@
               <Icon name={track.isHidden ? "eyeOff" : "eye"} size={14} />
             </IconButton>
           {/if}
-          <IconButton
-            size="small"
-            label={track.isMuted ? t("timeline.unmuteTrack") : t("timeline.muteTrack")}
-            pressed={track.isMuted}
-            onclick={() => toggleMuted(track)}
-          >
-            <Icon name={track.isMuted ? "volumeOff" : "volume"} size={14} />
-          </IconButton>
+          {#if track.kind !== "subtitle"}
+            <IconButton
+              size="small"
+              label={track.isMuted ? t("timeline.unmuteTrack") : t("timeline.muteTrack")}
+              pressed={track.isMuted}
+              onclick={() => toggleMuted(track)}
+            >
+              <Icon name={track.isMuted ? "volumeOff" : "volume"} size={14} />
+            </IconButton>
+          {/if}
           {#if track.clips.length === 0}
             <IconButton size="small" label={t("timeline.removeTrack")} onclick={() => editor.edit({ type: "removeTrack", trackId: track.id })}>
               <Icon name="close" size={14} />
@@ -570,7 +591,7 @@
       <div class="new-track-lane" data-lane="new" role="presentation" onpointerdown={() => (editor.selectedClipIds = [])}>
         {#if activePreview && activePreview.trackId === null}
           <div class="new-track-zone is-target">
-            {t(activePreview.kind === "audio" ? "timeline.newAudioTrack" : "timeline.newVideoTrack", { name: activePreview.name })}
+            {t(NEW_TRACK_KEYS[kindFamily(activePreview.kind)], { name: activePreview.name })}
           </div>
         {:else if activePreview}
           <div class="new-track-zone">{t("timeline.dropForNewTrack")}</div>
@@ -713,6 +734,9 @@
   }
   .lane.audio {
     background: color-mix(in srgb, var(--color-bg-panel) 90%, var(--color-clip-audio));
+  }
+  .lane.subtitle {
+    background: color-mix(in srgb, var(--color-bg-panel) 90%, var(--color-clip-subtitle));
   }
   .lane.muted {
     background-image: repeating-linear-gradient(

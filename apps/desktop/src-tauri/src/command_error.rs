@@ -22,6 +22,10 @@ pub enum ErrorCode {
     MediaUnreadable,
     /// A colour LUT file cannot be read, or is not a `.cube` table Kadr reads.
     LutUnreadable,
+    /// A subtitle file cannot be read, or is not an `.srt` file Kadr reads.
+    SubtitlesUnreadable,
+    /// A subtitle file could not be written.
+    SubtitlesNotSaved,
     /// The engine refused an edit (overlap, out of range…).
     EditRefused,
     /// There is nothing to undo.

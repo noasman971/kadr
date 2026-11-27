@@ -25,6 +25,7 @@ mod arrangement;
 mod blur_settings;
 mod clip_settings;
 mod silences;
+mod subtitles;
 mod titles;
 
 pub use arrangement::TrimEdge;
@@ -35,6 +36,10 @@ pub use clip_settings::{
     ClipValue, ColorChanges, CropChanges, LutChanges, TextAlignmentChoice, TextChanges,
 };
 pub use silences::TickRange;
+pub use subtitles::{
+    BackdropChoice, CueChanges, NEW_CUE_DURATION, PlacementChoice, SUBTITLES_TRACK_NAME,
+    SubtitleStyleChanges, import_subtitles,
+};
 pub use titles::{TITLE_DURATION, TITLES_TRACK_NAME, TitleStyle};
 
 /// How long a still picture lasts when it is placed on the timeline.
@@ -202,6 +207,36 @@ pub enum EditRequest {
         /// One of the ready-made styles.
         style: TitleStyle,
     },
+    /// Changes a subtitle cue's words or times: the ones given change, the
+    /// others keep the value they have in the project when the request is applied.
+    SetSubtitleCue {
+        /// The cue.
+        clip_id: ClipId,
+        /// What changes.
+        changes: CueChanges,
+    },
+    /// Adds a cue at `start_ticks` (two seconds long, less if the next cue
+    /// starts sooner) on `track_id`, the top subtitle track, or a new one.
+    AddSubtitleCue {
+        /// Where it starts.
+        start_ticks: u64,
+        /// The subtitle track, or `None` for the top one.
+        track_id: Option<TrackId>,
+        /// Its words.
+        text: String,
+    },
+    /// Merges a cue with the next cue of its track.
+    MergeSubtitleWithNext {
+        /// The first cue.
+        clip_id: ClipId,
+    },
+    /// Changes some settings of a subtitle track's style: only the ones named.
+    SetSubtitleStyle {
+        /// The subtitle track.
+        track_id: TrackId,
+        /// The settings that change.
+        changes: SubtitleStyleChanges,
+    },
     /// Cuts parts out of a clip and closes the gaps (the silences the silence
     /// dialog found), moving the later clips of its track earlier.
     RemoveSilences {
@@ -274,6 +309,13 @@ pub enum EditNotice {
         width: u32,
         /// New canvas height.
         height: u32,
+    },
+    /// An `.srt` file was imported.
+    SubtitlesImported {
+        /// How many cues it gave.
+        cue_count: usize,
+        /// What was changed to read it (in English, from the engine).
+        warnings: Vec<String>,
     },
 }
 
@@ -382,6 +424,25 @@ pub fn apply_edit_request(
         } => titles::add_title(session, Timestamp::from_ticks(*start_ticks), text, *style),
         EditRequest::RemoveSilences { clip_id, cuts } => {
             silences::remove_silences(session, *clip_id, cuts)
+        }
+        EditRequest::SetSubtitleCue { clip_id, changes } => {
+            subtitles::set_subtitle_cue(session, *clip_id, changes)
+        }
+        EditRequest::AddSubtitleCue {
+            start_ticks,
+            track_id,
+            text,
+        } => subtitles::add_subtitle_cue(
+            session,
+            Timestamp::from_ticks(*start_ticks),
+            *track_id,
+            text,
+        ),
+        EditRequest::MergeSubtitleWithNext { clip_id } => {
+            subtitles::merge_subtitle_with_next(session, *clip_id)
+        }
+        EditRequest::SetSubtitleStyle { track_id, changes } => {
+            subtitles::set_subtitle_style(session, *track_id, changes)
         }
         EditRequest::SetCanvasSize { width, height } => {
             set_canvas_size(session, adopts_first_video_format, *width, *height)
@@ -1509,7 +1570,7 @@ mod tests {
     fn text_of(session: &EditSession, clip_id: ClipId) -> kadr_core::clip::TextContent {
         match clip_of(session, clip_id).content {
             ClipContent::Text(text) => text,
-            ClipContent::Media(_) => panic!("a title is a text clip"),
+            ClipContent::Media(_) | ClipContent::Subtitle(_) => panic!("a title is a text clip"),
         }
     }
 
@@ -1735,6 +1796,11 @@ mod tests {
             r##"{ "type": "setClipText", "clipId": 2, "changes": { "text": "Hi", "fontFamily": "Inter", "fontSize": 64, "color": "#ffffffff", "alignment": "center" } }"##,
             r#"{ "type": "setClipText", "clipId": 2, "changes": { "alignment": "right" } }"#,
             r#"{ "type": "addTitle", "startTicks": 0, "text": "Title", "style": "bigWord" }"#,
+            r#"{ "type": "setSubtitleCue", "clipId": 2, "changes": { "text": "<i>Hi</i>" } }"#,
+            r#"{ "type": "setSubtitleCue", "clipId": 2, "changes": { "startTicks": 10, "endTicks": 20 } }"#,
+            r#"{ "type": "addSubtitleCue", "startTicks": 0, "trackId": null, "text": "New" }"#,
+            r#"{ "type": "mergeSubtitleWithNext", "clipId": 2 }"#,
+            r##"{ "type": "setSubtitleStyle", "trackId": 3, "changes": { "backdrop": "box", "backdropColor": "#000000B3", "placement": "top", "margin": 40, "maximumLineWidth": 0.9, "isBold": false } }"##,
         ];
         for json in requests {
             assert!(
@@ -1775,6 +1841,8 @@ mod tests {
             r#"{ "type": "setClipLut", "clipId": 2, "changes": { "intensity": 0.5 } }"#,
             // A file is only chosen through choose_clip_lut_file, which reads it first.
             r#"{ "type": "setClipLut", "clipId": 2, "changes": { "filePath": "C:/x.cube" } }"#,
+            r#"{ "type": "setSubtitleCue", "clipId": 2, "changes": { "words": "Hi" } }"#,
+            r#"{ "type": "setSubtitleStyle", "trackId": 3, "changes": { "backdrop": "shadow" } }"#,
         ] {
             assert!(
                 serde_json::from_str::<EditRequest>(json).is_err(),

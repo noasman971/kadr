@@ -17,12 +17,13 @@ use kadr_core::effect::{EffectKind, RegionSampleOrigin, TrackedBlur, TrackingCon
 use kadr_core::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use kadr_core::media_asset::{MediaAsset, MediaKind};
 use kadr_core::project::Project;
+use kadr_core::subtitle::{SubtitleBackdrop, SubtitlePlacement, SubtitleStyle};
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
 use serde::Serialize;
 
 use crate::blur_overlay::ConfidenceView;
-use crate::editing::BlurSettings;
+use crate::editing::{BackdropChoice, BlurSettings, PlacementChoice};
 
 /// Everything the interface shows about the open project.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -124,8 +125,68 @@ pub struct TrackView {
     pub is_muted: bool,
     /// Its pictures are not drawn.
     pub is_hidden: bool,
+    /// How its cues look, for subtitle tracks.
+    pub subtitle_style: Option<SubtitleStyleView>,
     /// Clips by start time.
     pub clips: Vec<ClipView>,
+}
+
+/// How the cues of a subtitle track look.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleStyleView {
+    /// Font family.
+    pub font_family: String,
+    /// Size in canvas pixels.
+    pub font_size: f32,
+    /// Every word bold.
+    pub is_bold: bool,
+    /// `#RRGGBBAA`.
+    pub text_color: String,
+    /// Outline, box or nothing.
+    pub backdrop: BackdropChoice,
+    /// `#RRGGBBAA` of the outline or box.
+    pub backdrop_color: Option<String>,
+    /// Width of the outline, in canvas pixels.
+    pub outline_width: Option<f32>,
+    /// Bottom or top.
+    pub placement: PlacementChoice,
+    /// From that edge to the nearest line, in canvas pixels.
+    pub margin: f32,
+    /// The widest line, as a fraction of the canvas width.
+    pub maximum_line_width: f32,
+}
+
+impl SubtitleStyleView {
+    fn of(style: &SubtitleStyle) -> Self {
+        let (backdrop, backdrop_color, outline_width) = match style.backdrop {
+            SubtitleBackdrop::None => (BackdropChoice::None, None, None),
+            SubtitleBackdrop::Outline {
+                color,
+                width_in_pixels,
+            } => (
+                BackdropChoice::Outline,
+                Some(color.to_hex()),
+                Some(width_in_pixels),
+            ),
+            SubtitleBackdrop::Box { color } => (BackdropChoice::Box, Some(color.to_hex()), None),
+        };
+        Self {
+            font_family: style.font_family.clone(),
+            font_size: style.font_size_in_pixels,
+            is_bold: style.is_bold,
+            text_color: style.text_color.to_hex(),
+            backdrop,
+            backdrop_color,
+            outline_width,
+            placement: match style.placement {
+                SubtitlePlacement::Bottom => PlacementChoice::Bottom,
+                SubtitlePlacement::Top => PlacementChoice::Top,
+            },
+            margin: style.margin_in_pixels,
+            maximum_line_width: style.maximum_line_width_fraction,
+        }
+    }
 }
 
 /// The kind of a track.
@@ -136,6 +197,8 @@ pub enum TrackKindView {
     Video,
     /// Sound.
     Audio,
+    /// Subtitle cues.
+    Subtitle,
 }
 
 /// What a clip shows, for its colour and icon.
@@ -150,6 +213,8 @@ pub enum ClipKindView {
     Image,
     /// A title.
     Text,
+    /// A subtitle cue.
+    Subtitle,
 }
 
 /// A value that may be animated.
@@ -302,6 +367,9 @@ pub struct ClipView {
     pub crop: CropView,
     /// Words and style, for titles.
     pub text: Option<TextView>,
+    /// Words of a subtitle cue (line breaks, `<i>`, `<b>`); its look is its
+    /// track's `subtitleStyle`.
+    pub cue_text: Option<String>,
     /// The colour adjustment, if the clip has one.
     pub color_adjustment: Option<ColorAdjustmentView>,
     /// The colour LUT, if the clip has one.
@@ -368,13 +436,14 @@ pub fn project_name_of(file_path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Video tracks from the top layer down, then audio tracks in their order.
+/// Video and subtitle tracks from the top layer down, then audio tracks in
+/// their order.
 pub fn tracks_in_display_order(project: &Project) -> Vec<&Track> {
     let tracks = project.timeline().tracks();
     let video_tracks = tracks
         .iter()
         .rev()
-        .filter(|track| track.kind == TrackKind::Video);
+        .filter(|track| track.kind != TrackKind::Audio);
     let audio_tracks = tracks.iter().filter(|track| track.kind == TrackKind::Audio);
     video_tracks.chain(audio_tracks).collect()
 }
@@ -406,10 +475,12 @@ fn track_view_of(project: &Project, track: &Track) -> TrackView {
         kind: match track.kind {
             TrackKind::Video => TrackKindView::Video,
             TrackKind::Audio => TrackKindView::Audio,
+            TrackKind::Subtitle => TrackKindView::Subtitle,
         },
         name: track.name.clone(),
         is_muted: track.is_muted,
         is_hidden: track.is_hidden,
+        subtitle_style: track.subtitle_style.as_ref().map(SubtitleStyleView::of),
         clips: track
             .clips()
             .iter()
@@ -426,6 +497,10 @@ fn property_view_of(value: &AnimatedValue) -> PropertyView {
 }
 
 fn clip_view_of(project: &Project, track: &Track, clip: &Clip) -> ClipView {
+    let cue_text = match &clip.content {
+        ClipContent::Subtitle(cue) => Some(cue.text.clone()),
+        ClipContent::Media(_) | ClipContent::Text(_) => None,
+    };
     let (kind, name, media_fields, text) = match &clip.content {
         ClipContent::Media(segment) => {
             let media_asset = project.media_asset(segment.media_asset_id);
@@ -467,6 +542,16 @@ fn clip_view_of(project: &Project, track: &Track, clip: &Clip) -> ClipView {
                 Some(text),
             )
         }
+        ClipContent::Subtitle(cue) => {
+            let plain_text = cue.plain_text();
+            let first_line = plain_text.lines().next().unwrap_or_default();
+            (
+                ClipKindView::Subtitle,
+                first_line.to_string(),
+                MediaFields::for_text(),
+                None,
+            )
+        }
     };
     let transform = &clip.transform;
     ClipView {
@@ -496,6 +581,7 @@ fn clip_view_of(project: &Project, track: &Track, clip: &Clip) -> ClipView {
             bottom: transform.crop.bottom_fraction,
         },
         text,
+        cue_text,
         color_adjustment: first_color_adjustment_of(clip),
         color_lut: first_color_lut_of(clip),
         tracked_blurs: tracked_blurs_of(project, clip),

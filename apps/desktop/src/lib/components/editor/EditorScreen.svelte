@@ -17,6 +17,7 @@
   import { toasts } from "../../state/toasts.svelte";
   import { backend } from "../../api/backend";
   import { nextUnsureMoment } from "../../blur/unsureMoments";
+  import { isSubtitleFilePath } from "../../subtitles/subtitleSettings";
   import { cutTimes } from "../../timeline/placement";
   import { snapToFrame, ticksPerFrame } from "../../time/ticks";
   import Icon from "../../ui/Icon.svelte";
@@ -36,7 +37,7 @@
   let { view, onOpenSettings, onShowShortcuts }: Props = $props();
 
   /** Extensions offered by the import dialog (anything FFmpeg reads also works). */
-  const MEDIA_EXTENSIONS = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "mp3", "wav", "m4a", "aac", "flac", "ogg", "png", "jpg", "jpeg", "webp", "bmp", "gif"];
+  const MEDIA_EXTENSIONS = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "mp3", "wav", "m4a", "aac", "flac", "ogg", "png", "jpg", "jpeg", "webp", "bmp", "gif", "srt"];
 
   let timeline: TimelinePanel | undefined = $state();
 
@@ -51,7 +52,13 @@
       ],
     });
     if (Array.isArray(selection) && selection.length > 0) {
-      await editor.importFiles(selection);
+      const mediaFiles = selection.filter((filePath) => !isSubtitleFilePath(filePath));
+      if (mediaFiles.length > 0) {
+        await editor.importFiles(mediaFiles);
+      }
+      for (const subtitleFile of selection.filter(isSubtitleFilePath)) {
+        await editor.importSubtitleFile(subtitleFile);
+      }
     }
   }
 

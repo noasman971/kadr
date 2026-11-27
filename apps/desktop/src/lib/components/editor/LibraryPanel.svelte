@@ -3,6 +3,8 @@
   read, files that could not be read, and the drop zone of an empty project.
 -->
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
+
   import type { MediaView, ProjectView, TitleStyle } from "../../api/types";
   import type { MessageKey } from "../../i18n/messages.en";
   import { t } from "../../i18n/i18n.svelte";
@@ -12,6 +14,7 @@
   import IconButton from "../../ui/IconButton.svelte";
   import KeyCap from "../../ui/KeyCap.svelte";
   import MediaTile from "./MediaTile.svelte";
+  import { SUBTITLE_FILE_EXTENSIONS } from "../../subtitles/subtitleSettings";
 
   interface Props {
     view: ProjectView;
@@ -36,6 +39,20 @@
   const isEmpty = $derived(
     view.media.length === 0 && editor.pendingImports.length === 0 && editor.importFailures.length === 0,
   );
+
+  /** Asks for `.srt` files; each becomes a subtitle track. */
+  async function importSubtitles(): Promise<void> {
+    const selection = await open({
+      title: t("dialog.importSubtitles"),
+      multiple: true,
+      directory: false,
+      filters: [{ name: t("dialog.subtitleFiles"), extensions: SUBTITLE_FILE_EXTENSIONS }],
+    });
+    const filePaths = Array.isArray(selection) ? selection : typeof selection === "string" ? [selection] : [];
+    for (const filePath of filePaths) {
+      await editor.importSubtitleFile(filePath);
+    }
+  }
 
   async function addAtEnd(media: MediaView): Promise<void> {
     const createdClipIds = await editor.edit({ type: "addMediaAtEnd", mediaId: media.id });
@@ -71,6 +88,12 @@
             <span class="title-name"><Icon name="plus" size={12} />{t(style.label)}</span>
           </button>
         {/each}
+      </div>
+      <h3 class="group-title"><Icon name="captions" size={14} />{t("subtitles.title")}</h3>
+      <p class="hint">{t("subtitles.libraryHint")}</p>
+      <div class="subtitle-actions">
+        <Button onclick={() => void importSubtitles()}><Icon name="filePlus" />{t("subtitles.import")}</Button>
+        <Button onclick={() => void editor.addSubtitleCue(null)}><Icon name="plus" />{t("subtitles.addCue")}</Button>
       </div>
     {:else if isEmpty}
       <div class="dropzone">
@@ -244,6 +267,19 @@
     to {
       transform: rotate(360deg);
     }
+  }
+  .group-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-4) 0 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+  .subtitle-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
   }
   .title-styles {
     display: flex;
