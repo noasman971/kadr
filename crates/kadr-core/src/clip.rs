@@ -1069,6 +1069,46 @@ mod tests {
     }
 
     #[test]
+    fn splitting_a_stabilized_clip_shares_its_camera_path() {
+        use crate::effect::EffectKind;
+        use crate::effect::test_samples::stabilization_of_frames;
+
+        let mut id_allocator = IdAllocator::default();
+        let mut clip = media_clip(
+            id_allocator.allocate_raw_id(),
+            MediaAssetId::from_raw(9),
+            0,
+            8,
+            0,
+        );
+        let stabilization = stabilization_of_frames(0, 270);
+        clip.effects.push(Effect {
+            id: EffectId::from_raw(id_allocator.allocate_raw_id()),
+            is_enabled: true,
+            kind: EffectKind::Stabilization(stabilization.clone()),
+        });
+
+        let (first_part, second_part) = clip.split_at(seconds(3), &mut id_allocator).unwrap();
+
+        let path_of = |part: &Clip| match &part.effects[0].kind {
+            EffectKind::Stabilization(stored) => std::sync::Arc::clone(&stored.camera_path),
+            other => panic!("expected a stabilisation, got {other:?}"),
+        };
+        // Both parts keep the whole path, without copying it: the correction
+        // only depends on source time, so the seam looks exactly as before.
+        assert!(std::sync::Arc::ptr_eq(
+            &path_of(&first_part),
+            &stabilization.camera_path
+        ));
+        assert!(std::sync::Arc::ptr_eq(
+            &path_of(&second_part),
+            &stabilization.camera_path
+        ));
+        assert_eq!(first_part.effects[0].id, clip.effects[0].id);
+        assert_ne!(second_part.effects[0].id, clip.effects[0].id);
+    }
+
+    #[test]
     fn trimming_the_start_hides_the_beginning_of_the_source() {
         let clip = media_clip(1, MediaAssetId::from_raw(9), 2, 8, 10);
 

@@ -138,7 +138,9 @@ pub(crate) fn applied_color_lut_of(effects: &[kadr_core::effect::Effect]) -> Opt
         .filter(|effect| effect.is_enabled)
         .find_map(|effect| match &effect.kind {
             EffectKind::ColorLut(color_lut) => Some(color_lut),
-            EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::TrackedBlur(_)
+            | EffectKind::Stabilization(_) => None,
         })
         .filter(|color_lut| color_lut.strength_fraction > 0.0)
 }
@@ -213,7 +215,9 @@ impl ColorTableLibrary {
             .flat_map(|(_, clip)| clip.effects.iter())
             .filter_map(|effect| match &effect.kind {
                 EffectKind::ColorLut(color_lut) => Some(color_lut.file_path.as_path()),
-                EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+                EffectKind::ColorAdjustment(_)
+                | EffectKind::TrackedBlur(_)
+                | EffectKind::Stabilization(_) => None,
             })
             .collect();
         self.tables

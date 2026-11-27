@@ -304,7 +304,8 @@ fn describe_unrendered_parts(project: &Project, composer: &mut FrameComposer) ->
                         ));
                     }
                 }
-                EffectKind::TrackedBlur(_) => {}
+                // Stabilisations are not rendered yet.
+                EffectKind::TrackedBlur(_) | EffectKind::Stabilization(_) => {}
             }
         }
         if color_adjustment_count > MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER {

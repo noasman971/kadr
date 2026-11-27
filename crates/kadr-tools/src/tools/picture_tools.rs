@@ -252,7 +252,9 @@ pub(crate) fn enabled_color_luts(
         .filter(|(_, effect)| effect.is_enabled)
         .filter_map(|(clip_id, effect)| match &effect.kind {
             EffectKind::ColorLut(color_lut) => Some((clip_id, effect.id, color_lut)),
-            EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::TrackedBlur(_)
+            | EffectKind::Stabilization(_) => None,
         })
 }
 

@@ -288,7 +288,9 @@ fn enabled_color_adjustments(clip: &Clip) -> Vec<ColorAdjustment> {
         .filter(|effect| effect.is_enabled)
         .filter_map(|effect| match &effect.kind {
             EffectKind::ColorAdjustment(adjustment) => Some(*adjustment),
-            EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => None,
+            EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) | EffectKind::Stabilization(_) => {
+                None
+            }
         })
         .collect()
 }
@@ -309,7 +311,9 @@ pub(crate) fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<Hidd
                         edge_softness_in_pixels: tracked_blur.edge_softness_in_pixels,
                     })
             }
-            EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => None,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::ColorLut(_)
+            | EffectKind::Stabilization(_) => None,
         })
         .collect()
 }

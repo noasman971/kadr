@@ -218,7 +218,8 @@ mod tests {
     use super::*;
     use crate::commands::test_support::{apply_and_check_revert, apply_expecting_error};
     use crate::commands::{AddClip, AddTrack, CreatedObjectsExt, ImportMedia, TrackPosition};
-    use crate::effect::{ColorAdjustment, ColorLut, TrackedBlur};
+    use crate::effect::test_samples::stabilization_of_frames;
+    use crate::effect::{ColorAdjustment, ColorLut, Stabilization, TrackedBlur};
     use crate::media_asset::test_samples::ten_second_video;
     use crate::project::ProjectSettings;
     use crate::time::Timestamp;
@@ -314,6 +315,44 @@ mod tests {
         let (project_without_lut, _) =
             apply_and_check_revert(&project, RemoveEffect::new(clip_id, effect_id));
         assert!(effects_of(&project_without_lut, clip_id).is_empty());
+    }
+
+    #[test]
+    fn adding_replacing_hiding_and_removing_a_stabilization_revert_exactly() {
+        let (project, clip_id) = project_with_video_clip();
+        let analysed = stabilization_of_frames(0, 180);
+        let (project, created) = apply_and_check_revert(
+            &project,
+            AddEffect::new(clip_id, EffectKind::Stabilization(analysed.clone())),
+        );
+        let effect_id = created.first_effect_id().unwrap();
+
+        // A new smoothing keeps the same measured path, shared rather than copied.
+        let smoother = Stabilization {
+            smoothing_in_seconds: 2.0,
+            zoom_factor: 1.12,
+            ..analysed.clone()
+        };
+        let (smoother_project, _) = apply_and_check_revert(
+            &project,
+            ReplaceEffect::new(clip_id, effect_id, EffectKind::Stabilization(smoother)),
+        );
+        let EffectKind::Stabilization(stored) = &effects_of(&smoother_project, clip_id)[0].kind
+        else {
+            panic!("expected a stabilisation");
+        };
+        assert_eq!(stored.smoothing_in_seconds, 2.0);
+        assert!(std::sync::Arc::ptr_eq(
+            &stored.camera_path,
+            &analysed.camera_path
+        ));
+
+        let (hidden_project, _) =
+            apply_and_check_revert(&project, SetEffectEnabled::new(clip_id, effect_id, false));
+        assert!(!effects_of(&hidden_project, clip_id)[0].is_enabled);
+        let (project_without_stabilization, _) =
+            apply_and_check_revert(&project, RemoveEffect::new(clip_id, effect_id));
+        assert!(effects_of(&project_without_stabilization, clip_id).is_empty());
     }
 
     #[test]

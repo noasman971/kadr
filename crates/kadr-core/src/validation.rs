@@ -8,7 +8,9 @@
 use std::collections::HashSet;
 
 use crate::clip::{AnimatableProperty, Clip, ClipContent, CropInsets, MediaSegment, TextContent};
-use crate::effect::{BlurStyle, ColorAdjustment, ColorLut, Effect, EffectKind, TrackedBlur};
+use crate::effect::{
+    BlurStyle, ColorAdjustment, ColorLut, Effect, EffectKind, Stabilization, TrackedBlur,
+};
 use crate::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use crate::media_asset::{MediaAsset, MediaKind};
 use crate::project::{Project, ProjectSettings};
@@ -388,6 +390,7 @@ fn validate_clip(project: &Project, track: &Track, clip: &Clip) -> Result<(), Va
     for effect in &clip.effects {
         validate_effect(clip, clip_has_picture, effect)?;
     }
+    validate_at_most_one_stabilization(clip)?;
     validate_transitions(clip, clip_has_picture)
 }
 
@@ -629,11 +632,39 @@ fn validate_effect(
                 find_tracked_blur_problem(tracked_blur)
             }
         }
+        EffectKind::Stabilization(stabilization) => {
+            if !matches!(clip.content, ClipContent::Media(_)) {
+                Some("a stabilisation only applies to a video".to_string())
+            } else {
+                find_stabilization_problem(stabilization)
+            }
+        }
     };
     match problem {
         Some(reason) => invalid(reason),
         None => Ok(()),
     }
+}
+
+/// Two stabilisations of one clip would correct the shake twice: a clip has at
+/// most one, and the second is refused (this also settles a race between the
+/// user and Claude stabilising the same clip).
+fn validate_at_most_one_stabilization(clip: &Clip) -> Result<(), ValidationError> {
+    let mut stabilizations = clip
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect.kind, EffectKind::Stabilization(_)));
+    let (Some(first), Some(second)) = (stabilizations.next(), stabilizations.next()) else {
+        return Ok(());
+    };
+    Err(ValidationError::InvalidEffect {
+        clip_id: clip.id,
+        effect_id: second.id,
+        reason: format!(
+            "a clip has at most one stabilisation, and effect {} already steadies this one",
+            first.id
+        ),
+    })
 }
 
 /// Describes the first value out of range, if any.
@@ -715,18 +746,90 @@ fn find_tracked_blur_problem(tracked_blur: &TrackedBlur) -> Option<String> {
         })
 }
 
+/// Only the form: the zoom is derived from the path by the engine, never here.
+fn find_stabilization_problem(stabilization: &Stabilization) -> Option<String> {
+    if let Some(problem) = first_out_of_range(&[
+        (
+            "smoothing",
+            stabilization.smoothing_in_seconds,
+            Stabilization::MINIMUM_SMOOTHING_IN_SECONDS,
+            Stabilization::MAXIMUM_SMOOTHING_IN_SECONDS,
+        ),
+        (
+            "zoom",
+            stabilization.zoom_factor,
+            Stabilization::MINIMUM_ZOOM_FACTOR,
+            Stabilization::MAXIMUM_ZOOM_FACTOR,
+        ),
+    ]) {
+        return Some(problem);
+    }
+    let picture_size = stabilization.analysed_picture_size;
+    if picture_size.width_in_pixels == 0 || picture_size.height_in_pixels == 0 {
+        return Some(format!(
+            "its analysed picture size is {} × {} pixels: neither side may be zero",
+            picture_size.width_in_pixels, picture_size.height_in_pixels
+        ));
+    }
+    find_camera_path_problem(stabilization)
+}
+
+fn find_camera_path_problem(stabilization: &Stabilization) -> Option<String> {
+    let camera_path = &stabilization.camera_path;
+    if camera_path.is_empty() {
+        return Some("its camera path is empty".to_string());
+    }
+    let samples_are_sorted = camera_path
+        .windows(2)
+        .all(|pair| pair[0].source_time < pair[1].source_time);
+    if !samples_are_sorted {
+        return Some("its camera path is not in strictly increasing time order".to_string());
+    }
+    camera_path.iter().find_map(|sample| {
+        let all_finite = [
+            sample.shift_x_in_pixels,
+            sample.shift_y_in_pixels,
+            sample.rotation_in_degrees,
+            sample.scale_factor,
+        ]
+        .iter()
+        .all(|value| value.is_finite());
+        if !all_finite {
+            return Some(format!(
+                "its camera path at {} has a non-finite value",
+                sample.source_time
+            ));
+        }
+        let scale_range =
+            Stabilization::MINIMUM_PATH_SCALE_FACTOR..=Stabilization::MAXIMUM_PATH_SCALE_FACTOR;
+        (!scale_range.contains(&sample.scale_factor)).then(|| {
+            format!(
+                "its camera path at {} has a scale of {}, outside {} to {}",
+                sample.source_time,
+                sample.scale_factor,
+                Stabilization::MINIMUM_PATH_SCALE_FACTOR,
+                Stabilization::MAXIMUM_PATH_SCALE_FACTOR
+            )
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::clip::CropInsets;
     use crate::commands::{
         AddClip, AddEffect, AddTrack, ChangeProjectSettings, ClipEdge, CreatedObjectsExt,
-        ImportMedia, SetClipCrop, SetClipText, SetClipTransition, SetTextAnimation, SplitClip,
-        TrackPosition, TrimClip,
+        ImportMedia, RemoveEffect, SetClipCrop, SetClipText, SetClipTransition, SetTextAnimation,
+        SplitClip, TrackPosition, TrimClip,
     };
-    use crate::effect::{PixelRegion, RegionSample, RegionSampleOrigin, TrackingConfidence};
+    use crate::effect::test_samples::stabilization_of_frames;
+    use crate::effect::{
+        CameraPathSample, PixelRegion, RegionSample, RegionSampleOrigin, TrackingConfidence,
+    };
     use crate::error::EditError;
     use crate::history::EditSession;
+    use crate::media_asset::PictureSize;
     use crate::media_asset::test_samples::{logo_image, one_minute_music, ten_second_video};
     use crate::project_file::{ProjectFileError, load_project_from_json, save_project_to_json};
     use crate::text_animation::TextAnimationStyle;
@@ -1070,6 +1173,238 @@ mod tests {
                 lut("looks/missing/Warm.CUBE", 0.5),
             ))
             .unwrap();
+    }
+
+    /// A fixture with a five-second video clip, and the clip's identifier.
+    fn fixture_with_video_clip() -> (Fixture, ClipId) {
+        let mut fixture = fixture();
+        let video_clip_id = fixture
+            .session
+            .execute(AddClip::media(
+                fixture.video_track_id,
+                fixture.video_id,
+                seconds(0),
+                seconds(5),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        (fixture, video_clip_id)
+    }
+
+    /// The reason a stabilisation was refused on `clip_id`.
+    fn stabilization_refusal(
+        fixture: &mut Fixture,
+        clip_id: ClipId,
+        stabilization: Stabilization,
+    ) -> String {
+        let result = fixture.session.execute(AddEffect::new(
+            clip_id,
+            EffectKind::Stabilization(stabilization),
+        ));
+        refused_rule(result).to_string()
+    }
+
+    /// A stabilisation of the first two seconds whose path is rebuilt by `change`.
+    fn stabilization_with_changed_path(
+        change: impl FnOnce(&mut Vec<CameraPathSample>),
+    ) -> Stabilization {
+        let stabilization = stabilization_of_frames(0, 60);
+        let mut camera_path = stabilization.camera_path.to_vec();
+        change(&mut camera_path);
+        Stabilization {
+            camera_path: camera_path.into(),
+            ..stabilization
+        }
+    }
+
+    #[test]
+    fn a_stabilization_on_a_title_is_refused() {
+        let mut fixture = fixture();
+        let title_clip_id = fixture
+            .session
+            .execute(AddClip::text(
+                fixture.video_track_id,
+                "Title",
+                TimeSpan::from_whole_seconds(2),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let music_clip_id = fixture
+            .session
+            .execute(AddClip::media(
+                fixture.audio_track_id,
+                fixture.music_id,
+                seconds(0),
+                seconds(5),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let on_title =
+            stabilization_refusal(&mut fixture, title_clip_id, stabilization_of_frames(0, 60));
+        assert!(
+            on_title.contains("a stabilisation only applies to a video"),
+            "{on_title}"
+        );
+        let on_music =
+            stabilization_refusal(&mut fixture, music_clip_id, stabilization_of_frames(0, 60));
+        assert!(
+            on_music.contains("a stabilisation needs a picture"),
+            "{on_music}"
+        );
+    }
+
+    #[test]
+    fn a_second_stabilization_is_refused() {
+        let (mut fixture, video_clip_id) = fixture_with_video_clip();
+        let first_effect_id = fixture
+            .session
+            .execute(AddEffect::new(
+                video_clip_id,
+                EffectKind::Stabilization(stabilization_of_frames(0, 60)),
+            ))
+            .unwrap()
+            .first_effect_id()
+            .unwrap();
+        let error = refused_rule(fixture.session.execute(AddEffect::new(
+            video_clip_id,
+            EffectKind::Stabilization(stabilization_of_frames(0, 90)),
+        )));
+        let ValidationError::InvalidEffect {
+            effect_id, reason, ..
+        } = error
+        else {
+            panic!("expected an invalid effect, got {error:?}");
+        };
+        assert_ne!(effect_id, first_effect_id);
+        assert_eq!(
+            reason,
+            format!(
+                "a clip has at most one stabilisation, and effect {first_effect_id} already steadies this one"
+            )
+        );
+        // Other effects beside the stabilisation are fine.
+        fixture
+            .session
+            .execute(AddEffect::new(
+                video_clip_id,
+                EffectKind::ColorAdjustment(ColorAdjustment::NEUTRAL),
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn stabilization_settings_out_of_range_are_refused() {
+        let (mut fixture, video_clip_id) = fixture_with_video_clip();
+        let with_settings = |smoothing_in_seconds, zoom_factor| Stabilization {
+            smoothing_in_seconds,
+            zoom_factor,
+            ..stabilization_of_frames(0, 60)
+        };
+        for (stabilization, expected) in [
+            (
+                with_settings(0.05, 1.0),
+                "the smoothing must be between 0.1 and 10, but is 0.05",
+            ),
+            (
+                with_settings(f32::NAN, 1.0),
+                "the smoothing must be between",
+            ),
+            (
+                with_settings(12.0, 1.0),
+                "the smoothing must be between 0.1 and 10, but is 12",
+            ),
+            (
+                with_settings(0.5, 0.9),
+                "the zoom must be between 1 and 1.2, but is 0.9",
+            ),
+            (
+                with_settings(0.5, 1.3),
+                "the zoom must be between 1 and 1.2, but is 1.3",
+            ),
+            (
+                Stabilization {
+                    analysed_picture_size: PictureSize {
+                        width_in_pixels: 1920,
+                        height_in_pixels: 0,
+                    },
+                    ..stabilization_of_frames(0, 60)
+                },
+                "neither side may be zero",
+            ),
+        ] {
+            let refusal = stabilization_refusal(&mut fixture, video_clip_id, stabilization);
+            assert!(refusal.contains(expected), "{refusal}");
+        }
+        for accepted in [with_settings(0.1, 1.0), with_settings(10.0, 1.2)] {
+            let effect_id = fixture
+                .session
+                .execute(AddEffect::new(
+                    video_clip_id,
+                    EffectKind::Stabilization(accepted),
+                ))
+                .unwrap()
+                .first_effect_id()
+                .unwrap();
+            fixture
+                .session
+                .execute(RemoveEffect::new(video_clip_id, effect_id))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn an_empty_or_unsorted_camera_path_is_refused() {
+        let (mut fixture, video_clip_id) = fixture_with_video_clip();
+        let empty = stabilization_with_changed_path(Vec::clear);
+        let refusal = stabilization_refusal(&mut fixture, video_clip_id, empty);
+        assert!(refusal.contains("its camera path is empty"), "{refusal}");
+
+        let repeated_time = stabilization_with_changed_path(|path| {
+            path[3].source_time = path[2].source_time;
+        });
+        let unsorted = stabilization_with_changed_path(|path| path.swap(4, 5));
+        for stabilization in [repeated_time, unsorted] {
+            let refusal = stabilization_refusal(&mut fixture, video_clip_id, stabilization);
+            assert!(
+                refusal.contains("not in strictly increasing time order"),
+                "{refusal}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_finite_path_values_are_refused() {
+        let (mut fixture, video_clip_id) = fixture_with_video_clip();
+        let changes: [fn(&mut CameraPathSample); 5] = [
+            |sample| sample.shift_x_in_pixels = f32::NAN,
+            |sample| sample.shift_y_in_pixels = f32::INFINITY,
+            |sample| sample.rotation_in_degrees = f32::NEG_INFINITY,
+            |sample| sample.scale_factor = f32::NAN,
+            |sample| sample.scale_factor = f32::INFINITY,
+        ];
+        for change in changes {
+            let stabilization = stabilization_with_changed_path(|path| change(&mut path[7]));
+            let refusal = stabilization_refusal(&mut fixture, video_clip_id, stabilization);
+            assert!(refusal.contains("has a non-finite value"), "{refusal}");
+        }
+        for impossible_scale in [0.2, 4.5, 0.0, -1.0] {
+            let stabilization = stabilization_with_changed_path(|path| {
+                path[7].scale_factor = impossible_scale;
+            });
+            let refusal = stabilization_refusal(&mut fixture, video_clip_id, stabilization);
+            assert!(
+                refusal.contains(&format!(
+                    "has a scale of {impossible_scale}, outside 0.25 to 4"
+                )),
+                "{refusal}"
+            );
+        }
     }
 
     #[test]

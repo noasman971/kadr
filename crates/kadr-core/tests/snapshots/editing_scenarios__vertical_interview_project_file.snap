@@ -3,7 +3,7 @@ source: crates/kadr-core/tests/editing_scenarios.rs
 expression: json_text
 ---
 {
-  "format_version": 3,
+  "format_version": 4,
   "project": {
     "settings": {
       "canvas_size": {
@@ -151,6 +151,45 @@ expression: json_text
                         },
                         "confidence": "uncertain",
                         "origin": "tracker"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": 14,
+                  "is_enabled": true,
+                  "kind": {
+                    "type": "stabilization",
+                    "smoothing_in_seconds": 0.5,
+                    "zoom_factor": 1.05,
+                    "analysed_picture_size": {
+                      "width_in_pixels": 1920,
+                      "height_in_pixels": 1080
+                    },
+                    "camera_path": [
+                      {
+                        "source_time": 1411200000,
+                        "shift_x_in_pixels": 0.0,
+                        "shift_y_in_pixels": 0.0,
+                        "rotation_in_degrees": 0.0,
+                        "scale_factor": 1.0,
+                        "motion_was_measured": false
+                      },
+                      {
+                        "source_time": 1434720000,
+                        "shift_x_in_pixels": 1.25,
+                        "shift_y_in_pixels": -0.5,
+                        "rotation_in_degrees": 0.125,
+                        "scale_factor": 1.0001,
+                        "motion_was_measured": true
+                      },
+                      {
+                        "source_time": 1458240000,
+                        "shift_x_in_pixels": 2.5,
+                        "shift_y_in_pixels": -1.0,
+                        "rotation_in_degrees": 0.25,
+                        "scale_factor": 1.0002,
+                        "motion_was_measured": false
                       }
                     ]
                   }
@@ -386,7 +425,7 @@ expression: json_text
       ]
     },
     "id_allocator": {
-      "next_raw_id": 14
+      "next_raw_id": 15
     }
   }
 }

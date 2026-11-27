@@ -18,7 +18,7 @@ flowchart TD
     clips --> content[ClipContent<br/>MediaSegment or TextContent]
     clips --> properties[Volume, opacity, position, scale, rotation<br/>AnimatedValue with keyframes]
     clips --> crop[Crop]
-    clips --> effects[Effects<br/>colour adjustment, tracked blur]
+    clips --> effects[Effects<br/>colour adjustment, colour LUT,<br/>tracked blur, stabilisation]
     clips --> transitions[Entry and exit transitions<br/>videos and images]
     content --> animations[Entry and exit animations<br/>texts]
 ```
@@ -102,10 +102,20 @@ interpolation: linear, ease-in-out, or hold.
 | `ColorAdjustment` | Exposure (stops), contrast, saturation, temperature |
 | `ColorLut` | The path of a `.cube` file and a strength from 0 to 1. Only the path is stored, never the table; the rules check only that it names a `.cube` file, never that it exists (a moved LUT must not make the project impossible to open). Reading it is the engine's job ([rendering.md](rendering.md#colour-luts), decision record 0052) |
 | `TrackedBlur` | Style (gaussian, pixelate, solid fill), shape (rectangle, ellipse), margin, edge softness, and `RegionSample`s: where the hidden region is, **indexed by source time** so the blur stays on the face after trims and splits, with the tracker's confidence (confident, uncertain, lost) and who placed it (user, tracker, manual correction) |
+| `Stabilization` | The smoothing (seconds of the source file, 0.1 to 10, 0.5 by default), the zoom that keeps the moving edges outside the frame (1 to 1.2, derived from the path by the engine), the picture size the path was measured in, and the camera's **raw measured path**: one `CameraPathSample` per analysed frame, **indexed by source time** (shift in pixels, clockwise rotation in degrees and scale since the path's first frame, and whether the motion from the previous frame was measured). The path is smoothed when the clip is drawn, so a new smoothing needs no new analysis and a split or trim never changes a frame's correction. It is kept as an `Arc<[CameraPathSample]>`: splits, undo records and smoothing changes share one path instead of copying it |
 
 Whatever the order of a clip's effects list, they apply in a fixed order: tracked
-blurs on the source picture, then the colour adjustments (in list order), then the
-colour LUT.
+blurs on the source picture, then the stabilisation (it moves the picture inside the
+layer's window), then the colour adjustments (in list order), then the colour LUT.
+
+A stabilisation's lookups all follow the decoder's rule, the last sample at or before
+a time, and never interpolate: `sample_index_at` finds the sample whose frame shows
+at a source time, `frame_time_for` gives the moment to decode (the sample's own time
+inside the analysed part, so the rendered frame is exactly the measured one, even in
+files with uneven frame spacing), `analysed_range` and `covers` say which part of the
+file was analysed (the clip and a margin around it), and `unmeasured_ranges` lists
+the moments the motion could not be measured (cuts, frames that could not be
+followed).
 
 ## Commands and undo
 
@@ -159,8 +169,12 @@ command and on every loaded file.
 - Properties: inside their ranges (opacity 0–1, volume 0–4, scale 0.01–100…),
   keyframes in strictly increasing time order.
 - Crop: each edge from 0 to below 1, opposite edges not removing the whole picture.
-- Effects: picture effects only on clips with a picture, tracked blur only on media
-  clips, settings in range, region samples sorted and well formed.
+- Effects: picture effects only on clips with a picture, tracked blur and
+  stabilisation only on media clips, settings in range, region samples sorted and
+  well formed. A stabilisation's camera path is not empty, in strictly increasing
+  time order, with finite values and a scale from 0.25 to 4; its analysed picture
+  size is not zero. A clip has **at most one stabilisation** (two would correct the
+  shake twice); the rule also settles a race between the user and Claude.
 - Transitions only on videos and images, text animations only on texts; both last
   more than zero and at most 60 s (longer than the clip is fine: they are shortened
   to fit when drawn).
@@ -171,7 +185,7 @@ A `.kadr` file is indented JSON:
 
 ```json
 {
-  "format_version": 3,
+  "format_version": 4,
   "project": {
     "settings": { "canvas_size": { "width_in_pixels": 1080, "height_in_pixels": 1920 }, … },
     "media_assets": [ … ],
@@ -194,10 +208,12 @@ is kept as a snapshot test in
   | 1 | First format (phase 1) |
   | 2 | `entry_transition` and `exit_transition` on clips, `entry_animation` and `exit_animation` on texts (phase 8) |
   | 3 | The `color_lut` effect (phase 8c). Nothing to convert: the new number makes an older Kadr say "newer version" instead of "damaged file" |
+  | 4 | The `stabilization` effect (phase 8d). Nothing to convert, for the same reason |
 
-  The snapshots of versions 1 and 2 are kept as
-  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr` and
-  `…_format_2.kadr`; tests check they still open as the same project.
+  The snapshots of versions 1, 2 and 3 are kept as
+  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr`,
+  `…_format_2.kadr` and `…_format_3.kadr`; tests check they still open as the same
+  project.
 - A file from a **newer** Kadr is refused with a message asking to update, rather than
   losing data.
 - Every loaded project is validated: a damaged file never reaches the editor.

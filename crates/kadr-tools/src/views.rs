@@ -432,6 +432,8 @@ impl EffectView {
                     }),
                 )
             }
+            // Its settings are not described to Claude yet.
+            EffectKind::Stabilization(_) => ("stabilization", serde_json::json!({})),
         };
         Self {
             effect_id: effect.id.raw(),
