@@ -22,14 +22,15 @@ It is the source of truth for scope, phases and rules.
 - **Phase 1 (data model): done and validated**, tagged `v0.2.0`.
 - **Phase 2 (media and export): done and validated**, tagged `v0.3.0`.
 - **Phase 3 (GPU rendering): done and validated**, tagged `v0.4.0` (PRs #3, #4, #5).
-- **Phases 4, 5, 6, 8 and 9 are in progress in parallel**, each on its own branch
-  with a draft pull request whose description starts with "Status for resuming".
-  **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
+- **Phases 4 (face blur by tracking), 5 (MCP server) and 6 (desktop app): done**,
+  tagged `v0.5.0`, `v0.6.0` and `v0.7.0` at the owner's request on 2026-11-27.
+- **Phases 7 (blur and Claude in the app) and 8 (features) are in progress**, each in
+  small PRs whose description starts with "Status for resuming". Phase 9 (Android) is
+  paused by the owner; phase 10 (iOS) needs a Mac.
+- **[docs/status.md](docs/status.md) says where each phase stands, how to resume on
   another computer, and the prompt to start each session with: read it first.**
-  Phase 9 is paused by the owner; phase 8 resumed on 2026-11-26. Phase 7
-  (blur and Claude in the app) started on 2026-11-26, in small PRs 7a–7e (plan in
-  docs/status.md); phase 10 (iOS) needs a Mac. Versions are tagged in phase order
-  (`v0.5.0` = phase 4, `v0.6.0` = phase 5, …), each after the owner validates it.
+  Versions are tagged in phase order (`v0.8.0` = phase 7, `v0.9.0` = phase 8, …),
+  each after the owner validates it.
 
 ## Decisions taken with the owner
 
@@ -194,6 +195,18 @@ Details: [docs/architecture.md](docs/architecture.md).
   compiles the whole workspace. Five at once filled 32 GB of memory and made
   everything 10 to 20 times slower. Run two or three sessions at most, with
   `CARGO_BUILD_JOBS=4`.
+- **Disk:** each session's build folder grows to 10–30 GB (debug, release, Tauri).
+  On 2026-11-27 five of them filled the desktop PC's disk and builds failed with
+  `link.exe` error 1318. Delete a finished session's build folder, with the owner's
+  OK; never one that a running session uses.
+- **Repository inside OneDrive** (the desktop PC's `Bureau` folder): keep the build
+  output out of it, or OneDrive syncs gigabytes and can lock files mid-build. Each
+  checkout or worktree gets a machine-local `.cargo/config.toml` with
+  `[build] target-dir = "<a folder outside OneDrive>"`, excluded from git through
+  `.git/info/exclude` (shared by every worktree); never commit it.
+- **Tools installed while the Claude app is open:** sessions inherit the app's old
+  `PATH`. Until the app restarts, start build commands with
+  `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); $env:FFMPEG_DIR = [Environment]::GetEnvironmentVariable('FFMPEG_DIR','User')`.
 - **Tracking:** synthetic scenes are not enough. A real 1080p video
   (`scripts/generate-tracking-benchmark.ps1`, measured with the `track_video`
   example and `scripts/compare-tracking-with-truth.py`) showed drifts that every
