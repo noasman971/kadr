@@ -1,12 +1,19 @@
-<!-- Settings (docs/ux.md): language, theme, interface size, and the way to Connect to Claude. -->
+<!--
+  Settings (docs/ux.md): language, theme, interface size, proxies for heavy videos
+  (decision record 0055), and the way to Connect to Claude.
+-->
 <script lang="ts">
+  import { onMount } from "svelte";
+
   import { systemLanguage, t, type LanguageChoice } from "../i18n/i18n.svelte";
+  import { formatByteSize } from "../media/proxyBadge";
   import {
     LARGEST_INTERFACE_SCALE,
     SMALLEST_INTERFACE_SCALE,
     preferences,
     type ThemeChoice,
   } from "../state/preferences.svelte";
+  import { proxies } from "../state/proxies.svelte";
   import Button from "../ui/Button.svelte";
   import Dialog from "../ui/Dialog.svelte";
 
@@ -19,6 +26,9 @@
 
   const LANGUAGE_NAMES = { fr: "Français", en: "English" } as const;
   const THEMES: ThemeChoice[] = ["dark", "light", "system"];
+
+  // The cache's size changes as proxies are made: read it when the dialog opens.
+  onMount(() => void proxies.refresh());
 </script>
 
 <Dialog title={t("settings.title")} widthInPixels={560} {onClose}>
@@ -63,6 +73,25 @@
     </div>
   </div>
   <div class="setting">
+    <div class="described">
+      <label for="proxy-setting">{t("settings.proxies")}</label>
+      <p class="hint">{t("settings.proxies.hint")}</p>
+    </div>
+    <input
+      id="proxy-setting"
+      type="checkbox"
+      role="switch"
+      checked={proxies.isAutomatic}
+      onchange={(event) => void proxies.setAutomatic(event.currentTarget.checked)}
+    />
+  </div>
+  <div class="setting">
+    <span class="tabular">{t("settings.proxies.cache", { size: formatByteSize(proxies.cacheSizeInBytes) })}</span>
+    <Button disabled={proxies.isClearing || proxies.cacheSizeInBytes === 0} onclick={() => void proxies.clearCache()}>
+      {t("settings.proxies.clear")}
+    </Button>
+  </div>
+  <div class="setting">
     <span>{t("settings.claude")}</span>
     <Button onclick={onOpenClaude}>{t("settings.claude.open")}</Button>
   </div>
@@ -83,6 +112,22 @@
   label,
   .setting > span {
     font-weight: var(--font-weight-medium);
+  }
+  .described {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 380px;
+  }
+  .hint {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-accent);
   }
   select {
     width: 220px;

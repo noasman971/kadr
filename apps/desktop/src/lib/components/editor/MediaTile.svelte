@@ -1,11 +1,14 @@
 <!--
   One imported file in the library: thumbnail, kind, length, whether it is used,
-  and a + button that adds it at the end of the timeline.
+  a + button that adds it at the end of the timeline, and the state of its proxy
+  (heavy videos, decision record 0055) with the action that fits.
 -->
 <script lang="ts">
   import type { MediaView } from "../../api/types";
   import { t } from "../../i18n/i18n.svelte";
   import Thumbnail from "../../media/Thumbnail.svelte";
+  import { proxyBadgeOf } from "../../media/proxyBadge";
+  import { proxies } from "../../state/proxies.svelte";
   import { TICKS_PER_SECOND, formatShortDuration } from "../../time/ticks";
   import Icon from "../../ui/Icon.svelte";
   import type { IconName } from "../../ui/icons";
@@ -21,6 +24,15 @@
   const KIND_ICONS: Record<MediaView["kind"], IconName> = { video: "film", audio: "music", image: "image" };
   /** Thumbnails show one second in, or the middle of shorter videos. */
   const thumbnailTimeTicks = $derived(Math.min(TICKS_PER_SECOND, (media.durationTicks ?? 0) / 2));
+  const proxyBadge = $derived(media.isMissing ? null : proxyBadgeOf(proxies.stateOf(media.filePath), media));
+
+  function runProxyAction(): void {
+    if (proxyBadge?.action === "stop") {
+      void proxies.stop(media.id);
+    } else if (proxyBadge?.action === "makeAgain") {
+      void proxies.makeAgain(media.id);
+    }
+  }
 </script>
 
 <div
@@ -45,6 +57,26 @@
       </div>
     {/if}
     <span class="kind" title={t(`kind.${media.kind}`)}><Icon name={KIND_ICONS[media.kind]} size={12} /></span>
+    {#if proxyBadge}
+      <span class="proxy {proxyBadge.tone}" title={proxyBadge.hint}>
+        <span class="proxy-label tabular">{proxyBadge.label}</span>
+        {#if proxyBadge.action}
+          <button
+            type="button"
+            class="proxy-action"
+            title={t(proxyBadge.action === "stop" ? "library.proxy.stop" : "library.proxy.makeAgain")}
+            aria-label="{t(proxyBadge.action === 'stop' ? 'library.proxy.stop' : 'library.proxy.makeAgain')}: {media.name}"
+            onpointerdown={(event) => event.stopPropagation()}
+            onclick={runProxyAction}
+          >
+            <Icon name={proxyBadge.action === "stop" ? "close" : "rotate"} size={10} />
+          </button>
+        {/if}
+      </span>
+      {#if proxyBadge.fraction !== null}
+        <span class="proxy-progress" aria-hidden="true" style:width="{proxyBadge.fraction * 100}%"></span>
+      {/if}
+    {/if}
     {#if media.useCount > 0}
       <span class="used" title={t("library.inTimeline")}><Icon name="check" size={11} /></span>
     {/if}
@@ -121,6 +153,60 @@
     border-radius: var(--radius-sm);
     background: rgba(0, 0, 0, 0.55);
     color: #ffffff;
+  }
+  .proxy {
+    position: absolute;
+    top: 4px;
+    left: 28px;
+    max-width: calc(100% - 60px);
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 2px 0 6px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.6);
+    color: #ffffff;
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .proxy:not(:has(.proxy-action)) {
+    padding-right: 6px;
+  }
+  .proxy.ready {
+    color: #3ccf91;
+  }
+  .proxy.warning {
+    color: var(--color-warning);
+  }
+  .proxy-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .proxy-action {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  .proxy-action:hover,
+  .proxy-action:focus-visible {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .proxy-progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    background: var(--color-accent);
+    transition: width var(--duration-fast);
   }
   .used {
     position: absolute;
