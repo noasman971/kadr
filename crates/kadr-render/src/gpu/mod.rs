@@ -353,7 +353,7 @@ fn layer_uniforms(
         canvas.size.height_in_pixels as f32,
     );
     let mut uniforms = Vec::with_capacity(64);
-    let texture_corners = geometry.texture_corners(picture.width(), picture.height());
+    let texture_corners = geometry.texture_corners();
     for ((canvas_x, canvas_y), (texture_x, texture_y)) in
         geometry.canvas_corners().into_iter().zip(texture_corners)
     {

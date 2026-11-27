@@ -14,6 +14,8 @@
 //!   transitions and text animations.
 //! - [`ColorLookupTable`] reads `.cube` colour LUTs; a layer applies one after its
 //!   colour adjustments ([`LayerColorLut`]).
+//! - A [`SourceCorrection`] moves, turns and enlarges the source picture inside
+//!   its layer's window (video stabilisation), before the window is placed.
 //! - A single video that already fills the canvas is passed through untouched.
 //!
 //! ## Rules for this crate
@@ -45,7 +47,8 @@ pub use color_lookup_table::{
 pub use cpu_compositor::{CpuRenderer, composite_layers_to_rgba};
 pub use gpu::GpuRenderer;
 pub use layers::{
-    CanvasDescription, LayerPlacement, LayerSizing, SourceToCanvasMapping, VisualLayer,
+    CanvasDescription, LayerPlacement, LayerSizing, SourceCorrection, SourceToCanvasMapping,
+    VisualLayer,
 };
 pub use region_effects::{HiddenRegion, hide_regions};
 pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};

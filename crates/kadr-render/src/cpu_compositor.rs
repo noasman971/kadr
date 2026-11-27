@@ -3,9 +3,10 @@
 //!
 //! Each layer is drawn by **inverse mapping**: for every canvas pixel the layer
 //! may cover, the compositor computes which point of the source picture lands
-//! there (undoing position, rotation, scale and crop), reads that point with
-//! bilinear interpolation, and blends it over what is already on the canvas.
-//! Rows are processed in parallel. The result is converted to BT.709 YUV 4:2:0.
+//! there (undoing position, rotation, scale, crop and the source correction),
+//! reads that point with bilinear interpolation, and blends it over what is
+//! already on the canvas. Rows are processed in parallel. The result is
+//! converted to BT.709 YUV 4:2:0.
 
 use std::borrow::Cow;
 
@@ -80,7 +81,19 @@ struct VisiblePixels {
 }
 
 impl VisiblePixels {
+    /// The crop's pixels, or the whole picture's when a source correction
+    /// moves the picture inside the window: the window may then show pixels
+    /// beyond the crop, and points beyond the picture repeat its edge pixels,
+    /// like the GPU's clamp-to-edge sampler.
     fn of(geometry: &LayerGeometry) -> Self {
+        if geometry.has_source_correction {
+            return Self {
+                first_column: 0,
+                last_column: (geometry.picture_width as i64 - 1).max(0),
+                first_row: 0,
+                last_row: (geometry.picture_height as i64 - 1).max(0),
+            };
+        }
         let first_column = geometry.crop_left.floor() as i64;
         let first_row = geometry.crop_top.floor() as i64;
         Self {
@@ -244,7 +257,7 @@ fn draw_one_to_one(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layers::LayerPlacement;
+    use crate::layers::{LayerPlacement, SourceCorrection};
     use kadr_core::clip::CropInsets;
     use kadr_core::color::Color;
     use kadr_core::media_asset::PictureSize;
@@ -469,6 +482,65 @@ mod tests {
             .render_frame(&canvas(16, 8, Color::BLACK), &[untouched])
             .unwrap();
         assert_eq!(rendered, video);
+    }
+
+    /// Fitted, with the source picture moved `shift_x_in_pixels` to the right
+    /// inside its window.
+    fn shifted_right(shift_x_in_pixels: f32) -> LayerPlacement {
+        LayerPlacement {
+            source_correction: SourceCorrection {
+                shift_x_in_pixels,
+                ..SourceCorrection::IDENTITY
+            },
+            ..LayerPlacement::FITTED
+        }
+    }
+
+    #[test]
+    fn a_stabilized_canvas_sized_video_is_not_passed_through() {
+        let VideoFrame::Rgba(halves) = red_left_blue_right(16, 8) else {
+            panic!("expected RGBA");
+        };
+        let video =
+            VideoFrame::Yuv420(YuvPicture::from_rgba(&halves, YuvColorSpace::BT709_LIMITED));
+        let rendered = CpuRenderer
+            .render_frame(
+                &canvas(16, 8, Color::BLACK),
+                &[layer(&video, shifted_right(2.0))],
+            )
+            .unwrap();
+        assert_ne!(rendered, video);
+        // Nor is a picture of the canvas size copied row by row: the boundary
+        // moves 2 pixels to the right, and the left edge repeats its pixels.
+        let picture = red_left_blue_right(20, 10);
+        let result = composite_layers_to_rgba(
+            &canvas(20, 10, Color::BLACK),
+            &[layer(&picture, shifted_right(2.0))],
+        );
+        assert_eq!(result.get_pixel(11, 5).0, [255, 0, 0, 255]);
+        assert_eq!(result.get_pixel(12, 5).0, [0, 0, 255, 255]);
+        assert_eq!(result.get_pixel(0, 5).0, [255, 0, 0, 255], "edge repeated");
+    }
+
+    #[test]
+    fn a_corrected_layer_shows_pixels_beyond_its_crop() {
+        // The window keeps the blue right half; the correction moves the
+        // picture 5 pixels to the right, so the window's left half shows red
+        // pixels that the crop alone would have removed.
+        let picture = red_left_blue_right(20, 10);
+        let placement = LayerPlacement {
+            crop: CropInsets {
+                left_fraction: 0.5,
+                ..CropInsets::default()
+            },
+            ..shifted_right(5.0)
+        };
+        let result =
+            composite_layers_to_rgba(&canvas(10, 10, Color::BLACK), &[layer(&picture, placement)]);
+        assert_eq!(result.get_pixel(0, 5).0, [255, 0, 0, 255]);
+        assert_eq!(result.get_pixel(4, 5).0, [255, 0, 0, 255]);
+        assert_eq!(result.get_pixel(5, 5).0, [0, 0, 255, 255]);
+        assert_eq!(result.get_pixel(9, 5).0, [0, 0, 255, 255]);
     }
 
     #[test]
