@@ -21,7 +21,7 @@ use crate::time_input::{
     half_frame, positive_span_from_seconds, seconds_in, seconds_of, snap_to_nearby_clip_edge,
     timestamp_from_seconds,
 };
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::views::{ClipView, SettingsView, TrackView, track_kind_name};
 
 /// The timeline tools.
@@ -128,7 +128,7 @@ struct TimelineView {
     tracks: Vec<TrackView>,
 }
 
-fn get_timeline(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOutput, ToolError> {
+fn get_timeline(toolbox: &mut ToolCall<'_>, _: NoParameters) -> Result<ToolOutput, ToolError> {
     let project = toolbox.require_project()?;
     let view = TimelineView {
         settings: SettingsView::of(project.settings()),
@@ -167,7 +167,7 @@ struct ClipParameters {
 }
 
 fn get_clip(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: ClipParameters,
 ) -> Result<ToolOutput, ToolError> {
     let project = toolbox.require_project()?;
@@ -230,7 +230,7 @@ struct AddTrackParameters {
 }
 
 fn add_track(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: AddTrackParameters,
 ) -> Result<ToolOutput, ToolError> {
     let kind = TrackKind::from(parameters.kind);
@@ -273,7 +273,7 @@ struct RemoveTrackParameters {
 }
 
 fn remove_track(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: RemoveTrackParameters,
 ) -> Result<ToolOutput, ToolError> {
     let track_id = TrackId::from_raw(parameters.track_id);
@@ -330,7 +330,7 @@ struct AddClipParameters {
 const DEFAULT_IMAGE_DURATION_IN_SECONDS: f64 = 5.0;
 
 fn add_clip(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: AddClipParameters,
 ) -> Result<ToolOutput, ToolError> {
     let project = toolbox.require_project()?;
@@ -525,7 +525,7 @@ struct RemoveClipParameters {
 }
 
 fn remove_clip(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: RemoveClipParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -591,7 +591,7 @@ struct MoveClipParameters {
 }
 
 fn move_clip(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: MoveClipParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -678,7 +678,7 @@ struct TrimClipParameters {
 }
 
 fn trim_clip(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: TrimClipParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -740,7 +740,7 @@ struct SplitClipParameters {
 }
 
 fn split_clip(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: SplitClipParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);

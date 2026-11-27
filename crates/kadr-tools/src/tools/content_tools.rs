@@ -22,7 +22,7 @@ use crate::output::{ToolError, ToolOutput};
 use crate::time_input::{
     half_frame, positive_span_from_seconds, seconds_in, timestamp_from_seconds,
 };
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::tools::common::parse_color;
 use crate::tools::timeline_tools::{clip_details, is_free, missing_created_object};
 
@@ -141,7 +141,7 @@ const CANVAS_HEIGHTS_PER_DEFAULT_FONT_SIZE: f32 = 16.0;
 const TEXT_TRACK_NAME: &str = "Texts";
 
 fn add_text(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: AddTextParameters,
 ) -> Result<ToolOutput, ToolError> {
     let project = toolbox.require_project()?;
@@ -330,7 +330,7 @@ struct EditTextParameters {
 }
 
 fn edit_text(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: EditTextParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -426,7 +426,7 @@ enum FadeEnd {
 }
 
 fn add_transition(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: AddTransitionParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -600,7 +600,7 @@ struct RemoveTransitionsParameters {
 }
 
 fn remove_transitions(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: RemoveTransitionsParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -663,7 +663,7 @@ struct AddColorAdjustmentParameters {
 }
 
 fn add_color_adjustment(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: AddColorAdjustmentParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);
@@ -751,7 +751,7 @@ struct RemoveEffectParameters {
 }
 
 fn remove_effect(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: RemoveEffectParameters,
 ) -> Result<ToolOutput, ToolError> {
     let clip_id = ClipId::from_raw(parameters.clip_id);

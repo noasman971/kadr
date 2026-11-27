@@ -21,6 +21,7 @@ publish = false
 # Cargo warns about declared but unused dependencies, and warnings fail the CI.
 # The planned dependencies between Kadr crates are described in docs/architecture.md.
 [workspace.dependencies]
+kadr-app-link = { path = "crates/kadr-app-link" }
 kadr-core = { path = "crates/kadr-core" }
 # FFmpeg is opt-in, so crates that only need the picture types stay portable.
 kadr-media = { path = "crates/kadr-media", default-features = false }

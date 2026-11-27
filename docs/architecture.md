@@ -16,6 +16,7 @@ app.
 | `kadr-engine` | The single API for interfaces: projects, commands, preview, background tasks with progress and cancellation | 2 → |
 | `kadr-tools` | Editing tools Claude can call: name, description, JSON schema, execution | 5 |
 | `kadr-mcp` | Local MCP server (stdio) exposing `kadr-tools` to Claude Desktop / Claude Code | 5, 7 |
+| `kadr-app-link` | The local pipe between `kadr-mcp` and the open desktop app: one tool call, one answer ([decision 0030](decisions/0030-claude-edits-the-open-app-through-a-local-pipe.md)) | 7 |
 | `kadr-cli` | Command-line binary to test the engine without an interface | 0 → |
 | `apps/desktop` | Tauri 2 desktop app: Svelte front end, Rust back end (crate `kadr-desktop`) calling the engine. See [desktop-app.md](desktop-app.md) | 6 |
 | `apps/mobile` | The same Tauri 2 app built for Android | 9 |
@@ -28,7 +29,9 @@ phase 2, `kadr-cli → kadr-engine → kadr-media / kadr-render → kadr-core` a
 since phase 4, `kadr-engine → kadr-vision` (region tracking, and silence analysis
 since phase 5); since phase 5, `kadr-mcp → kadr-tools → kadr-engine / kadr-core`
 too (`kadr-mcp` also uses `kadr-engine` directly, for the FFmpeg backend the engine
-re-exports). The others arrive with their phase.
+re-exports). Since phase 7, `kadr-mcp` and the desktop app both use `kadr-app-link`
+(`kadr-mcp` passes calls through it, the app answers them with its own `kadr-tools`
+toolbox). The others arrive with their phase.
 
 ```mermaid
 flowchart TD
@@ -36,6 +39,10 @@ flowchart TD
     desktop[apps/desktop] --> engine
     mobile[apps/mobile] --> engine
     mcp[kadr-mcp] --> tools[kadr-tools]
+    mcp --> link[kadr-app-link]
+    desktop --> link
+    desktop --> tools
+    link --> tools
     tools --> engine
     tools --> core[kadr-core]
     engine --> core

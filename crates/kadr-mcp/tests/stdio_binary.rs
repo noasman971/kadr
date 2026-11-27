@@ -18,6 +18,18 @@ async fn the_program_speaks_only_mcp_on_stdout() {
     let allowed_folder = tempfile::tempdir().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_kadr-mcp"));
     command.arg("--allowed-folder").arg(allowed_folder.path());
+    // A Kadr app open on this computer must not take the test's calls.
+    command.env(
+        "KADR_APP_LINK_ADDRESS",
+        if cfg!(windows) {
+            format!(r"\\.\pipe\kadr-app-test-stdio-{}", std::process::id())
+        } else {
+            std::env::temp_dir()
+                .join(format!("kadr-app-test-stdio-{}.sock", std::process::id()))
+                .display()
+                .to_string()
+        },
+    );
     command
         .arg("--allowed-folder")
         .arg(allowed_folder.path().join("typo"));

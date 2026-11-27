@@ -336,6 +336,31 @@ sequenceDiagram
 | **Correcting: the box dragged onto the target, the lost stretch striped on the clip** | **Corrected: the stretch is now only where the target was hidden** |
 | ![Correcting a lost box](screenshots/desktop-blur-correct.jpg) | ![After the correction](screenshots/desktop-blur-corrected.jpg) |
 
+## Claude in the app
+
+Decision record [0030](decisions/0030-claude-edits-the-open-app-through-a-local-pipe.md);
+the user's view in [ux.md](ux.md#claude-in-the-app-phase-7).
+
+- `claude_link.rs` serves `kadr-mcp`'s pipe (`kadr-app-link`, started in `lib.rs`'s
+  setup on desktop only) and runs each call with the app's own `KadrToolbox`:
+  - tools that only read get a **snapshot** host (`SnapshotHost`): no lock held while
+    a contact sheet is drawn;
+  - other tools get the window's project (`AppProjectHost`) under its lock.
+    `OpenProject` implements `kadr_tools::EditableProject`: Claude's steps go through
+    `run_tool_steps` into the same `EditSession`, labelled `Claude: …`, and Claude may
+    only undo or redo its own steps;
+  - `open_project` / `create_project` replace the window's project.
+- After a call (or when a blur analysis ends, checked every second), the back end
+  emits `claude-changed-project` with the view, the step and the clips that changed
+  (`OpenProject::take_clips_changed_by_claude`). `lib/state/claude.svelte.ts` shows it,
+  outlines the clips (`TimelineClip`, class `changed-by-claude`) and offers Undo.
+- Locks are always taken toolbox first, then project.
+
+![Claude split a clip through kadr-mcp: the notice with Undo, the two parts outlined](screenshots/desktop-claude-changed.jpg)
+- Trying it without Claude Desktop: the scratch MCP client used while building it
+  spawned `kadr-mcp` with `KADR_APP_LINK_ADDRESS` set to the app's pipe; set the same
+  variable for both (from PowerShell: Git Bash rewrites `\\.\pipe\…` values).
+
 ## Adding an edit
 
 1. Add a variant to `EditRequest` in `editing.rs`, with a test, and a branch in

@@ -11,8 +11,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use kadr_core::error::EditError;
 use kadr_core::history::EditSession;
+use kadr_core::ids::ClipId;
 use kadr_core::project::{Project, ProjectSettings};
 use kadr_engine::project_files::{load_project_file, save_project_file};
+use kadr_tools::{CLAUDE_UNDO_LABEL_PREFIX, EditableProject, ToolError, ToolSteps, run_tool_steps};
 
 use crate::command_error::{CommandError, CommandResult, ErrorCode};
 use crate::editing::ADD_FIRST_VIDEO_UNDO_LABEL;
@@ -37,6 +39,8 @@ pub struct OpenProject {
     save_failure: Option<String>,
     /// The current project, shared with the preview and sound threads.
     snapshot: Arc<Project>,
+    /// The clips Claude's last change touched, for the front end to outline.
+    clips_changed_by_claude: Vec<ClipId>,
 }
 
 impl OpenProject {
@@ -98,6 +102,7 @@ impl OpenProject {
             adopts_first_video_format,
             save_failure: None,
             snapshot,
+            clips_changed_by_claude: Vec::new(),
         })
     }
 
@@ -247,11 +252,117 @@ impl OpenProject {
             .map(|error| error.to_string());
     }
 
+    /// The clips Claude's last change added or changed (once: the list empties).
+    pub fn take_clips_changed_by_claude(&mut self) -> Vec<ClipId> {
+        std::mem::take(&mut self.clips_changed_by_claude)
+    }
+
     fn after_change(&mut self) {
         self.revision += 1;
         self.snapshot = Arc::new(self.session.project().clone());
         self.save();
     }
+}
+
+/// The tools Claude calls through the app work on the open project
+/// (decision record 0030). Its steps share the window's undo history, labelled
+/// `"Claude: …"`; Claude may only undo and redo its own steps.
+impl EditableProject for OpenProject {
+    fn project(&self) -> &Project {
+        self.session.project()
+    }
+
+    fn file_path(&self) -> &Path {
+        &self.file_path
+    }
+
+    fn undo_history_labels(&self) -> Vec<String> {
+        self.session
+            .undo_history_labels()
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn next_undo_label(&self) -> Option<String> {
+        self.session.next_undo_label().map(str::to_string)
+    }
+
+    fn next_redo_label(&self) -> Option<String> {
+        self.session.next_redo_label().map(str::to_string)
+    }
+
+    fn change_in_one_step(
+        &mut self,
+        label: &str,
+        steps: &mut ToolSteps<'_>,
+    ) -> Result<(), ToolError> {
+        let before = Arc::clone(&self.snapshot);
+        run_tool_steps(&mut self.session, label, steps)?;
+        if self.session.project() != before.as_ref() {
+            self.clips_changed_by_claude = changed_clip_ids(&before, self.session.project());
+            self.after_change();
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self) -> Result<String, ToolError> {
+        require_claude_step(self.session.next_undo_label(), "undo", "Ctrl+Z")?;
+        OpenProject::undo(self).map_err(|error| ToolError::new(error.details))
+    }
+
+    fn redo(&mut self) -> Result<String, ToolError> {
+        require_claude_step(self.session.next_redo_label(), "redo", "Ctrl+Y")?;
+        OpenProject::redo(self).map_err(|error| ToolError::new(error.details))
+    }
+
+    fn save(&mut self) -> Result<(), ToolError> {
+        OpenProject::save(self);
+        match &self.save_failure {
+            Some(failure) => Err(ToolError::new(format!(
+                "the project could not be saved: {failure}"
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    fn save_as(&mut self, file_path: PathBuf) -> Result<(), ToolError> {
+        OpenProject::save_as(self, file_path).map_err(|error| ToolError::new(error.details))
+    }
+}
+
+/// Refuses to undo or redo a step the user made in the app.
+fn require_claude_step(
+    next_label: Option<&str>,
+    action: &str,
+    shortcut: &str,
+) -> Result<(), ToolError> {
+    match next_label {
+        None => Err(ToolError::new(format!("there is nothing to {action}"))),
+        Some(label) if label.starts_with(CLAUDE_UNDO_LABEL_PREFIX) => Ok(()),
+        Some(label) => Err(ToolError::new(format!(
+            "the next step to {action} in the Kadr app was made by the user, not by you \
+             (\"{label}\"): you may only {action} your own changes. Ask the user to press \
+             {shortcut} in the app if they want it"
+        ))),
+    }
+}
+
+/// The clips of `after` that are new or different from `before`.
+fn changed_clip_ids(before: &Project, after: &Project) -> Vec<ClipId> {
+    after
+        .timeline()
+        .tracks()
+        .iter()
+        .flat_map(|track| track.clips())
+        .filter(|clip| {
+            before
+                .timeline()
+                .find_clip(clip.id)
+                .is_none_or(|(_, previous)| previous != *clip)
+        })
+        .map(|clip| clip.id)
+        .collect()
 }
 
 #[cfg(test)]
@@ -375,6 +486,66 @@ mod tests {
         let error = open_project.rename("Taken").unwrap_err();
         assert_eq!(error.code, ErrorCode::ProjectNameTaken);
         assert!(open_project.rename("a/b").is_err());
+    }
+
+    #[test]
+    fn claude_changes_share_the_history_and_only_undo_claudes_own_steps() {
+        use kadr_core::commands::{AddTrack, TrackPosition};
+
+        let directory = tempfile::tempdir().unwrap();
+        let mut open_project = OpenProject::create(
+            directory.path().join("Shared.kadr"),
+            ProjectSettings::landscape_1080p(),
+            false,
+        )
+        .unwrap();
+        EditableProject::change_in_one_step(&mut open_project, "Add a track", &mut |transaction| {
+            transaction.execute(AddTrack::new(TrackKind::Video, TrackPosition::Top))?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(open_project.revision(), 2);
+        assert_eq!(
+            open_project.view().undo_label.as_deref(),
+            Some("Claude: Add a track")
+        );
+        // Saved like any change.
+        let reopened = OpenProject::open(open_project.file_path().to_path_buf()).unwrap();
+        assert_eq!(reopened.project().timeline().tracks().len(), 1);
+
+        // The user's step on top: Claude may not undo it.
+        open_project
+            .edit(|session, _| session.execute(AddTrack::new(TrackKind::Audio, TrackPosition::Top)))
+            .unwrap();
+        let refusal = EditableProject::undo(&mut open_project).unwrap_err();
+        assert!(
+            refusal.to_string().contains("made by the user"),
+            "{refusal}"
+        );
+        OpenProject::undo(&mut open_project).unwrap();
+        assert_eq!(
+            EditableProject::undo(&mut open_project).unwrap(),
+            "Claude: Add a track"
+        );
+        assert!(open_project.project().timeline().tracks().is_empty());
+    }
+
+    #[test]
+    fn a_failing_claude_step_changes_nothing() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut open_project = OpenProject::create(
+            directory.path().join("Refused.kadr"),
+            ProjectSettings::landscape_1080p(),
+            false,
+        )
+        .unwrap();
+        let error = EditableProject::change_in_one_step(&mut open_project, "Fail", &mut |_| {
+            Err(ToolError::new("clip 9 does not exist"))
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "clip 9 does not exist");
+        assert_eq!(open_project.revision(), 1);
+        assert!(open_project.view().undo_label.is_none());
     }
 
     #[test]

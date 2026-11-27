@@ -283,6 +283,24 @@ dashed with a ⚠ where it was not. The outline never shows in the export.
 - When nothing is left to check, the *Blur* section says *"Followed with confidence on
   every frame"*.
 
+## Claude in the app (phase 7)
+
+What the person wants: talk to Claude in Claude Desktop while the edit is open, and
+see what Claude does, as it does it.
+
+- Every change Claude makes shows **at once**: the preview, the timeline and the
+  inspector follow, a notification says *"Claude a modifié le projet : Split clip 3 at
+  0.5 s"* with **Undo**, and the clips Claude touched are outlined for a moment (a
+  steady outline when animations are reduced).
+- Claude's steps are in the **same history**: Ctrl+Z undoes them like any other, and
+  the undo button's tooltip reads *"Annuler : Claude : …"*. Claude itself can only
+  undo its own steps.
+- When Claude opens or creates a project, the window shows it: *"Claude a ouvert
+  « … »"*.
+- Faces Claude blurs appear when their analysis ends, with the same notification.
+- The person keeps editing meanwhile: Claude's calls and the person's gestures take
+  turns, never mix.
+
 ## States every screen handles
 
 | State | What the user sees |
@@ -357,7 +375,7 @@ sizes and dates use the language's conventions (*17,6 Mo* / *17.6 MB*).
 
 | Later | Phase |
 |---|---|
-| Claude working on the open project, *"Claude changed the project"* notifications, *Connect to Claude* screen | 7 |
+| *Connect to Claude* screen | 7 |
 | Moving and resizing clips directly in the preview, with guides | 7 |
 | Transitions, keyframe curves, silence removal, stabilisation, LUTs, subtitles | 8 |
 | First-launch tour and sample project; customisable shortcuts; relinking moved files | after the MVP |

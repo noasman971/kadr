@@ -49,6 +49,20 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   the surer answer frame by frame. One undo step, announced with what is left to
   check.
 
+### Added (phase 7d: Claude works live in the open app)
+
+- When the desktop app is open, `kadr-mcp` passes Claude's calls to it through a local
+  pipe (`kadr-app-link`: `\\.\pipe\kadr-app-<user>` on Windows, a private Unix socket
+  elsewhere), and the app runs them on the project its window shows: same undo
+  history, every change shown at once with *"Claude a modifié le projet : …"*, Undo
+  and the changed clips outlined; projects Claude opens or creates open in the window.
+  With the app closed, file mode as before; the first answer after a switch says so.
+- Claude may only undo and redo its own steps when the app is open.
+- `kadr-tools`: the tools reach the project through a `ProjectHost`
+  (`EditableProject`, `FileProjectHost`, `run_tool_steps`), so the app can run them on
+  its own project; `KadrToolbox::call_tool_on`.
+- Decision record 0030.
+
 ### Added (phase 8a: transitions and text animations)
 
 - `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`

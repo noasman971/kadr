@@ -11,6 +11,7 @@
   import SettingsDialog from "./lib/components/SettingsDialog.svelte";
   import ShortcutsDialog from "./lib/components/ShortcutsDialog.svelte";
   import { t } from "./lib/i18n/i18n.svelte";
+  import { claudeActivity } from "./lib/state/claude.svelte";
   import { editor } from "./lib/state/editor.svelte";
   import Icon from "./lib/ui/Icon.svelte";
   import ToastStack from "./lib/ui/ToastStack.svelte";
@@ -31,6 +32,15 @@
     }
     await editor.importFiles(filePaths);
   }
+
+  // Claude's changes, made through kadr-mcp, show at once (decision record 0030).
+  onMount(() => {
+    let stopListeningToClaude: (() => void) | undefined;
+    void claudeActivity.listen().then((unlisten) => {
+      stopListeningToClaude = unlisten;
+    });
+    return () => stopListeningToClaude?.();
+  });
 
   onMount(() => {
     let stopListening: (() => void) | undefined;

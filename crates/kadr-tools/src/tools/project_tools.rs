@@ -9,9 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalog::{NoParameters, ToolEffect, ToolEntry, declare_tool};
 use crate::output::{ToolError, ToolOutput};
-use crate::project_file_session::ProjectFileSession;
 use crate::time_input::seconds_in;
-use crate::toolbox::KadrToolbox;
+use crate::toolbox::ToolCall;
 use crate::tools::common::{CanvasPreset, SettingsChanges, with_extension};
 use crate::views::SettingsView;
 
@@ -33,7 +32,7 @@ pub(crate) fn project_tools() -> Vec<ToolEntry> {
             create_project,
         ),
         declare_tool(
-            "open_project",
+            OPEN_PROJECT_TOOL_NAME,
             "Open a project",
             OPEN_PROJECT_DESCRIPTION,
             ToolEffect::ReadsOnly,
@@ -110,7 +109,7 @@ struct ProjectInfoView {
 /// How many history steps `get_project_info` lists.
 const LISTED_HISTORY_STEPS: usize = 10;
 
-fn get_project_info(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOutput, ToolError> {
+fn get_project_info(toolbox: &mut ToolCall<'_>, _: NoParameters) -> Result<ToolOutput, ToolError> {
     let allowed_folders: Vec<String> = toolbox
         .allowed_folders()
         .folders()
@@ -139,12 +138,8 @@ fn get_project_info(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOu
         ));
     };
     let project = project_session.project();
-    let history = project_session.edit_session();
-    let labels = history.undo_history_labels();
-    let recent_changes = labels[labels.len().saturating_sub(LISTED_HISTORY_STEPS)..]
-        .iter()
-        .map(|label| label.to_string())
-        .collect();
+    let labels = project_session.undo_history_labels();
+    let recent_changes = labels[labels.len().saturating_sub(LISTED_HISTORY_STEPS)..].to_vec();
     let view = ProjectInfoView {
         project_file: Some(project_session.file_path().display().to_string()),
         settings: Some(SettingsView::of(project.settings())),
@@ -152,8 +147,8 @@ fn get_project_info(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOu
         track_count: Some(project.timeline().tracks().len()),
         clip_count: Some(project.timeline().clip_ids().len()),
         media_count: Some(project.media_assets().len()),
-        undo_would_revert: history.next_undo_label().map(str::to_string),
-        redo_would_reapply: history.next_redo_label().map(str::to_string),
+        undo_would_revert: project_session.next_undo_label(),
+        redo_would_reapply: project_session.next_redo_label(),
         recent_changes_oldest_first: recent_changes,
         allowed_folders,
         unusable_allowed_folders,
@@ -196,7 +191,7 @@ struct CreateProjectParameters {
 }
 
 fn create_project(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: CreateProjectParameters,
 ) -> Result<ToolOutput, ToolError> {
     let file_path = with_extension(&parameters.file_path, "kadr")?;
@@ -211,18 +206,24 @@ fn create_project(
         background_color: None,
     }
     .applied_to(ProjectSettings::landscape_1080p())?;
-    let project_session = ProjectFileSession::create(Project::new(settings), file_path)?;
+    toolbox
+        .host_mut()
+        .create_project(Project::new(settings), file_path)?;
+    let project_session = toolbox.require_project_session()?;
     let message = format!(
         "Created and opened \"{}\". It is empty: import media with import_media (find files \
          with find_media_files), then place them with add_clip.",
         project_session.file_path().display()
     );
     let settings_view = SettingsView::of(project_session.project().settings());
-    toolbox.set_open_project(project_session);
     Ok(ToolOutput::message_with_details(message, &settings_view))
 }
 
 // ----- open_project -----
+
+/// The name of the tool that opens another project: it only reads files, but
+/// changes which project the host has open.
+pub(crate) const OPEN_PROJECT_TOOL_NAME: &str = "open_project";
 
 const OPEN_PROJECT_DESCRIPTION: &str = "\
 Opens an existing Kadr project file (.kadr) so the next tools edit it. Every change is then \
@@ -238,15 +239,14 @@ struct OpenProjectParameters {
 }
 
 fn open_project(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: OpenProjectParameters,
 ) -> Result<ToolOutput, ToolError> {
     let file_path = toolbox
         .allowed_folders()
         .check_existing_file(&parameters.file_path)?;
-    let project_session = ProjectFileSession::open(file_path)?;
-    let unreadable_media = media_outside_allowed_folders(toolbox, project_session.project());
-    toolbox.set_open_project(project_session);
+    toolbox.host_mut().open_project_file(file_path)?;
+    let unreadable_media = media_outside_allowed_folders(toolbox, toolbox.require_project()?);
     let mut output = get_project_info(toolbox, NoParameters {})?;
     if !unreadable_media.is_empty() {
         output = ToolOutput::text(format!(
@@ -260,7 +260,7 @@ fn open_project(
 }
 
 /// The identifiers of the project's media files that lie outside the allowed folders.
-fn media_outside_allowed_folders(toolbox: &KadrToolbox, project: &Project) -> Vec<String> {
+fn media_outside_allowed_folders(toolbox: &ToolCall<'_>, project: &Project) -> Vec<String> {
     project
         .media_assets()
         .iter()
@@ -293,7 +293,7 @@ struct SaveProjectParameters {
 }
 
 fn save_project(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: SaveProjectParameters,
 ) -> Result<ToolOutput, ToolError> {
     let current_path = toolbox.require_project_session()?.file_path().to_path_buf();
@@ -350,7 +350,7 @@ struct SetProjectSettingsParameters {
 }
 
 fn set_project_settings(
-    toolbox: &mut KadrToolbox,
+    toolbox: &mut ToolCall<'_>,
     parameters: SetProjectSettingsParameters,
 ) -> Result<ToolOutput, ToolError> {
     let current = *toolbox.require_project()?.settings();
@@ -383,12 +383,12 @@ const REDO_DESCRIPTION: &str = "\
 Redoes the last change undone by undo (one whole earlier tool call). Only possible right after \
 undo: any new change clears what could be redone.";
 
-fn undo(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOutput, ToolError> {
+fn undo(toolbox: &mut ToolCall<'_>, _: NoParameters) -> Result<ToolOutput, ToolError> {
     let label = toolbox.require_project_session_mut()?.undo()?;
     Ok(ToolOutput::text(format!("Undid \"{label}\".")))
 }
 
-fn redo(toolbox: &mut KadrToolbox, _: NoParameters) -> Result<ToolOutput, ToolError> {
+fn redo(toolbox: &mut ToolCall<'_>, _: NoParameters) -> Result<ToolOutput, ToolError> {
     let label = toolbox.require_project_session_mut()?.redo()?;
     Ok(ToolOutput::text(format!("Redid \"{label}\".")))
 }

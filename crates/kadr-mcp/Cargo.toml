@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 base64.workspace = true
 clap.workspace = true
+kadr-app-link.workspace = true
 kadr-engine.workspace = true
 kadr-tools.workspace = true
 rmcp.workspace = true
@@ -24,6 +25,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+# A fake app on its own pipe, for the relay test.
+kadr-app-link = { workspace = true, features = ["server"] }
 image = { workspace = true, features = ["jpeg"] }
 kadr-core.workspace = true
 kadr-media = { workspace = true, features = ["ffmpeg"] }
