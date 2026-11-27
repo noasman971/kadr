@@ -83,27 +83,37 @@ pub(crate) fn pass_through_frame(
     let [layer] = layers else {
         return None;
     };
+    is_drawn_as_it_is(canvas, layers).then(|| layer.picture.clone())
+}
+
+/// Whether rendering `layers` on `canvas` draws nothing and hands over the one
+/// picture as it is (a single opaque video at the canvas size, in the output
+/// colour space, colours unchanged): the cheapest frame there is.
+pub fn is_drawn_as_it_is(canvas: &CanvasDescription, layers: &[VisualLayer<'_>]) -> bool {
+    let [layer] = layers else {
+        return false;
+    };
     let VideoFrame::Yuv420(picture) = layer.picture else {
-        return None;
+        return false;
     };
     if picture.color_space() != YuvColorSpace::BT709_LIMITED
         || layer.placement.clamped_opacity() < 1.0
         || layer.changes_colors()
     {
-        return None;
+        return false;
     }
-    let geometry = LayerGeometry::new(
+    LayerGeometry::new(
         canvas.size,
         picture.width(),
         picture.height(),
         &layer.placement,
-    )?;
-    geometry
-        .maps_pixels_one_to_one(
+    )
+    .is_some_and(|geometry| {
+        geometry.maps_pixels_one_to_one(
             canvas.size,
             picture.width(),
             picture.height(),
             &layer.placement,
         )
-        .then(|| layer.picture.clone())
+    })
 }

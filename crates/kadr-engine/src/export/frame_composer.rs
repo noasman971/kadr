@@ -44,7 +44,7 @@ use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_render::{
     CanvasDescription, ColorLookupTable, FrameRenderer, HiddenRegion, LayerColorLut,
     LayerPlacement, LayerSizing, RenderError, TextRasterizer, TextReveal, VisualLayer,
-    hide_regions,
+    hide_regions, is_drawn_as_it_is,
 };
 
 use super::clip_layers::plan_track_layers;
@@ -133,7 +133,9 @@ impl FrameComposer {
     /// canvas of `drawn_size` (the canvas's shape, smaller: the preview's): what
     /// is measured in canvas pixels (positions, text sizes) is scaled to it,
     /// while videos fit it as they fit the canvas. At the canvas's own size, the
-    /// export's picture exactly.
+    /// export's picture exactly. A picture that would be handed over as it is at
+    /// the canvas's size (a lone video, nothing to draw) is, whatever
+    /// `drawn_size`: that is cheaper than drawing it smaller.
     pub(crate) fn compose_frame_at_size<Error: From<MediaError> + From<RenderError>>(
         &mut self,
         project: &Project,
@@ -142,7 +144,6 @@ impl FrameComposer {
         drawn_size: PictureSize,
     ) -> Result<VideoFrame, Error> {
         let settings = project.settings();
-        let canvas_scale = CanvasScale::between(settings.canvas_size, drawn_size);
         let mut prepared_layers: Vec<PreparedLayer> = Vec::new();
         let mut clips_shown = HashSet::new();
         let visible_tracks = project
@@ -162,10 +163,8 @@ impl FrameComposer {
                     planned_layer.text_reveal,
                 )?;
                 if let Some(picture) = picture {
-                    let placement = canvas_scale.applied_to(
-                        LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
-                            .moved_by(planned_layer.motion),
-                    );
+                    let placement = LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
+                        .moved_by(planned_layer.motion);
                     prepared_layers.push(PreparedLayer {
                         picture,
                         placement,
@@ -181,7 +180,11 @@ impl FrameComposer {
             .retain(|clip_id, _| clips_shown.contains(clip_id));
         self.color_tables.forget_files_unused_by(project);
 
-        let layers: Vec<VisualLayer<'_>> = prepared_layers
+        let full_canvas = CanvasDescription {
+            size: settings.canvas_size,
+            background: settings.background_color,
+        };
+        let mut layers: Vec<VisualLayer<'_>> = prepared_layers
             .iter()
             .map(|layer| VisualLayer {
                 picture: layer.picture.as_ref(),
@@ -195,11 +198,18 @@ impl FrameComposer {
                 }),
             })
             .collect();
-        let canvas = CanvasDescription {
+        if drawn_size == settings.canvas_size || is_drawn_as_it_is(&full_canvas, &layers) {
+            return Ok(self.renderer.render_frame(&full_canvas, &layers)?);
+        }
+        let canvas_scale = CanvasScale::between(settings.canvas_size, drawn_size);
+        for layer in &mut layers {
+            layer.placement = canvas_scale.applied_to(layer.placement);
+        }
+        let drawn_canvas = CanvasDescription {
             size: drawn_size,
-            background: settings.background_color,
+            ..full_canvas
         };
-        Ok(self.renderer.render_frame(&canvas, &layers)?)
+        Ok(self.renderer.render_frame(&drawn_canvas, &layers)?)
     }
 
     /// The table and strength of the LUT `clip` applies, or `None` if it applies

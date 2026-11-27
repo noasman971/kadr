@@ -48,7 +48,9 @@ pub use layers::{
     CanvasDescription, LayerPlacement, LayerSizing, SourceToCanvasMapping, VisualLayer,
 };
 pub use region_effects::{HiddenRegion, hide_regions};
-pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};
+pub use renderer::{
+    FrameRenderer, RenderError, RendererPreference, create_renderer, is_drawn_as_it_is,
+};
 pub use text::{BUNDLED_FONT_FAMILY, TextRasterizer};
 pub use transitions::{
     LayerMotion, TextReveal, TransitionRole, text_animation_frame, transition_motion,

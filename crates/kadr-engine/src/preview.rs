@@ -5,7 +5,8 @@
 //! It composes on the project's canvas, halved as long as the half still covers
 //! the size the interface asks for (a 4K project shown 1280 pixels wide is
 //! composed at 1920 × 1080: a quarter of the work), then shrinks the frame to
-//! that size.
+//! that size. A lone video at the canvas's size, which needs no drawing at all,
+//! is taken as it is and only shrunk.
 //!
 //! A [`PreviewRenderer`] keeps decoders open between frames, so playing forward
 //! only decodes each frame once, and jumping around (scrubbing) reopens only what
