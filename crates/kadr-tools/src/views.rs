@@ -85,6 +85,7 @@ pub(crate) fn track_kind_name(kind: TrackKind) -> &'static str {
     match kind {
         TrackKind::Video => "video",
         TrackKind::Audio => "audio",
+        TrackKind::Subtitle => "subtitle",
     }
 }
 
@@ -136,11 +137,49 @@ pub(crate) struct TrackView {
     pub(crate) position_from_bottom: usize,
     pub(crate) is_muted: bool,
     pub(crate) is_hidden: bool,
+    /// Empty for subtitle tracks, which can hold hundreds of cues: see `subtitles`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) clips: Vec<ClipSummaryView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) subtitles: Option<SubtitleTrackSummaryView>,
+}
+
+/// A subtitle track in the timeline overview: its cues are listed by
+/// `list_subtitles`.
+#[derive(Debug, Serialize)]
+pub(crate) struct SubtitleTrackSummaryView {
+    pub(crate) cue_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) first_cue_start_in_seconds: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) last_cue_end_in_seconds: Option<f64>,
+    pub(crate) see_the_cues_with: &'static str,
 }
 
 impl TrackView {
     pub(crate) fn of(project: &Project, track: &Track, position_from_bottom: usize) -> Self {
+        let is_subtitle_track = track.kind == TrackKind::Subtitle;
+        let clips = if is_subtitle_track {
+            Vec::new()
+        } else {
+            track
+                .clips()
+                .iter()
+                .map(|clip| ClipSummaryView::of(project, clip))
+                .collect()
+        };
+        let subtitles = is_subtitle_track.then(|| SubtitleTrackSummaryView {
+            cue_count: track.clips().len(),
+            first_cue_start_in_seconds: track
+                .clips()
+                .first()
+                .map(|clip| seconds_of(clip.timeline_start)),
+            last_cue_end_in_seconds: track
+                .clips()
+                .last()
+                .map(|clip| seconds_of(clip.timeline_end())),
+            see_the_cues_with: "list_subtitles",
+        });
         Self {
             track_id: track.id.raw(),
             kind: track_kind_name(track.kind),
@@ -148,11 +187,8 @@ impl TrackView {
             position_from_bottom,
             is_muted: track.is_muted,
             is_hidden: track.is_hidden,
-            clips: track
-                .clips()
-                .iter()
-                .map(|clip| ClipSummaryView::of(project, clip))
-                .collect(),
+            clips,
+            subtitles,
         }
     }
 }
@@ -208,15 +244,17 @@ impl ClipSummaryView {
                 summary.speed = Some(segment.speed.as_multiplier());
             }
             ClipContent::Text(text_content) => summary.shows = text_content.text.clone(),
+            ClipContent::Subtitle(cue) => summary.shows = cue.text.clone(),
         }
         summary
     }
 }
 
-/// "video", "audio", "image" or "text".
+/// "video", "audio", "image", "text" or "subtitle".
 pub(crate) fn clip_kind_name(project: &Project, clip: &Clip) -> &'static str {
     match &clip.content {
         ClipContent::Text(_) => "text",
+        ClipContent::Subtitle(_) => "subtitle",
         ClipContent::Media(segment) => project
             .media_asset(segment.media_asset_id)
             .map_or("video", |asset| media_kind_name(asset.description.kind)),
@@ -254,7 +292,7 @@ impl ClipView {
                 color: text_content.style.color.to_hex(),
                 alignment: alignment_name(text_content.style.alignment),
             }),
-            ClipContent::Media(_) => None,
+            ClipContent::Media(_) | ClipContent::Subtitle(_) => None,
         };
         Self {
             summary,

@@ -5,8 +5,8 @@
 // Times are integer ticks: 705 600 000 per second (see `lib/time/ticks.ts`).
 
 export type MediaKind = "video" | "audio" | "image";
-export type TrackKind = "video" | "audio";
-export type ClipKind = "video" | "audio" | "image" | "text";
+export type TrackKind = "video" | "audio" | "subtitle";
+export type ClipKind = "video" | "audio" | "image" | "text" | "subtitle";
 export type TextAlignment = "left" | "center" | "right";
 
 export interface SettingsView {
@@ -197,6 +197,8 @@ export interface ClipView {
   rotation: PropertyView;
   crop: CropView;
   text: TextView | null;
+  /** The words of a subtitle cue (line breaks, `<i>`, `<b>`); its look is its track's `subtitleStyle`. */
+  cueText: string | null;
   colorAdjustment: ColorAdjustmentView | null;
   colorLut: ColorLutView | null;
   trackedBlurs: TrackedBlurView[];
@@ -209,7 +211,45 @@ export interface TrackView {
   name: string;
   isMuted: boolean;
   isHidden: boolean;
+  /** How the cues of a subtitle track look; `null` on other tracks. */
+  subtitleStyle: SubtitleStyleView | null;
   clips: ClipView[];
+}
+
+export type SubtitleBackdrop = "none" | "outline" | "box";
+export type SubtitlePlacement = "bottom" | "top";
+
+/** The style every cue of a subtitle track is drawn with (`project_view.rs`). */
+export interface SubtitleStyleView {
+  fontFamily: string;
+  /** Canvas pixels. */
+  fontSize: number;
+  isBold: boolean;
+  /** `#RRGGBBAA`. */
+  textColor: string;
+  backdrop: SubtitleBackdrop;
+  /** `#RRGGBBAA` of the outline or box; `null` without a backdrop. */
+  backdropColor: string | null;
+  /** Canvas pixels, for an outline. */
+  outlineWidth: number | null;
+  placement: SubtitlePlacement;
+  /** From that edge of the canvas to the nearest line, in canvas pixels. */
+  margin: number;
+  /** The widest line, as a fraction of the canvas width (0.2 to 1). */
+  maximumLineWidth: number;
+}
+
+/** The settings of a subtitle style a request may change. */
+export type SubtitleStyleChanges = Partial<Omit<SubtitleStyleView, "backdropColor" | "outlineWidth">> & {
+  backdropColor?: string;
+  outlineWidth?: number;
+};
+
+/** The words or times of a cue a request may change. */
+export interface CueChanges {
+  text?: string;
+  startTicks?: number;
+  endTicks?: number;
 }
 
 export interface ProjectView {
@@ -221,7 +261,7 @@ export interface ProjectView {
   adoptsFirstVideoFormat: boolean;
   durationTicks: number;
   media: MediaView[];
-  /** Video tracks from the top layer down, then audio tracks. */
+  /** Video and subtitle tracks from the top layer down, then audio tracks. */
   tracks: TrackView[];
   undoLabel: string | null;
   redoLabel: string | null;
@@ -308,8 +348,14 @@ export type EditRequest =
   | { type: "setBlurSettings"; clipId: number; effectId: number; changes: Partial<BlurSettings> }
   | { type: "setBlurEnabled"; clipId: number; effectId: number; isEnabled: boolean }
   | { type: "removeBlur"; clipId: number; effectId: number }
-  /** Cuts the parts the silence dialog found and closes the gaps on the clip's track. */
-  | { type: "removeSilences"; clipId: number; cuts: TickRange[] };
+  /** Cuts the parts the silence dialog found and closes the gaps on the clip's track (and the subtitle tracks). */
+  | { type: "removeSilences"; clipId: number; cuts: TickRange[] }
+  /** Subtitle cues and styles name only what changes, like titles. */
+  | { type: "setSubtitleCue"; clipId: number; changes: CueChanges }
+  /** `trackId: null` uses the top subtitle track (made if there is none). */
+  | { type: "addSubtitleCue"; startTicks: number; trackId: number | null; text: string }
+  | { type: "mergeSubtitleWithNext"; clipId: number }
+  | { type: "setSubtitleStyle"; trackId: number; changes: SubtitleStyleChanges };
 
 /** A stretch of the timeline, in ticks: `startTicks` included, `endTicks` excluded. */
 export interface TickRange {
@@ -361,12 +407,19 @@ export interface TextSettings {
 
 export type TitleStyle = "title" | "subtitle" | "bigWord";
 
-export type EditNotice = {
-  type: "formatAdopted";
-  mediaName: string;
-  width: number;
-  height: number;
-};
+export type EditNotice =
+  | {
+      type: "formatAdopted";
+      mediaName: string;
+      width: number;
+      height: number;
+    }
+  | {
+      type: "subtitlesImported";
+      cueCount: number;
+      /** What was changed to read the file, in English (from the engine). */
+      warnings: string[];
+    };
 
 export interface EditOutcome {
   createdClipIds: number[];
@@ -397,6 +450,8 @@ export type ErrorCode =
   | "projectNameTaken"
   | "mediaUnreadable"
   | "lutUnreadable"
+  | "subtitlesUnreadable"
+  | "subtitlesNotSaved"
   | "editRefused"
   | "nothingToUndo"
   | "nothingToRedo"

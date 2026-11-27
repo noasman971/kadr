@@ -61,7 +61,7 @@ which is more detailed and is the reference for its phase.
 | 5. MCP server | Done, tagged `v0.6.0` | `main` (#9) | — (owner's Claude Desktop test still to do) |
 | 6. Desktop app | Done, tagged `v0.7.0` | `main` (#6, #10, #14, #15, #16; fix #18 after the tag) | — (owner's edit-and-export test still to do) |
 | 7. Blur and Claude in the app | 7a–7e merged (#17, #19, #20, #21, #24), blur inspector fix merged (#25) | `main` | The owner's end test |
-| 8. Features | 8a, 8b and 8c merged (#11, #23, #27), 8e in #28 | `main` | Owner: which feature next |
+| 8. Features | 8a, 8b, 8c and 8e merged (#11, #23, #27, #28), 8g in #29 | `main` | Owner: which feature next |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -177,11 +177,39 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
   position X à −600 ; avancer d'une seconde, remettre l'opacité à 100 % et la
   position X à 0 ; choisir « Arrivée en douceur » dans Courbe ; lire, annuler
   (Ctrl+Z), rétablir, enregistrer, rouvrir, exporter.*
-- **Next step:** the owner chooses the next feature (8d stabilisation, 8f proxies
-  and 8g subtitles are being built in parallel).
+- **8g, subtitles with SRT import and editing** (#29, decision record 0056,
+  [subtitles.md](subtitles.md)):
+  - subtitle tracks whose cues share the track's style (file format 5);
+  - a forgiving `.srt` reader with line-numbered errors, and a writer;
+  - cues burned in identically by the CPU and the GPU;
+  - cues follow the timeline, and silence removal removes the same moments from
+    them;
+  - Claude's `import_subtitles`, `list_subtitles`, `edit_subtitles`,
+    `set_subtitle_style`, `export_subtitles`;
+  - the app: import, cues on the timeline, the inspector's cue and style sections,
+    *Export as .srt…*;
+  - `kadr-cli import-subtitles` / `export-subtitles`.
+
+  **Next subtitle step: automatic subtitles with local Whisper (owner approved,
+  after 8g).** whisper.cpp through a Rust binding, the model downloaded on demand,
+  running fully offline (nothing sent anywhere). The hooks are ready:
+  - a transcription produces `TimedSubtitleCue`s (start, end, text, several lines
+    allowed);
+  - `kadr_engine::subtitle_files::add_subtitle_track_with_cues` turns them into a
+    subtitle track, as the `.srt` import does;
+  - `AddSubtitleCues` inserts a whole batch as one undo step.
+
+  Still to add then: a `ReplaceSubtitleCues` command (one undo step) to transcribe
+  again over an existing track. Per-word timings are not stored.
+
+  Owner's check:
+  1. In the app, Text tab → *Import subtitles (.srt)…* on a video's `.srt`.
+  2. Fix a few cues in the inspector.
+  3. Export the video, and *Export as .srt…*.
+- **Next step:** the owner chooses the next feature (8d stabilisation and 8f
+  proxies are being built in parallel).
 - **Left, proposed in the specification's order:** stabilisation (`kadr-vision`'s
-  optical flow and smoothing), automatic proxies for heavy 4K videos, SRT
-  subtitles. Also waiting:
+  optical flow and smoothing), automatic proxies for heavy 4K videos. Also waiting:
   Claude's `add_transition` still makes fades from opacity keyframes, and the
   inspector has no transition controls yet.
 - Decision records 0050–0059.

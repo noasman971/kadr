@@ -191,6 +191,12 @@ fn ensure_property_applies(
 ) -> Result<(), ToolError> {
     let (has_picture, has_sound) = match &clip.content {
         ClipContent::Text(_) => (true, false),
+        ClipContent::Subtitle(_) => {
+            return Err(ToolError::new(format!(
+                "clip {} is a subtitle cue: cues are not animated, their track's style places                  them (set_subtitle_style)",
+                clip.id
+            )));
+        }
         ClipContent::Media(segment) => {
             project
                 .media_asset(segment.media_asset_id)

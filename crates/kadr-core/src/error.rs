@@ -211,7 +211,9 @@ pub enum EditError {
     },
 
     /// The operation only applies to clips showing a media file.
-    #[error("clip {clip_id} is a text clip; this only applies to clips showing a media file")]
+    #[error(
+        "clip {clip_id} shows no media file (it is a text or a subtitle cue); this only applies to clips showing a video, a sound or an image"
+    )]
     NotAMediaClip {
         /// The clip.
         clip_id: ClipId,
@@ -221,6 +223,57 @@ pub enum EditError {
     #[error("clip {clip_id} is not a text clip")]
     NotATextClip {
         /// The clip.
+        clip_id: ClipId,
+    },
+
+    /// The operation only applies to subtitle cues.
+    #[error("clip {clip_id} is not a subtitle cue")]
+    NotASubtitleCue {
+        /// The clip.
+        clip_id: ClipId,
+    },
+
+    /// The operation only applies to subtitle tracks.
+    #[error(
+        "track {track_id} is not a subtitle track; subtitle tracks: {}",
+        IdentifierList(subtitle_track_ids)
+    )]
+    NotASubtitleTrack {
+        /// The track asked for.
+        track_id: TrackId,
+        /// The subtitle tracks that exist.
+        subtitle_track_ids: Vec<TrackId>,
+    },
+
+    /// A subtitle cue would end at or before its start.
+    #[error(
+        "a subtitle cue must end after it starts, but this one would start at {start} and end at {end}"
+    )]
+    CueEndsBeforeItStarts {
+        /// The requested start.
+        start: Timestamp,
+        /// The requested end.
+        end: Timestamp,
+    },
+
+    /// Two cues to merge are not neighbours on one subtitle track.
+    #[error("subtitle cues {first_clip_id} and {second_clip_id} cannot be merged: {reason}")]
+    CuesCannotBeMerged {
+        /// The first cue asked for.
+        first_clip_id: ClipId,
+        /// The second cue asked for.
+        second_clip_id: ClipId,
+        /// Why not.
+        reason: String,
+    },
+
+    /// Parts cannot be cut out of a subtitle cue: subtitle tracks follow cuts
+    /// made in the clips they describe.
+    #[error(
+        "clip {clip_id} is a subtitle cue: parts are cut out of videos and sounds, and the subtitle tracks follow (trim or split the cue to change it)"
+    )]
+    PartsOfSubtitleCue {
+        /// The cue.
         clip_id: ClipId,
     },
 

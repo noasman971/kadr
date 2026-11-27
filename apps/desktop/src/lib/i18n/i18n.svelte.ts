@@ -57,11 +57,19 @@ export function trackDisplayName(name: string): string {
   if (name === "Titles") {
     return t("track.titles");
   }
-  const match = /^(Video|Audio) (\d+)$/.exec(name);
+  if (name === "Subtitles") {
+    return t("track.subtitles");
+  }
+  const match = /^(Video|Audio|Subtitles) (\d+)$/.exec(name);
   if (!match) {
     return name;
   }
-  const key: MessageKey = match[1] === "Video" ? "track.video" : "track.audio";
+  const keys: Record<string, MessageKey> = {
+    Video: "track.video",
+    Audio: "track.audio",
+    Subtitles: "track.subtitlesNumbered",
+  };
+  const key: MessageKey = keys[match[1] ?? ""] ?? "track.video";
   return t(key, { number: match[2] ?? "" });
 }
 

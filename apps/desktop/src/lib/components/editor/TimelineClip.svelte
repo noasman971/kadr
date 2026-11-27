@@ -47,7 +47,13 @@
     onEdgePointerDown,
   }: Props = $props();
 
-  const ICONS: Record<ClipView["kind"], IconName> = { video: "film", audio: "music", image: "image", text: "type" };
+  const ICONS: Record<ClipView["kind"], IconName> = {
+    video: "film",
+    audio: "music",
+    image: "image",
+    text: "type",
+    subtitle: "captions",
+  };
   /** Height of the label row and of the waveform under pictures. */
   const LABEL_HEIGHT_IN_PIXELS = 18;
   const WAVEFORM_UNDER_PICTURE_HEIGHT_IN_PIXELS = 14;
@@ -337,6 +343,10 @@
   .clip.image {
     background: var(--color-clip-image);
     border-color: var(--color-clip-image-edge);
+  }
+  .clip.subtitle {
+    background: var(--color-clip-subtitle);
+    border-color: var(--color-clip-subtitle-edge);
   }
   .clip.selected {
     box-shadow:

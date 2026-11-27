@@ -1,7 +1,7 @@
 //! Clips: pieces of media or text placed on a track of the timeline.
 //!
-//! A clip shows either a range of a media file ([`MediaSegment`]) or a text
-//! ([`TextContent`]). It also carries its volume, opacity, position, scale,
+//! A clip shows a range of a media file ([`MediaSegment`]), a text
+//! ([`TextContent`]) or a subtitle cue ([`SubtitleCue`]). It also carries its volume, opacity, position, scale,
 //! rotation and crop (most of them animatable by keyframes) and its effects.
 //!
 //! The pure operations on a clip (splitting it, trimming its start or end) live
@@ -16,6 +16,7 @@ use crate::color::Color;
 use crate::effect::Effect;
 use crate::error::EditError;
 use crate::ids::{ClipId, EffectId, IdAllocator, MediaAssetId};
+use crate::subtitle::{SubtitleCue, split_cue_text_at_fraction};
 use crate::text_animation::{TextAnimation, TextAnimationStyle};
 use crate::time::{TimeRange, TimeSpan, Timestamp};
 use crate::transition::{EdgePhase, Transition, TransitionStyle, active_edge_style};
@@ -261,6 +262,8 @@ pub enum ClipContent {
     Media(MediaSegment),
     /// A text.
     Text(TextContent),
+    /// A subtitle cue, on a subtitle track (which gives its style).
+    Subtitle(SubtitleCue),
 }
 
 /// Part of the picture removed from each edge of a clip, as a fraction of the
@@ -434,6 +437,7 @@ impl Clip {
                 .speed
                 .timeline_span_for_source_span(segment.source_span()),
             ClipContent::Text(text) => text.duration,
+            ClipContent::Subtitle(cue) => cue.duration,
         }
     }
 
@@ -451,7 +455,7 @@ impl Clip {
     pub fn media_asset_id(&self) -> Option<MediaAssetId> {
         match &self.content {
             ClipContent::Media(segment) => Some(segment.media_asset_id),
-            ClipContent::Text(_) => None,
+            ClipContent::Text(_) | ClipContent::Subtitle(_) => None,
         }
     }
 
@@ -654,6 +658,22 @@ impl Clip {
                     ClipContent::Text(second_text),
                 )
             }
+            ClipContent::Subtitle(cue) => {
+                // Each part keeps the words said during it, as far as the
+                // letters tell: the cut falls between words.
+                let (first_words, second_words) = split_cue_text_at_fraction(
+                    &cue.text,
+                    offset_from_start.fraction_of(cue.duration),
+                );
+                let second_duration = cue
+                    .duration
+                    .checked_sub(offset_from_start)
+                    .unwrap_or(TimeSpan::ZERO);
+                (
+                    ClipContent::Subtitle(SubtitleCue::new(first_words, offset_from_start)),
+                    ClipContent::Subtitle(SubtitleCue::new(second_words, second_duration)),
+                )
+            }
         }
     }
 
@@ -698,6 +718,12 @@ impl Clip {
                     .checked_sub(removed_span)
                     .unwrap_or(TimeSpan::ZERO);
             }
+            ClipContent::Subtitle(cue) => {
+                cue.duration = cue
+                    .duration
+                    .checked_sub(removed_span)
+                    .unwrap_or(TimeSpan::ZERO);
+            }
         }
         trimmed_clip.transform_every_animated_property(|animation| {
             animation.after_removing_start(removed_span)
@@ -719,6 +745,7 @@ impl Clip {
                     .ok_or(EditError::ExtendsBeforeSourceStart { clip_id: self.id })?;
             }
             ClipContent::Text(text) => text.duration = text.duration + added_span,
+            ClipContent::Subtitle(cue) => cue.duration = cue.duration + added_span,
         }
         trimmed_clip.transform_every_animated_property(|animation| {
             animation.after_extending_start(added_span)
@@ -750,6 +777,7 @@ impl Clip {
                     + segment.speed.source_span_for_timeline_span(new_duration);
             }
             ClipContent::Text(text) => text.duration = new_duration,
+            ClipContent::Subtitle(cue) => cue.duration = new_duration,
         }
         Ok(trimmed_clip)
     }
@@ -893,7 +921,7 @@ mod tests {
     fn segment_of(clip: &Clip) -> &MediaSegment {
         match &clip.content {
             ClipContent::Media(segment) => segment,
-            ClipContent::Text(_) => panic!("expected a media clip"),
+            ClipContent::Text(_) | ClipContent::Subtitle(_) => panic!("expected a media clip"),
         }
     }
 

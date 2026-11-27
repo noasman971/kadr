@@ -58,8 +58,9 @@ NOT available to Kadr, only files on the user's computer.
 
 Examples: {} lists media in every allowed folder; {\"name_contains\": \"interview\"}; \
 {\"folder\": \"C:\\\\Users\\\\sam\\\\Videos\\\\Holidays\", \"kind\": \"video\"}. \
-{\"kind\": \"color_lut\"} lists colour LUT files (.cube) for add_color_lut instead; they are \
-only listed when asked for.";
+{\"kind\": \"color_lut\"} lists colour LUT files (.cube) for add_color_lut instead, and \
+{\"kind\": \"subtitles\"} subtitle files (.srt) for import_subtitles; both are only listed when \
+asked for.";
 
 /// Parameters of `find_media_files`.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -94,6 +95,16 @@ enum FileKindFilter {
     Image,
     /// Colour LUTs (.cube), for add_color_lut. Only listed when asked for.
     ColorLut,
+    /// Subtitle files (.srt), for import_subtitles. Only listed when asked for.
+    Subtitles,
+}
+
+impl FileKindFilter {
+    /// Whether files of this kind are media (listed without a `kind`, imported
+    /// with import_media).
+    fn is_media(self) -> bool {
+        !matches!(self, FileKindFilter::ColorLut | FileKindFilter::Subtitles)
+    }
 }
 
 /// File extensions Kadr recognises, by kind.
@@ -103,6 +114,7 @@ const VIDEO_EXTENSIONS: &[&str] = &[
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma"];
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"];
 const COLOR_LUT_EXTENSIONS: &[&str] = &["cube"];
+const SUBTITLE_EXTENSIONS: &[&str] = &["srt"];
 
 /// Sub-folders deeper than this are not searched, to keep the answer quick.
 const MAXIMUM_FOLDER_DEPTH: usize = 8;
@@ -164,8 +176,8 @@ impl FileSearch<'_> {
         };
         let is_wanted = match self.kind_filter {
             Some(wanted) => wanted == kind,
-            // LUTs are not media: listed only when asked for.
-            None => kind != FileKindFilter::ColorLut,
+            // LUTs and subtitles are not media: listed only when asked for.
+            None => kind.is_media(),
         };
         if !is_wanted {
             return;
@@ -190,6 +202,7 @@ impl FileSearch<'_> {
                     FileKindFilter::Audio => "audio",
                     FileKindFilter::Image => "image",
                     FileKindFilter::ColorLut => "color_lut",
+                    FileKindFilter::Subtitles => "subtitles",
                 },
                 size_in_megabytes: (*size_in_bytes as f64 / BYTES_PER_MEGABYTE * 10.0).round()
                     / 10.0,
@@ -213,6 +226,8 @@ fn kind_of_file(path: &Path) -> Option<FileKindFilter> {
         Some(FileKindFilter::Image)
     } else if COLOR_LUT_EXTENSIONS.contains(&extension.as_str()) {
         Some(FileKindFilter::ColorLut)
+    } else if SUBTITLE_EXTENSIONS.contains(&extension.as_str()) {
+        Some(FileKindFilter::Subtitles)
     } else {
         None
     }
@@ -257,13 +272,16 @@ fn find_media_files(
         search.search_folder(folder, 0);
     }
     let views = search.views();
-    let mut message = if search.kind_filter == Some(FileKindFilter::ColorLut) {
-        format!(
+    let mut message = match search.kind_filter {
+        Some(FileKindFilter::ColorLut) => format!(
             "Found {} colour LUT file(s). Apply one to a clip with add_color_lut.",
             views.len()
-        )
-    } else {
-        format!("Found {} media file(s).", views.len())
+        ),
+        Some(FileKindFilter::Subtitles) => format!(
+            "Found {} subtitle file(s). Add one to the project with import_subtitles.",
+            views.len()
+        ),
+        _ => format!("Found {} media file(s).", views.len()),
     };
     if search.is_truncated {
         message
@@ -387,16 +405,22 @@ fn import_media(
     Ok(ToolOutput::message_with_details(message, &views))
 }
 
-/// A `.cube` file is a colour LUT, which is applied to clips, not imported.
+/// A `.cube` file is a colour LUT, which is applied to clips, not imported; an
+/// `.srt` file is subtitles, imported with `import_subtitles`.
 fn refuse_color_lut_file(file_path: &Path) -> Result<(), ToolError> {
-    if kind_of_file(file_path) == Some(FileKindFilter::ColorLut) {
-        return Err(ToolError::new(format!(
+    match kind_of_file(file_path) {
+        Some(FileKindFilter::ColorLut) => Err(ToolError::new(format!(
             "\"{}\" is a colour LUT, not a video, sound or picture: apply it to a clip with \
              add_color_lut",
             file_path.display()
-        )));
+        ))),
+        Some(FileKindFilter::Subtitles) => Err(ToolError::new(format!(
+            "\"{}\" is a subtitle file, not a video, sound or picture: add it with \
+             import_subtitles",
+            file_path.display()
+        ))),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 // ----- list_media -----

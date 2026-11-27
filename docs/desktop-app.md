@@ -72,6 +72,11 @@ doing it:
   answer. Every call goes through `fetch("http://ipc.localhost/<command>")`, which can
   be wrapped, for example to answer `plugin:dialog|open` with chosen files instead of
   opening the native dialog.
+- A faked answer must carry the header `Tauri-Response: ok` (and `Content-Type:
+  application/json`), or Tauri's IPC script hands it to the error callback and
+  nothing happens.
+- Node 20 has `WebSocket` only with `node --experimental-websocket` (Node 22 has it
+  by default).
 - Ctrl+I without that opens the real dialog, which a script cannot close.
 - A file drop from the explorer can be imitated by emitting Tauri's own event:
   `invoke("plugin:event|emit", { event: "tauri://drag-drop", payload: { paths, position } })`.
@@ -267,6 +272,42 @@ styles sized from the canvas height. The inspector then focuses their words.
 ![The inspector of a video clip](screenshots/desktop-inspector.jpg)
 
 ![Titles from the Text tab](screenshots/desktop-titles.jpg)
+
+## Subtitles
+
+Decision record 0056; the model and the drawing are in [subtitles.md](subtitles.md).
+
+- **Import**: *Import subtitles (.srt)…* in the library's Text tab, an `.srt` file
+  dropped on the window or picked in the import dialog. `import_subtitle_file` reads
+  and parses it in `spawn_blocking`, then adds a subtitle track on top named after the
+  file, as the undo step `importSubtitles`. A broken file is answered with the error
+  code `subtitlesUnreadable` and the engine's sentence, which names the line; nothing
+  changes. The notice gives the count, the warnings as its details, and Undo; the
+  first cue is selected.
+- **Timeline**: subtitle tracks are listed with the video tracks, in stack order, with
+  the captions icon. Cues are clips of kind `subtitle`: moved, trimmed, split (S) and
+  deleted like the others, only on subtitle tracks (`trackAcceptsClip`), without a
+  file to run out of when trimmed. Subtitle tracks can be hidden, not muted.
+- **Inspector** (`SubtitleInspector.svelte`, shown instead of `ClipInspector` for a cue):
+  - the words, with the draft and commit rules of titles;
+  - *Start* and *End* in seconds to the millisecond;
+  - *Split at the playhead*, *Merge with the next*, *Delete*;
+  - the track's style;
+  - *Export as .srt…*.
+
+  Requests name only what changes: `setSubtitleCue` (`text`, `startTicks`,
+  `endTicks`; undo label `editSubtitle`, or `moveSubtitle` for times only) and
+  `setSubtitleStyle` (`editing/subtitles.rs`). Colour inputs have no opacity: a new
+  colour keeps the current one's (`withHexAlpha`), so a half-transparent box stays so.
+- **Adding**: *Add a subtitle at the playhead* (the Text tab and the timeline's
+  toolbar) sends `addSubtitleCue`: on the top subtitle track (a new *Subtitles* track
+  if there is none), two seconds, less if the next cue starts sooner; refused when
+  less than 0.2 s is free. The inspector then focuses its words.
+- **Export**: the native save dialog (which asks before replacing a file), then
+  `export_subtitle_file`, which writes the track's cues in `spawn_blocking`; an error
+  is `subtitlesNotSaved`.
+- Changing the project's format refits the subtitle style with the titles
+  (`refit_clips_to_canvas`).
 
 ## Removing silences
 

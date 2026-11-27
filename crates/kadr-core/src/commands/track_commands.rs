@@ -4,6 +4,7 @@ use super::{CreatedObject, EditCommand, IdAllocatorRecord, object_vanished, reve
 use crate::error::EditError;
 use crate::ids::TrackId;
 use crate::project::Project;
+use crate::subtitle::SubtitleStyle;
 use crate::timeline::{Track, TrackKind};
 
 /// Where a new track goes in the stack.
@@ -23,20 +24,32 @@ pub struct AddTrack {
     kind: TrackKind,
     requested_name: Option<String>,
     position: TrackPosition,
+    requested_subtitle_style: Option<SubtitleStyle>,
     id_allocator_record: IdAllocatorRecord,
     created_track_id: Option<TrackId>,
 }
 
 impl AddTrack {
-    /// Prepares a new track. Without a name, it is called "Video 2", "Audio 1"…
+    /// Prepares a new track. Without a name, it is called "Video 2", "Audio 1",
+    /// "Subtitles 1"… A subtitle track gets the default style for the project's
+    /// canvas ([`SubtitleStyle::for_canvas`]) unless
+    /// [`AddTrack::with_subtitle_style`] gives another.
     pub fn new(kind: TrackKind, position: TrackPosition) -> Self {
         Self {
             kind,
             requested_name: None,
             position,
+            requested_subtitle_style: None,
             id_allocator_record: IdAllocatorRecord::default(),
             created_track_id: None,
         }
+    }
+
+    /// Gives a new subtitle track this style (ignored for other kinds, which
+    /// have no style).
+    pub fn with_subtitle_style(mut self, style: SubtitleStyle) -> Self {
+        self.requested_subtitle_style = Some(style);
+        self
     }
 
     /// Gives the new track a name.
@@ -56,6 +69,7 @@ impl AddTrack {
         let kind_name = match self.kind {
             TrackKind::Video => "Video",
             TrackKind::Audio => "Audio",
+            TrackKind::Subtitle => "Subtitles",
         };
         format!("{kind_name} {}", existing_tracks_of_same_kind + 1)
     }
@@ -78,9 +92,15 @@ impl EditCommand for AddTrack {
         };
         self.id_allocator_record.remember(project);
         let track_id = TrackId::from_raw(project.id_allocator_mut().allocate_raw_id());
-        project
-            .timeline_mut()
-            .insert_track(index, Track::new(track_id, self.kind, name));
+        let mut track = Track::new(track_id, self.kind, name);
+        if self.kind == TrackKind::Subtitle {
+            track.subtitle_style = Some(
+                self.requested_subtitle_style
+                    .clone()
+                    .unwrap_or_else(|| SubtitleStyle::for_canvas(project.settings().canvas_size)),
+            );
+        }
+        project.timeline_mut().insert_track(index, track);
         self.created_track_id = Some(track_id);
         Ok(vec![CreatedObject::Track(track_id)])
     }

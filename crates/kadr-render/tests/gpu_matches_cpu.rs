@@ -579,3 +579,57 @@ fn an_animated_text_matches() {
         assert_gpu_matches_cpu(scene_name, &scene_canvas, &layers);
     }
 }
+
+#[test]
+fn subtitles_with_an_outline_or_a_box_match() {
+    use kadr_core::subtitle::{SubtitleBackdrop, SubtitleStyle};
+
+    let canvas_size = PictureSize {
+        width_in_pixels: 360,
+        height_in_pixels: 640,
+    };
+    let scene_canvas = canvas(360, 640);
+    let background = gradient_video_picture(360, 640, YuvColorSpace::BT709_LIMITED);
+    let mut rasterizer = TextRasterizer::new();
+    for (scene_name, backdrop) in [
+        (
+            "outlined subtitle",
+            SubtitleBackdrop::Outline {
+                color: Color::BLACK,
+                width_in_pixels: 2.5,
+            },
+        ),
+        (
+            "boxed subtitle",
+            SubtitleBackdrop::Box {
+                color: Color::from_hex("#000000B3").unwrap(),
+            },
+        ),
+    ] {
+        let style = SubtitleStyle {
+            backdrop,
+            ..SubtitleStyle::for_canvas(canvas_size)
+        };
+        let drawn = rasterizer.rasterize_subtitle(
+            "<i>Hello</i> there,\nthis is <b>Kadr</b>",
+            &style,
+            canvas_size,
+        );
+        let subtitle_picture = VideoFrame::Rgba(drawn.picture);
+        let layers = [
+            VisualLayer {
+                picture: &background,
+                placement: LayerPlacement::FITTED,
+                color_adjustments: &[],
+                color_lut: None,
+            },
+            VisualLayer {
+                picture: &subtitle_picture,
+                placement: drawn.placement,
+                color_adjustments: &[],
+                color_lut: None,
+            },
+        ];
+        assert_gpu_matches_cpu(scene_name, &scene_canvas, &layers);
+    }
+}

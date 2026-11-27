@@ -179,7 +179,7 @@ fn command_error_for(
                 .find_clip(clip_id)
                 .and_then(|(_, clip)| match &clip.content {
                     ClipContent::Media(segment) => project.media_asset(segment.media_asset_id),
-                    ClipContent::Text(_) => None,
+                    ClipContent::Text(_) | ClipContent::Subtitle(_) => None,
                 })
                 .map(|media_asset| media_asset.description.file_path.clone());
             let command_error = CommandError::new(ErrorCode::MediaUnreadable, error);

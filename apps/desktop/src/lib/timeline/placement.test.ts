@@ -30,6 +30,7 @@ function clip(id: number, startSeconds: number, durationSeconds: number, overrid
     rotation: { value: 0, keyframes: [] },
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     text: null,
+    cueText: null,
     colorAdjustment: null,
     colorLut: null,
     trackedBlurs: [],
@@ -39,7 +40,7 @@ function clip(id: number, startSeconds: number, durationSeconds: number, overrid
 }
 
 function track(clips: ClipView[], kind: TrackView["kind"] = "video"): TrackView {
-  return { id: 1, kind, name: "Video 1", isMuted: false, isHidden: false, clips };
+  return { id: 1, kind, name: "Video 1", isMuted: false, isHidden: false, subtitleStyle: null, clips };
 }
 
 describe("snapping", () => {
@@ -78,6 +79,13 @@ describe("overlaps", () => {
     expect(trackAcceptsClip(track([], "audio"), "text")).toBe(false);
     expect(trackAcceptsClip(track([], "video"), "image")).toBe(true);
   });
+
+  it("keeps subtitle cues on subtitle tracks, and nothing else there", () => {
+    expect(trackAcceptsClip(track([], "subtitle"), "subtitle")).toBe(true);
+    expect(trackAcceptsClip(track([], "video"), "subtitle")).toBe(false);
+    expect(trackAcceptsClip(track([], "subtitle"), "text")).toBe(false);
+    expect(trackAcceptsClip(track([], "subtitle"), "video")).toBe(false);
+  });
 });
 
 describe("trimming", () => {
@@ -94,6 +102,13 @@ describe("trimming", () => {
     const lane = track([clip(1, 0, 4), middle, clip(3, 8, 1)]);
     expect(trimLimits(middle, "start", lane, FRAME)).toEqual({ earliestTicks: 4 * SECOND, latestTicks: 7 * SECOND - FRAME });
     expect(trimLimits(middle, "end", lane, FRAME)).toEqual({ earliestTicks: 5 * SECOND + FRAME, latestTicks: 8 * SECOND });
+  });
+
+  it("lets cues grow up to their neighbours, with no file to run out of", () => {
+    const cue = clip(2, 3, 1, { kind: "subtitle", mediaId: null, sourceStartTicks: null, sourceEndTicks: null });
+    const lane = track([clip(1, 0, 2, { kind: "subtitle" }), cue], "subtitle");
+    expect(trimLimits(cue, "start", lane, FRAME).earliestTicks).toBe(2 * SECOND);
+    expect(trimLimits(cue, "end", lane, FRAME).latestTicks).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("lets pictures and titles grow freely", () => {

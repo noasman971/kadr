@@ -87,6 +87,8 @@ pub fn run() -> Result<(), tauri::Error> {
             editing_commands::redo,
             editing_commands::import_media,
             editing_commands::choose_clip_lut_file,
+            editing_commands::import_subtitle_file,
+            editing_commands::export_subtitle_file,
             picture_and_sound_commands::render_preview_frame,
             picture_and_sound_commands::get_thumbnail,
             picture_and_sound_commands::get_waveform,

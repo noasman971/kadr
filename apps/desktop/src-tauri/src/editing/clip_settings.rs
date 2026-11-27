@@ -487,7 +487,9 @@ fn text_of(project: &Project, clip_id: ClipId) -> Result<&TextContent, EditError
     let (_, clip) = find_clip(project, clip_id)?;
     match &clip.content {
         ClipContent::Text(text) => Ok(text),
-        ClipContent::Media(_) => Err(EditError::NotATextClip { clip_id }),
+        ClipContent::Media(_) | ClipContent::Subtitle(_) => {
+            Err(EditError::NotATextClip { clip_id })
+        }
     }
 }
 

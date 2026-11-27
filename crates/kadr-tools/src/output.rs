@@ -134,6 +134,7 @@ tool_error_from!(
     kadr_engine::project_files::ProjectFileIoError,
     kadr_engine::still_frames::StillFrameError,
     kadr_engine::silence_removal::SilenceRemovalError,
+    kadr_engine::subtitle_files::SubtitleFileError,
 );
 
 #[cfg(test)]

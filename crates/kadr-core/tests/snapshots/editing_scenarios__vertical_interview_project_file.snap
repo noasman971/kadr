@@ -3,7 +3,7 @@ source: crates/kadr-core/tests/editing_scenarios.rs
 expression: json_text
 ---
 {
-  "format_version": 4,
+  "format_version": 5,
   "project": {
     "settings": {
       "canvas_size": {
@@ -59,6 +59,7 @@ expression: json_text
           "name": "Video 1",
           "is_muted": false,
           "is_hidden": false,
+          "subtitle_style": null,
           "clips": [
             {
               "id": 6,
@@ -254,6 +255,7 @@ expression: json_text
           "name": "Video 2",
           "is_muted": false,
           "is_hidden": false,
+          "subtitle_style": null,
           "clips": [
             {
               "id": 11,
@@ -364,6 +366,7 @@ expression: json_text
           "name": "Audio 1",
           "is_muted": false,
           "is_hidden": false,
+          "subtitle_style": null,
           "clips": [
             {
               "id": 12,
@@ -415,11 +418,121 @@ expression: json_text
               "exit_transition": null
             }
           ]
+        },
+        {
+          "id": 14,
+          "kind": "subtitle",
+          "name": "Subtitles 1",
+          "is_muted": false,
+          "is_hidden": false,
+          "subtitle_style": {
+            "font_family": "Inter",
+            "font_size_in_pixels": 60.0,
+            "is_bold": true,
+            "text_color": "#FFFFFFFF",
+            "backdrop": {
+              "type": "box",
+              "color": "#000000B3"
+            },
+            "placement": "bottom",
+            "margin_in_pixels": 480.0,
+            "maximum_line_width_fraction": 0.8
+          },
+          "clips": [
+            {
+              "id": 15,
+              "content": {
+                "type": "subtitle",
+                "text": "So, how did it start?",
+                "duration": 1764000000
+              },
+              "timeline_start": 705600000,
+              "volume_multiplier": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "opacity": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "transform": {
+                "position_x_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "position_y_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "scale_factor": {
+                  "constant_value": 1.0,
+                  "keyframes": []
+                },
+                "rotation_in_degrees": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "crop": {
+                  "left_fraction": 0.0,
+                  "top_fraction": 0.0,
+                  "right_fraction": 0.0,
+                  "bottom_fraction": 0.0
+                }
+              },
+              "effects": [],
+              "entry_transition": null,
+              "exit_transition": null
+            },
+            {
+              "id": 16,
+              "content": {
+                "type": "subtitle",
+                "text": "<i>Honestly?</i>\nBy accident.",
+                "duration": 1764000000
+              },
+              "timeline_start": 2469600000,
+              "volume_multiplier": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "opacity": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "transform": {
+                "position_x_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "position_y_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "scale_factor": {
+                  "constant_value": 1.0,
+                  "keyframes": []
+                },
+                "rotation_in_degrees": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "crop": {
+                  "left_fraction": 0.0,
+                  "top_fraction": 0.0,
+                  "right_fraction": 0.0,
+                  "bottom_fraction": 0.0
+                }
+              },
+              "effects": [],
+              "entry_transition": null,
+              "exit_transition": null
+            }
+          ]
         }
       ]
     },
     "id_allocator": {
-      "next_raw_id": 14
+      "next_raw_id": 17
     }
   }
 }

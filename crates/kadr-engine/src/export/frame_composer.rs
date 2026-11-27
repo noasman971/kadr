@@ -22,6 +22,11 @@
 //! Transitions and text animations move layers (see [`super::clip_layers`]); a
 //! clip shown under its neighbour's transition reads its source past its cut,
 //! holding the file's first or last frame where the file ends.
+//!
+//! Subtitle tracks show their cue under the playhead, drawn with the track's
+//! style and placed by it ([`TextRasterizer::rasterize_subtitle`]). Only the cues
+//! on screen keep their picture, so a film with a thousand cues does not keep a
+//! thousand pictures.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -31,16 +36,18 @@ use kadr_core::clip::{Clip, ClipContent, TextContent};
 use kadr_core::effect::{ColorAdjustment, EffectKind};
 use kadr_core::ids::ClipId;
 use kadr_core::media_asset::MediaKind;
+use kadr_core::media_asset::PictureSize;
 use kadr_core::project::Project;
+use kadr_core::subtitle::SubtitleStyle;
 use kadr_core::time::{TimeSpan, Timestamp};
-use kadr_core::timeline::TrackKind;
+use kadr_core::timeline::{Track, TrackKind};
 use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_render::{
     CanvasDescription, ColorLookupTable, FrameRenderer, HiddenRegion, LayerColorLut,
     LayerPlacement, RenderError, TextRasterizer, TextReveal, VisualLayer, hide_regions,
 };
 
-use super::clip_layers::plan_track_layers;
+use super::clip_layers::{clip_under_playhead, plan_track_layers};
 use crate::color_grading::{ColorTableError, ColorTableLibrary, applied_color_lut_of};
 
 /// The decoder of one clip, with the file it reads.
@@ -68,6 +75,8 @@ pub(crate) struct FrameComposer {
     /// The picture of each text clip, with the content and the part of it it
     /// was drawn from.
     text_pictures: HashMap<ClipId, (TextContent, TextReveal, Arc<VideoFrame>)>,
+    /// The picture of each subtitle cue on screen, with what it was drawn from.
+    subtitle_pictures: HashMap<ClipId, (SubtitleDrawing, Arc<VideoFrame>, LayerPlacement)>,
     /// The LUT files read so far.
     color_tables: ColorTableLibrary,
 }
@@ -79,6 +88,7 @@ impl FrameComposer {
             open_sources: HashMap::new(),
             text_rasterizer: None,
             text_pictures: HashMap::new(),
+            subtitle_pictures: HashMap::new(),
             color_tables: ColorTableLibrary::default(),
         }
     }
@@ -110,8 +120,16 @@ impl FrameComposer {
             .timeline()
             .tracks()
             .iter()
-            .filter(|track| track.kind == TrackKind::Video && !track.is_hidden);
+            .filter(|track| track.kind != TrackKind::Audio && !track.is_hidden);
         for track in visible_tracks {
+            if track.kind == TrackKind::Subtitle {
+                if let Some(layer) =
+                    self.subtitle_layer_of(track, timeline_time, settings.canvas_size)
+                {
+                    prepared_layers.push(layer);
+                }
+                continue;
+            }
             for planned_layer in plan_track_layers(track, timeline_time, settings.canvas_size) {
                 let clip = planned_layer.clip;
                 clips_shown.insert(clip.id);
@@ -138,6 +156,10 @@ impl FrameComposer {
         // deleted) frees its decoder.
         self.open_sources
             .retain(|clip_id, _| clips_shown.contains(clip_id));
+        let subtitle_track_count = project.timeline().subtitle_tracks().count();
+        if self.subtitle_pictures.len() > subtitle_track_count {
+            self.forget_subtitle_pictures_not_shown(project, timeline_time);
+        }
         self.color_tables.forget_files_unused_by(project);
 
         let layers: Vec<VisualLayer<'_>> = prepared_layers
@@ -159,6 +181,57 @@ impl FrameComposer {
             background: settings.background_color,
         };
         Ok(self.renderer.render_frame(&canvas, &layers)?)
+    }
+
+    /// The layer of the cue `track` shows at `timeline_time`, if any, drawn
+    /// again only if its words, the track's style or the canvas changed.
+    fn subtitle_layer_of(
+        &mut self,
+        track: &Track,
+        timeline_time: Timestamp,
+        canvas_size: PictureSize,
+    ) -> Option<PreparedLayer> {
+        let clip = clip_under_playhead(track, timeline_time)?;
+        let (ClipContent::Subtitle(cue), Some(style)) = (&clip.content, &track.subtitle_style)
+        else {
+            return None;
+        };
+        let drawing = SubtitleDrawing {
+            text: cue.text.clone(),
+            style: style.clone(),
+            canvas_size,
+        };
+        let (picture, placement) = match self.subtitle_pictures.get(&clip.id) {
+            Some((drawn, picture, placement)) if *drawn == drawing => {
+                (Arc::clone(picture), *placement)
+            }
+            _ => {
+                let rasterizer = self.text_rasterizer.get_or_insert_with(TextRasterizer::new);
+                let drawn = rasterizer.rasterize_subtitle(&cue.text, style, canvas_size);
+                let picture = Arc::new(VideoFrame::Rgba(drawn.picture));
+                self.subtitle_pictures
+                    .insert(clip.id, (drawing, Arc::clone(&picture), drawn.placement));
+                (picture, drawn.placement)
+            }
+        };
+        Some(PreparedLayer {
+            picture,
+            placement,
+            color_adjustments: Vec::new(),
+            color_lut: None,
+        })
+    }
+
+    /// Forgets the pictures of cues that are not under the playhead.
+    fn forget_subtitle_pictures_not_shown(&mut self, project: &Project, timeline_time: Timestamp) {
+        let cues_shown: HashSet<ClipId> = project
+            .timeline()
+            .subtitle_tracks()
+            .filter_map(|track| clip_under_playhead(track, timeline_time))
+            .map(|clip| clip.id)
+            .collect();
+        self.subtitle_pictures
+            .retain(|clip_id, _| cues_shown.contains(clip_id));
     }
 
     /// The table and strength of the LUT `clip` applies, or `None` if it applies
@@ -189,6 +262,8 @@ impl FrameComposer {
                     text_reveal,
                 )));
             }
+            // Drawn by `subtitle_layer_of`, with their track's style.
+            ClipContent::Subtitle(_) => return Ok(None),
         };
         let Some(media_asset) = project.media_asset(segment.media_asset_id) else {
             return Ok(None);
@@ -266,6 +341,14 @@ impl FrameComposer {
         );
         picture
     }
+}
+
+/// What a subtitle picture was drawn from.
+#[derive(Debug, Clone, PartialEq)]
+struct SubtitleDrawing {
+    text: String,
+    style: SubtitleStyle,
+    canvas_size: PictureSize,
 }
 
 /// `source_time`, moved back inside a file lasting `file_duration` if it is past

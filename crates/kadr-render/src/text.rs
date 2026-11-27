@@ -34,16 +34,16 @@ const BUNDLED_FONT_FILE_FAMILY: &str = "Inter Variable";
 static BUNDLED_FONT_DATA: &[u8] = include_bytes!("../assets/fonts/InterVariable.ttf");
 
 /// Line height as a multiple of the font size.
-const LINE_HEIGHT_RATIO: f32 = 1.2;
+pub(crate) const LINE_HEIGHT_RATIO: f32 = 1.2;
 /// Empty space around the text, as a fraction of the font size, so glyphs that
 /// overhang their advance (italics, accents) are not cut.
-const MARGIN_RATIO: f32 = 0.15;
+pub(crate) const MARGIN_RATIO: f32 = 0.15;
 
 /// Lays out and rasterises texts. Creating one loads the fonts (system fonts
 /// included), so keep it and reuse it.
 pub struct TextRasterizer {
-    font_system: FontSystem,
-    glyph_cache: SwashCache,
+    pub(crate) font_system: FontSystem,
+    pub(crate) glyph_cache: SwashCache,
 }
 
 impl Default for TextRasterizer {
@@ -273,7 +273,7 @@ fn faded(color: TextColor, opacity: f32) -> TextColor {
 
 /// The family to ask the font database for: the bundled file's own name when
 /// the style asks for Inter.
-fn font_file_family_for(requested_family: &str) -> &str {
+pub(crate) fn font_file_family_for(requested_family: &str) -> &str {
     if requested_family.eq_ignore_ascii_case(BUNDLED_FONT_FAMILY) {
         BUNDLED_FONT_FILE_FAMILY
     } else {
@@ -282,7 +282,7 @@ fn font_file_family_for(requested_family: &str) -> &str {
 }
 
 /// Width of the widest line and total height of the laid-out text.
-fn measure(buffer: &Buffer) -> (f32, f32) {
+pub(crate) fn measure(buffer: &Buffer) -> (f32, f32) {
     buffer
         .layout_runs()
         .fold((0.0_f32, 0.0_f32), |(width, height), run| {
@@ -295,7 +295,7 @@ fn measure(buffer: &Buffer) -> (f32, f32) {
 
 /// Blends one glyph pixel (straight alpha) over the picture, ignoring pixels
 /// outside it.
-fn blend_glyph_pixel(picture: &mut RgbaImage, column: i32, row: i32, color: TextColor) {
+pub(crate) fn blend_glyph_pixel(picture: &mut RgbaImage, column: i32, row: i32, color: TextColor) {
     let (Ok(column), Ok(row)) = (u32::try_from(column), u32::try_from(row)) else {
         return;
     };

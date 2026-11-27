@@ -3,9 +3,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use kadr_core::ids::{ClipId, MediaAssetId};
+use kadr_core::ids::{ClipId, MediaAssetId, TrackId};
 use kadr_core::media_asset::MediaAssetDescription;
+use kadr_core::timeline::TrackKind;
 use kadr_engine::color_grading::load_color_lookup_table;
+use kadr_engine::subtitle_files::{
+    export_subtitle_track, read_subtitle_file, subtitle_track_name_for,
+};
 use kadr_media::MediaBackend;
 use serde::Serialize;
 use tauri::State;
@@ -13,7 +17,7 @@ use tauri::State;
 use crate::app_state::AppState;
 use crate::command_error::{CommandError, CommandResult, ErrorCode};
 use crate::editing::{
-    EditOutcome, EditRequest, LutChanges, apply_edit_request, import_media_files,
+    EditOutcome, EditRequest, LutChanges, apply_edit_request, import_media_files, import_subtitles,
 };
 use crate::project_view::ProjectView;
 
@@ -120,6 +124,70 @@ pub async fn choose_clip_lut_file(
             outcome,
         })
     })
+}
+
+/// Reads an `.srt` file (in the background), then adds its cues on a new
+/// subtitle track on top as one undo step ("importSubtitles"). The first cue is
+/// selected; the notice gives the count and what was changed to read the file.
+#[tauri::command]
+pub async fn import_subtitle_file(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> CommandResult<EditResponse> {
+    if state.lock_open_project().is_none() {
+        return Err(CommandError::no_project_open());
+    }
+    let file_path = PathBuf::from(file_path);
+    let path_to_read = file_path.clone();
+    let parsed = tauri::async_runtime::spawn_blocking(move || read_subtitle_file(&path_to_read))
+        .await
+        .map_err(CommandError::internal)?
+        .map_err(|error| {
+            CommandError::new(ErrorCode::SubtitlesUnreadable, error).about_file(&file_path)
+        })?;
+    let track_name = subtitle_track_name_for(&file_path);
+    state.with_open_project(|open_project| {
+        let outcome = open_project.edit(|session, _| {
+            import_subtitles(session, &track_name, &parsed.cues, parsed.warnings.clone())
+        })?;
+        Ok(EditResponse {
+            view: open_project.view(),
+            outcome,
+        })
+    })
+}
+
+/// Writes the cues of a subtitle track to an `.srt` file (replacing it: the save
+/// dialog already asked). Answers how many cues were written.
+#[tauri::command]
+pub async fn export_subtitle_file(
+    state: State<'_, AppState>,
+    track_id: TrackId,
+    file_path: String,
+) -> CommandResult<usize> {
+    let track = {
+        let guard = state.lock_open_project();
+        let open_project = guard.as_ref().ok_or_else(CommandError::no_project_open)?;
+        let project = open_project.project();
+        let track = project
+            .require_track(track_id)
+            .map_err(CommandError::from)?;
+        if track.kind != TrackKind::Subtitle {
+            return Err(CommandError::new(
+                ErrorCode::Internal,
+                format!("track {track_id} is not a subtitle track"),
+            ));
+        }
+        track.clone()
+    };
+    let file_path = PathBuf::from(file_path);
+    let path_to_write = file_path.clone();
+    tauri::async_runtime::spawn_blocking(move || export_subtitle_track(&track, &path_to_write))
+        .await
+        .map_err(CommandError::internal)?
+        .map_err(|error| {
+            CommandError::new(ErrorCode::SubtitlesNotSaved, error).about_file(&file_path)
+        })
 }
 
 /// Reads the files (in the background) and imports the readable ones as one undo step.

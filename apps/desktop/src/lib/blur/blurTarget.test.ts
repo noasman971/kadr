@@ -29,6 +29,7 @@ function clip(id: number, kind: ClipView["kind"], startSeconds: number, duration
     rotation: { value: 0, keyframes: [] },
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     text: null,
+    cueText: null,
     colorAdjustment: null,
     colorLut: null,
     trackedBlurs: [],
@@ -37,7 +38,7 @@ function clip(id: number, kind: ClipView["kind"], startSeconds: number, duration
 }
 
 function track(id: number, clips: ClipView[], overrides: Partial<TrackView> = {}): TrackView {
-  return { id, kind: "video", name: `Video ${id}`, isMuted: false, isHidden: false, clips, ...overrides };
+  return { id, kind: "video", name: `Video ${id}`, isMuted: false, isHidden: false, subtitleStyle: null, clips, ...overrides };
 }
 
 function project(tracks: TrackView[]): ProjectView {

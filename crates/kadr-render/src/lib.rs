@@ -7,7 +7,8 @@
 //!
 //! - [`create_renderer`] picks the [`GpuRenderer`] (wgpu) when a GPU works, the
 //!   [`CpuRenderer`] otherwise; both implement [`FrameRenderer`].
-//! - [`TextRasterizer`] draws text clips with the bundled Inter font.
+//! - [`TextRasterizer`] draws text clips with the bundled Inter font, and
+//!   subtitle cues with their outline or box ([`TextRasterizer::rasterize_subtitle`]).
 //! - [`LayerPlacement::of_clip_at`] reads a clip's (possibly animated)
 //!   placement at a given moment.
 //! - [`transition_motion`] and [`text_animation_frame`] move layers during
@@ -34,6 +35,7 @@ pub mod gpu;
 pub mod layers;
 pub mod region_effects;
 pub mod renderer;
+pub mod subtitles;
 pub mod text;
 pub mod transitions;
 
@@ -49,6 +51,7 @@ pub use layers::{
 };
 pub use region_effects::{HiddenRegion, hide_regions};
 pub use renderer::{FrameRenderer, RenderError, RendererPreference, create_renderer};
+pub use subtitles::SubtitlePicture;
 pub use text::{BUNDLED_FONT_FAMILY, TextRasterizer};
 pub use transitions::{
     LayerMotion, TextReveal, TransitionRole, text_animation_frame, transition_motion,

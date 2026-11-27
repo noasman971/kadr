@@ -68,10 +68,12 @@ impl LayerPlacement {
     /// The placement of a clip at `time_offset` from its start, with its
     /// keyframe animations evaluated at that moment. Text clips are drawn at
     /// their native size, everything else is fitted inside the canvas.
+    /// (Subtitle cues are placed by their track's style instead: see
+    /// [`TextRasterizer::rasterize_subtitle`](crate::TextRasterizer::rasterize_subtitle).)
     pub fn of_clip_at(clip: &Clip, time_offset: TimeSpan) -> Self {
         let value_of = |property| clip.animated_property(property).value_at(time_offset);
         let sizing = match clip.content {
-            ClipContent::Text(_) => LayerSizing::NativePixels,
+            ClipContent::Text(_) | ClipContent::Subtitle(_) => LayerSizing::NativePixels,
             ClipContent::Media(_) => LayerSizing::FitInsideCanvas,
         };
         Self {

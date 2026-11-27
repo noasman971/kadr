@@ -39,6 +39,7 @@ function clip(id: number, trackedBlurs: TrackedBlurView[]): ClipView {
     rotation: { value: 0, keyframes: [] },
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     text: null,
+    cueText: null,
     colorAdjustment: null,
     colorLut: null,
     trackedBlurs,
@@ -63,7 +64,7 @@ function project(clips: ClipView[]): ProjectView {
     adoptsFirstVideoFormat: false,
     durationTicks: 20 * SECOND,
     media: [],
-    tracks: [{ id: 1, kind: "video", name: "Video 1", isMuted: false, isHidden: false, clips }],
+    tracks: [{ id: 1, kind: "video", name: "Video 1", isMuted: false, isHidden: false, subtitleStyle: null, clips }],
     undoLabel: null,
     redoLabel: null,
   };

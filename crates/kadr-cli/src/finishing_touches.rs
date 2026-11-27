@@ -43,7 +43,7 @@ pub fn add_color_lut_to_every_picture_clip(
             ClipContent::Media(segment) => project
                 .media_asset(segment.media_asset_id)
                 .is_some_and(|asset| asset.description.has_picture()),
-            ClipContent::Text(_) => false,
+            ClipContent::Text(_) | ClipContent::Subtitle(_) => false,
         })
         .map(|(_, clip)| clip.id)
         .collect();

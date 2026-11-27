@@ -111,6 +111,48 @@ class EditorState {
     await this.applyChange(() => backend.chooseClipLutFile(clipId, filePath));
   }
 
+  /**
+   * Imports an `.srt` file as a new subtitle track (one undo step). The back end
+   * reads it first: a broken file is explained, with its line, and changes
+   * nothing. The first cue is selected.
+   */
+  async importSubtitleFile(filePath: string): Promise<void> {
+    const createdClipIds = await this.applyChange(() => backend.importSubtitleFile(filePath));
+    if (createdClipIds.length > 0) {
+      this.selectedClipIds = createdClipIds;
+    }
+  }
+
+  /** Writes a subtitle track to an `.srt` file, after the changes asked before it. */
+  async exportSubtitleFile(trackId: number, filePath: string): Promise<void> {
+    await this.inOrder(async () => {
+      try {
+        const cueCount = await backend.exportSubtitleFile(trackId, filePath);
+        toasts.show({
+          tone: "success",
+          message: t("toast.subtitlesExported", { count: cueCount, name: quoted(fileNameOf(filePath)) }),
+        });
+      } catch (error) {
+        this.showError(error);
+      }
+    });
+  }
+
+  /** Adds a subtitle cue at the playhead, selected, its words focused. */
+  async addSubtitleCue(trackId: number | null): Promise<void> {
+    const startTicks = snapToFrame(this.playheadTicks, this.frameRate);
+    const createdClipIds = await this.edit({
+      type: "addSubtitleCue",
+      startTicks,
+      trackId,
+      text: t("subtitles.newCueText"),
+    });
+    if (createdClipIds.length > 0) {
+      this.selectedClipIds = createdClipIds;
+      this.clipToFocusForText = createdClipIds[0] ?? null;
+    }
+  }
+
   /** Sends a change once the ones before it are answered, and shows its result. */
   private applyChange(send: () => Promise<EditResponse>): Promise<number[]> {
     return this.inOrder(async () => {
@@ -218,6 +260,13 @@ class EditorState {
             height: notice.height,
             name: quoted(notice.mediaName),
           }),
+          action: { label: t("toast.undo"), run: () => void this.undo() },
+        });
+      } else if (notice.type === "subtitlesImported") {
+        toasts.show({
+          tone: "success",
+          message: t("toast.subtitlesImported", { count: notice.cueCount }),
+          details: notice.warnings.length > 0 ? notice.warnings.join("\n") : undefined,
           action: { label: t("toast.undo"), run: () => void this.undo() },
         });
       }

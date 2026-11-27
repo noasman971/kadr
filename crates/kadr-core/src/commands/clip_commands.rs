@@ -11,6 +11,7 @@ use crate::clip::{
 use crate::error::EditError;
 use crate::ids::{ClipId, MediaAssetId, TrackId};
 use crate::project::Project;
+use crate::subtitle::SubtitleCue;
 use crate::time::{TimeSpan, Timestamp};
 
 /// Places a new clip on a track.
@@ -63,6 +64,17 @@ impl AddClip {
         let content = TextContent::new(text, duration, TextStyle::default());
         Self::new(track_id, ClipContent::Text(content), timeline_start)
     }
+
+    /// Prepares a subtitle cue, for a subtitle track.
+    pub fn subtitle_cue(
+        track_id: TrackId,
+        text: impl Into<String>,
+        duration: TimeSpan,
+        timeline_start: Timestamp,
+    ) -> Self {
+        let cue = SubtitleCue::new(text, duration);
+        Self::new(track_id, ClipContent::Subtitle(cue), timeline_start)
+    }
 }
 
 impl EditCommand for AddClip {
@@ -70,6 +82,7 @@ impl EditCommand for AddClip {
         let what = match &self.content {
             ClipContent::Media(segment) => format!("media {}", segment.media_asset_id),
             ClipContent::Text(_) => "text".to_string(),
+            ClipContent::Subtitle(_) => "subtitle cue".to_string(),
         };
         format!(
             "Add {what} to track {} at {}",
@@ -394,7 +407,7 @@ impl EditCommand for SetClipSpeed {
                 let mut new_version = clip.clone();
                 match &mut new_version.content {
                     ClipContent::Media(segment) => segment.speed = new_speed,
-                    ClipContent::Text(_) => {
+                    ClipContent::Text(_) | ClipContent::Subtitle(_) => {
                         return Err(EditError::NotAMediaClip { clip_id: clip.id });
                     }
                 }

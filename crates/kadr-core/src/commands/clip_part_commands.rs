@@ -1,7 +1,8 @@
 //! Removing parts of a clip and closing the gaps they leave ("ripple delete").
 
+use super::subtitle_commands::{replace_track_clips, subtitle_cues_without_time};
 use super::{CreatedObject, EditCommand, IdAllocatorRecord, object_vanished, revert_without_apply};
-use crate::clip::Clip;
+use crate::clip::{Clip, ClipContent};
 use crate::error::EditError;
 use crate::ids::{ClipId, TrackId};
 use crate::project::Project;
@@ -9,15 +10,19 @@ use crate::time::{TimeRange, TimeSpan, Timestamp};
 
 /// Cuts parts out of a clip and closes the gaps: what is left of the clip is
 /// placed end to end from its start, and the later clips of its track move
-/// earlier by the time removed. Clips on other tracks do not move.
+/// earlier by the time removed. Clips on other tracks do not move, except
+/// subtitle cues: the same moments are removed from every subtitle track, so
+/// the words stay under the voice that says them (decision record 0056).
 ///
 /// This is how silences are removed: one command, so one undo step, however
 /// many parts. [`Clip::without_parts`] says what each part left keeps.
+/// Subtitle cues themselves cannot lose parts (trim or split them instead).
 #[derive(Debug)]
 pub struct RemoveClipParts {
     clip_id: ClipId,
     removed_parts: Vec<TimeRange>,
     previous_clips_of_track: Option<(TrackId, Vec<Clip>)>,
+    previous_subtitle_cues: Vec<(TrackId, Vec<Clip>)>,
     id_allocator_record: IdAllocatorRecord,
 }
 
@@ -29,6 +34,7 @@ impl RemoveClipParts {
             clip_id,
             removed_parts,
             previous_clips_of_track: None,
+            previous_subtitle_cues: Vec::new(),
             id_allocator_record: IdAllocatorRecord::default(),
         }
     }
@@ -45,6 +51,11 @@ impl EditCommand for RemoveClipParts {
 
     fn apply(&mut self, project: &mut Project) -> Result<Vec<CreatedObject>, EditError> {
         let (track, clip) = project.require_clip(self.clip_id)?;
+        if matches!(clip.content, ClipContent::Subtitle(_)) {
+            return Err(EditError::PartsOfSubtitleCue {
+                clip_id: self.clip_id,
+            });
+        }
         let track_id = track.id;
         let mut id_allocator_after_cuts = project.id_allocator();
         let pieces = clip.without_parts(&self.removed_parts, &mut id_allocator_after_cuts)?;
@@ -80,6 +91,7 @@ impl EditCommand for RemoveClipParts {
             })
             .collect();
         new_clips_of_track.extend(pieces);
+        let new_subtitle_cues = subtitle_cues_without_time(project, &self.removed_parts);
 
         self.id_allocator_record.remember(project);
         *project.id_allocator_mut() = id_allocator_after_cuts;
@@ -89,6 +101,7 @@ impl EditCommand for RemoveClipParts {
             .ok_or_else(|| object_vanished(format!("track {track_id}")))?;
         let previous_clips = track.replace_all_clips(new_clips_of_track);
         self.previous_clips_of_track = Some((track_id, previous_clips));
+        self.previous_subtitle_cues = replace_track_clips(project, new_subtitle_cues)?;
         Ok(created_objects)
     }
 
@@ -103,6 +116,7 @@ impl EditCommand for RemoveClipParts {
             .track_mut(track_id)
             .ok_or_else(|| object_vanished(format!("track {track_id}")))?
             .replace_all_clips(previous_clips);
+        replace_track_clips(project, std::mem::take(&mut self.previous_subtitle_cues))?;
         self.id_allocator_record.restore(project, &label)
     }
 }

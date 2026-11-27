@@ -153,6 +153,53 @@ pub enum Command {
         #[arg(long)]
         cpu: bool,
     },
+    /// Add the subtitles of an `.srt` file to a project, on a new subtitle track
+    /// on top (the project file is changed in place).
+    ImportSubtitles {
+        /// The `.kadr` project file.
+        project: PathBuf,
+        /// The `.srt` file.
+        subtitles: PathBuf,
+        /// Move every subtitle this many seconds later.
+        #[arg(long, default_value_t = 0.0)]
+        offset: f64,
+        /// What is drawn behind the letters (default: an outline).
+        #[arg(long, value_enum)]
+        backdrop: Option<SubtitleBackdropChoice>,
+        /// Where the subtitles sit (default: the bottom).
+        #[arg(long, value_enum)]
+        position: Option<SubtitlePositionChoice>,
+    },
+    /// Write the subtitles of a project's subtitle track to an `.srt` file.
+    ExportSubtitles {
+        /// The `.kadr` project file.
+        project: PathBuf,
+        /// The `.srt` file to write (replaced if it exists).
+        output: PathBuf,
+        /// The subtitle track, when the project has several.
+        #[arg(long)]
+        track: Option<u64>,
+    },
+}
+
+/// What `import-subtitles --backdrop` draws behind the letters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SubtitleBackdropChoice {
+    /// A black line around every letter.
+    Outline,
+    /// A dark box behind each line.
+    Box,
+    /// Nothing.
+    None,
+}
+
+/// Where `import-subtitles --position` puts the subtitles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SubtitlePositionChoice {
+    /// Above the bottom margin.
+    Bottom,
+    /// Below the top margin.
+    Top,
 }
 
 /// `kadr_engine::silence_removal::DEFAULT_KEPT_PAUSE`, in seconds.
@@ -417,6 +464,40 @@ mod tests {
         assert_eq!(
             kadr_core::time::TimeSpan::from_seconds(kept_pause).unwrap(),
             kadr_engine::silence_removal::DEFAULT_KEPT_PAUSE
+        );
+    }
+
+    #[test]
+    fn subtitle_commands_take_a_project_and_a_file() {
+        let parsed = CommandLine::try_parse_from([
+            "kadr-cli",
+            "import-subtitles",
+            "edit.kadr",
+            "film.srt",
+            "--offset",
+            "2.5",
+            "--backdrop",
+            "box",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Command::ImportSubtitles {
+                offset,
+                backdrop: Some(SubtitleBackdropChoice::Box),
+                position: None,
+                ..
+            } if offset == 2.5
+        ));
+        let parsed =
+            CommandLine::try_parse_from(["kadr-cli", "export-subtitles", "edit.kadr", "out.srt"])
+                .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Command::ExportSubtitles { track: None, .. }
+        ));
+        assert!(
+            CommandLine::try_parse_from(["kadr-cli", "import-subtitles", "edit.kadr"]).is_err()
         );
     }
 
