@@ -155,11 +155,16 @@ Details: [docs/architecture.md](docs/architecture.md).
   and green, about 130 apart in V) puts 13 % of V values more than 10 apart with no
   bug at all. Make test edges sharp in brightness (compared at full resolution) and
   milder in colour, rather than loosening the shared thresholds.
-- On the desktop PC (RTX 4060), WARP (`KADR_GPU_ADAPTER=software`) crashes with an
-  access violation (`0xC0000005`) in about half the parallel runs of
-  `gpu_matches_cpu`, `main`'s tests alone included; `--test-threads=1` passes, the
-  RTX 4060 never crashes, and CI's WARP does not. Treat such a crash there as the
-  machine's, after a single-threaded rerun.
+- On the desktop PC (RTX 4060) and on the laptop (Intel Arc), WARP
+  (`KADR_GPU_ADAPTER=software`) crashes with an access violation (`0xC0000005`) in
+  many parallel runs of `gpu_matches_cpu`: `main`'s 7 tests 5 times in 8 on the
+  laptop, phase 8c's 10 tests every time. `--test-threads=1` passes, the real GPUs
+  never crash, and CI's WARP does not. Treat such a crash there as the machine's,
+  after a single-threaded rerun.
+- Comparing with `main` by building an extracted copy with the same
+  `CARGO_TARGET_DIR` overwrites the branch's artifacts (same package hash), and the
+  branch's older source files then look up to date: cargo runs `main`'s test binary
+  without a word. Touch the crate's sources afterwards, or use another target folder.
 - Inter 4's variable font declares the family **"Inter Variable"**, not "Inter": a
   request for "Inter" silently fell back to Segoe UI until `text.rs` redirected it.
   `TextRasterizer::has_font_family` and a test now guard it. Look at rendered text
@@ -289,6 +294,17 @@ Details: [docs/architecture.md](docs/architecture.md).
 - Editable number text must read back as the same number: `Intl` grouping turns 1200
   into "1,200" in English, which parses as 1.2. Use `formatEditableNumber` /
   `parseEditableNumber` (`src/lib/ui/numberText.ts`) for anything typed back.
+- Colour LUTs on the GPU are `Rgba32Float` 3D textures, which are **not filterable**
+  without the `FLOAT32_FILTERABLE` feature (WARP lacks it): the shader reads them with
+  `textureLoad` and interpolates by hand, in the same order as the CPU. Keep it so,
+  or the GPU and CPU colours drift apart.
+- Every shortcut that copies pictures (the pass-through of a lone canvas-sized
+  video, the CPU's opaque-row copy) asks `VisualLayer::changes_colors`. A new colour
+  effect must be added there, or a single video at the canvas size is exported
+  without it (the LUT was, until the check covered it).
+- A LUT file that cannot be read is skipped with an export warning, never an error;
+  rules in `validation.rs` check only the path's form, never the disk. Claude's tools
+  re-check stored LUT paths against the allowed folders, but let a missing one pass.
 - Cutting ranges out of a clip (silences, and later filler words or bad takes):
   `RemoveClipParts`, one command and one undo step, never a loop of `SplitClip` /
   `RemoveClip` / `MoveClip` (decision 0051). It only closes up the clip's own track.

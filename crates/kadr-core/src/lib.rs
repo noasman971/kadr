@@ -9,7 +9,7 @@
 //! - [`timeline`]: tracks stacked from bottom to top;
 //! - [`clip`]: media or text placed on a track, with volume, opacity, position…;
 //! - [`animation`]: keyframes that animate clip properties;
-//! - [`effect`]: colour adjustment and tracked blur;
+//! - [`effect`]: colour adjustment, colour LUT and tracked blur;
 //! - [`transition`]: how videos and images enter and leave the picture;
 //! - [`text_animation`]: how texts appear and disappear;
 //! - [`commands`]: every change, as a reversible command;

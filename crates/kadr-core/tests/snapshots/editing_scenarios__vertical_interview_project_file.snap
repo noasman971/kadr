@@ -3,7 +3,7 @@ source: crates/kadr-core/tests/editing_scenarios.rs
 expression: json_text
 ---
 {
-  "format_version": 2,
+  "format_version": 3,
   "project": {
     "settings": {
       "canvas_size": {
@@ -220,6 +220,15 @@ expression: json_text
                     "saturation_multiplier": 1.2,
                     "temperature_shift": 0.0
                   }
+                },
+                {
+                  "id": 13,
+                  "is_enabled": true,
+                  "kind": {
+                    "type": "color_lut",
+                    "file_path": "looks/teal_orange.cube",
+                    "strength_fraction": 0.8
+                  }
                 }
               ],
               "entry_transition": {
@@ -377,7 +386,7 @@ expression: json_text
       ]
     },
     "id_allocator": {
-      "next_raw_id": 13
+      "next_raw_id": 14
     }
   }
 }

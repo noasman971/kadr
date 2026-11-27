@@ -3,15 +3,18 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use kadr_core::ids::MediaAssetId;
+use kadr_core::ids::{ClipId, MediaAssetId};
 use kadr_core::media_asset::MediaAssetDescription;
+use kadr_engine::color_grading::load_color_lookup_table;
 use kadr_media::MediaBackend;
 use serde::Serialize;
 use tauri::State;
 
 use crate::app_state::AppState;
 use crate::command_error::{CommandError, CommandResult, ErrorCode};
-use crate::editing::{EditOutcome, EditRequest, apply_edit_request, import_media_files};
+use crate::editing::{
+    EditOutcome, EditRequest, LutChanges, apply_edit_request, import_media_files,
+};
 use crate::project_view::ProjectView;
 
 /// The answer to an edit.
@@ -79,6 +82,43 @@ pub async fn redo(state: State<'_, AppState>) -> CommandResult<ProjectView> {
     state.with_open_project(|open_project| {
         open_project.redo()?;
         Ok(open_project.view())
+    })
+}
+
+/// Reads a `.cube` file (in the background), then gives the clip its look as one
+/// undo step: the clip's LUT takes this file and keeps its strength, or a LUT is
+/// added at full strength.
+#[tauri::command]
+pub async fn choose_clip_lut_file(
+    state: State<'_, AppState>,
+    clip_id: ClipId,
+    file_path: String,
+) -> CommandResult<EditResponse> {
+    if state.lock_open_project().is_none() {
+        return Err(CommandError::no_project_open());
+    }
+    let file_path = PathBuf::from(file_path);
+    let path_to_read = file_path.clone();
+    tauri::async_runtime::spawn_blocking(move || load_color_lookup_table(&path_to_read))
+        .await
+        .map_err(CommandError::internal)?
+        .map_err(|error| {
+            CommandError::new(ErrorCode::LutUnreadable, error).about_file(&file_path)
+        })?;
+    let request = EditRequest::SetClipLut {
+        clip_id,
+        changes: LutChanges {
+            file_path: Some(file_path),
+            strength: None,
+        },
+    };
+    state.with_open_project(|open_project| {
+        let outcome = open_project
+            .edit(|session, adopts_format| apply_edit_request(session, adopts_format, &request))?;
+        Ok(EditResponse {
+            view: open_project.view(),
+            outcome,
+        })
     })
 }
 

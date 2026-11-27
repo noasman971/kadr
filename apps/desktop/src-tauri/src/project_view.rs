@@ -210,6 +210,24 @@ pub struct ColorAdjustmentView {
     pub temperature: f32,
 }
 
+/// The first colour LUT of a clip.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorLutView {
+    /// The effect holding it.
+    pub effect_id: EffectId,
+    /// Whether it is applied.
+    pub is_enabled: bool,
+    /// The `.cube` file.
+    pub file_path: String,
+    /// Its name, for display.
+    pub file_name: String,
+    /// From 0 (no look) to 1 (the full look).
+    pub strength: f32,
+    /// Whether the file has gone: the clip is then drawn without its look.
+    pub is_missing: bool,
+}
+
 /// A tracked blur of a clip.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -286,6 +304,8 @@ pub struct ClipView {
     pub text: Option<TextView>,
     /// The colour adjustment, if the clip has one.
     pub color_adjustment: Option<ColorAdjustmentView>,
+    /// The colour LUT, if the clip has one.
+    pub color_lut: Option<ColorLutView>,
     /// The tracked blurs, in the order they are applied.
     pub tracked_blurs: Vec<TrackedBlurView>,
     /// Number of effects of any kind.
@@ -477,6 +497,7 @@ fn clip_view_of(project: &Project, track: &Track, clip: &Clip) -> ClipView {
         },
         text,
         color_adjustment: first_color_adjustment_of(clip),
+        color_lut: first_color_lut_of(clip),
         tracked_blurs: tracked_blurs_of(project, clip),
         effect_count: clip.effects.len(),
     }
@@ -522,7 +543,7 @@ fn tracked_blurs_of(project: &Project, clip: &Clip) -> Vec<TrackedBlurView> {
                     .count(),
                 unsure_ranges: unsure_ranges_on_timeline(project, clip, blur),
             }),
-            EffectKind::ColorAdjustment(_) => None,
+            EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => None,
         })
         .collect()
 }
@@ -579,6 +600,23 @@ fn first_color_adjustment_of(clip: &Clip) -> Option<ColorAdjustmentView> {
             saturation: adjustment.saturation_multiplier,
             temperature: adjustment.temperature_shift,
         }),
-        EffectKind::TrackedBlur(_) => None,
+        EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => None,
+    })
+}
+
+fn first_color_lut_of(clip: &Clip) -> Option<ColorLutView> {
+    clip.effects.iter().find_map(|effect| match &effect.kind {
+        EffectKind::ColorLut(color_lut) => Some(ColorLutView {
+            effect_id: effect.id,
+            is_enabled: effect.is_enabled,
+            file_path: color_lut.file_path.display().to_string(),
+            file_name: color_lut.file_path.file_name().map_or_else(
+                || color_lut.file_path.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
+            strength: color_lut.strength_fraction,
+            is_missing: !color_lut.file_path.is_file(),
+        }),
+        EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
     })
 }

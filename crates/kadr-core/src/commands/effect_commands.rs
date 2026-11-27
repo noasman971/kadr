@@ -218,7 +218,7 @@ mod tests {
     use super::*;
     use crate::commands::test_support::{apply_and_check_revert, apply_expecting_error};
     use crate::commands::{AddClip, AddTrack, CreatedObjectsExt, ImportMedia, TrackPosition};
-    use crate::effect::{ColorAdjustment, TrackedBlur};
+    use crate::effect::{ColorAdjustment, ColorLut, TrackedBlur};
     use crate::media_asset::test_samples::ten_second_video;
     use crate::project::ProjectSettings;
     use crate::time::Timestamp;
@@ -283,6 +283,37 @@ mod tests {
         let (project_without_effect, _) =
             apply_and_check_revert(&project, RemoveEffect::new(clip_id, effect_id));
         assert!(effects_of(&project_without_effect, clip_id).is_empty());
+    }
+
+    #[test]
+    fn a_colour_lut_can_be_added_weakened_disabled_and_removed() {
+        let (project, clip_id) = project_with_video_clip();
+        let (project, created) = apply_and_check_revert(
+            &project,
+            AddEffect::new(
+                clip_id,
+                EffectKind::ColorLut(ColorLut::at_full_strength("looks/film.cube")),
+            ),
+        );
+        let effect_id = created.first_effect_id().unwrap();
+        let weaker = ColorLut {
+            strength_fraction: 0.4,
+            ..ColorLut::at_full_strength("looks/film.cube")
+        };
+        let (weakened_project, _) = apply_and_check_revert(
+            &project,
+            ReplaceEffect::new(clip_id, effect_id, EffectKind::ColorLut(weaker.clone())),
+        );
+        assert_eq!(
+            effects_of(&weakened_project, clip_id)[0].kind,
+            EffectKind::ColorLut(weaker)
+        );
+        let (disabled_project, _) =
+            apply_and_check_revert(&project, SetEffectEnabled::new(clip_id, effect_id, false));
+        assert!(!effects_of(&disabled_project, clip_id)[0].is_enabled);
+        let (project_without_lut, _) =
+            apply_and_check_revert(&project, RemoveEffect::new(clip_id, effect_id));
+        assert!(effects_of(&project_without_lut, clip_id).is_empty());
     }
 
     #[test]

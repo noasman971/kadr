@@ -107,6 +107,50 @@ picture is sampled and before it is blended, with the same formula on both rende
 A layer takes up to four adjustments, in order; the export report mentions any
 further ones it ignored.
 
+### Colour LUTs
+
+A colour LUT gives a clip the look of a `.cube` file (decision record 0052). The
+code is in `color_lookup_table.rs`, and `look_up_color` in `layers.wgsl`.
+
+- **Order.** Tracked blurs hide their areas in the source picture first. Then come
+  the colour adjustments, in list order, and then the LUT, whatever the order of the
+  clip's effects list. One LUT per layer (`MAXIMUM_COLOR_LUTS_PER_LAYER`); the export
+  report mentions any further one it ignored.
+- **Colours.** The LUT reads the same values as the colour adjustments:
+  gamma-encoded, full-range R'G'B' from 0 to 1, after the YUV → RGB conversion, never
+  linearised. That is what Rec.709 LUTs expect. LUTs made for log footage (S-Log,
+  V-Log…) only look right on log footage.
+- **Domain.** Each channel is placed in the file's domain (`DOMAIN_MIN` /
+  `DOMAIN_MAX`, or Resolve's `LUT_*_INPUT_RANGE`, 0 to 1 by default), then clamped to
+  it.
+- **Interpolation.** 3D tables are interpolated trilinearly between the 8 nearest
+  colours (red, then green, then blue). 1D tables are interpolated linearly in each
+  channel's curve.
+- **Strength.** The result is mixed with the colour before the LUT
+  (`mix(input, looked_up, strength)`), then clamped to 0–1. A strength of 0 draws
+  nothing different, and such a layer may still be passed through untouched.
+- **Limits.** 3D sizes run from 2 to 65 and 1D sizes from 2 to 65 536. Files holding
+  both a 1D shaper and a 3D cube are refused with a message. Errors give line numbers
+  and never quote the file's lines.
+- **On the GPU,** a table is an `Rgba32Float` 3D texture at binding 5. A 1D table
+  wraps onto rows 256 texels wide.
+  - The shader reads it with `textureLoad` and interpolates by hand in the CPU's
+    order. `Rgba32Float` is not filterable without the `FLOAT32_FILTERABLE`
+    feature, which WARP lacks.
+  - Textures are kept by the table's fingerprint while frames use them.
+  - Layers without a LUT get a 1×1×1 placeholder. A 65³ table weighs 4.4 MB.
+- **Reading files** is the engine's job (`kadr_engine::color_grading`):
+  - files over 32 MB are refused before being read;
+  - the frame composer keeps the tables it read, by file, and reads one again when
+    its modification time or length changes (a look exported again shows on the
+    next preview frame);
+  - failures are kept too, so a missing file is not looked for on every frame;
+  - a LUT that cannot be read is **skipped**: the clip is drawn without its look,
+    and the export report names the clip, the effect and the file.
+- **Single pictures.** The timeline's pictures (`get_frame` without a clip) show
+  LUTs. A clip's own source picture (`clip_pictures_at`) shows the picture before
+  colour.
+
 ### Tracked blur
 
 A tracked blur hides an area of the **source picture**, before the picture is placed,
@@ -141,10 +185,10 @@ underneath, its picture continuing past its cut. Details:
 
 `crates/kadr-render/tests/gpu_matches_cpu.rs` renders the same scenes on both and
 compares the Y, U and V planes: mean difference under 1.5 and fewer than 2 % of values
-off by more than 10. Scenes include colour adjustments, dissolves, pushes, zooms and
-animated texts. Remaining differences are expected: the GPU interpolates colour
-planes smoothly where the CPU reuses each 2×2 block's colour, and the edges of rotated
-layers round differently.
+off by more than 10. Scenes include colour adjustments, colour LUTs, dissolves,
+pushes, zooms and animated texts. Remaining differences are expected: the GPU
+interpolates colour planes smoothly where the CPU reuses each 2×2 block's colour, and
+the edges of rotated layers round differently.
 
 On a real export (17 s, four sources of different sizes and frame rates), the GPU and
 CPU files differ by a PSNR of 47 dB on average (52 dB on brightness): invisible.

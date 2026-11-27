@@ -14,8 +14,10 @@
 //! edit. Its caches check that what they hold still matches the clip.
 //!
 //! Effects: tracked blurs hide their region in the source picture (at the clip's
-//! source time) before it is drawn; colour adjustments are handed to the renderer
-//! with the layer.
+//! source time) before it is drawn; colour adjustments and the colour LUT are
+//! handed to the renderer with the layer, which applies them in that order. LUT
+//! files are read once and kept ([`crate::color_grading`]); one that cannot be read
+//! is skipped (the export report says so), so the clip is drawn without its look.
 //!
 //! Transitions and text animations move layers (see [`super::clip_layers`]); a
 //! clip shown under its neighbour's transition reads its source past its cut,
@@ -34,11 +36,12 @@ use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
 use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_render::{
-    CanvasDescription, FrameRenderer, HiddenRegion, LayerPlacement, RenderError, TextRasterizer,
-    TextReveal, VisualLayer, hide_regions,
+    CanvasDescription, ColorLookupTable, FrameRenderer, HiddenRegion, LayerColorLut,
+    LayerPlacement, RenderError, TextRasterizer, TextReveal, VisualLayer, hide_regions,
 };
 
 use super::clip_layers::plan_track_layers;
+use crate::color_grading::{ColorTableError, ColorTableLibrary, applied_color_lut_of};
 
 /// The decoder of one clip, with the file it reads.
 struct OpenVideoSource {
@@ -47,7 +50,16 @@ struct OpenVideoSource {
     source: Box<dyn VideoFrameSource>,
 }
 
-/// Renders timeline pictures, keeping decoders and text pictures between frames.
+/// A layer ready to hand to the renderer, with what it owns.
+struct PreparedLayer {
+    picture: Arc<VideoFrame>,
+    placement: LayerPlacement,
+    color_adjustments: Vec<ColorAdjustment>,
+    /// The table and its strength.
+    color_lut: Option<(Arc<ColorLookupTable>, f32)>,
+}
+
+/// Renders timeline pictures, keeping decoders, text pictures and LUTs between frames.
 pub(crate) struct FrameComposer {
     renderer: Box<dyn FrameRenderer>,
     open_sources: HashMap<ClipId, OpenVideoSource>,
@@ -56,6 +68,8 @@ pub(crate) struct FrameComposer {
     /// The picture of each text clip, with the content and the part of it it
     /// was drawn from.
     text_pictures: HashMap<ClipId, (TextContent, TextReveal, Arc<VideoFrame>)>,
+    /// The LUT files read so far.
+    color_tables: ColorTableLibrary,
 }
 
 impl FrameComposer {
@@ -65,7 +79,16 @@ impl FrameComposer {
             open_sources: HashMap::new(),
             text_rasterizer: None,
             text_pictures: HashMap::new(),
+            color_tables: ColorTableLibrary::default(),
         }
+    }
+
+    /// The table of a LUT file, read if it was not yet or if it changed.
+    pub(crate) fn color_table_at(
+        &mut self,
+        file_path: &Path,
+    ) -> Result<Arc<ColorLookupTable>, ColorTableError> {
+        self.color_tables.table_at(file_path)
     }
 
     /// What renders the frames, for reports.
@@ -81,8 +104,7 @@ impl FrameComposer {
         timeline_time: Timestamp,
     ) -> Result<VideoFrame, Error> {
         let settings = project.settings();
-        let mut prepared_layers: Vec<(Arc<VideoFrame>, LayerPlacement, Vec<ColorAdjustment>)> =
-            Vec::new();
+        let mut prepared_layers: Vec<PreparedLayer> = Vec::new();
         let mut clips_shown = HashSet::new();
         let visible_tracks = project
             .timeline()
@@ -103,7 +125,12 @@ impl FrameComposer {
                 if let Some(picture) = picture {
                     let placement = LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
                         .moved_by(planned_layer.motion);
-                    prepared_layers.push((picture, placement, enabled_color_adjustments(clip)));
+                    prepared_layers.push(PreparedLayer {
+                        picture,
+                        placement,
+                        color_adjustments: enabled_color_adjustments(clip),
+                        color_lut: self.color_lut_of(clip),
+                    });
                 }
             }
         }
@@ -111,13 +138,20 @@ impl FrameComposer {
         // deleted) frees its decoder.
         self.open_sources
             .retain(|clip_id, _| clips_shown.contains(clip_id));
+        self.color_tables.forget_files_unused_by(project);
 
         let layers: Vec<VisualLayer<'_>> = prepared_layers
             .iter()
-            .map(|(picture, placement, color_adjustments)| VisualLayer {
-                picture: picture.as_ref(),
-                placement: *placement,
-                color_adjustments,
+            .map(|layer| VisualLayer {
+                picture: layer.picture.as_ref(),
+                placement: layer.placement,
+                color_adjustments: &layer.color_adjustments,
+                color_lut: layer.color_lut.as_ref().map(|(table, strength_fraction)| {
+                    LayerColorLut {
+                        table: table.as_ref(),
+                        strength_fraction: *strength_fraction,
+                    }
+                }),
             })
             .collect();
         let canvas = CanvasDescription {
@@ -125,6 +159,14 @@ impl FrameComposer {
             background: settings.background_color,
         };
         Ok(self.renderer.render_frame(&canvas, &layers)?)
+    }
+
+    /// The table and strength of the LUT `clip` applies, or `None` if it applies
+    /// none or its file cannot be used (the export reports it).
+    fn color_lut_of(&mut self, clip: &Clip) -> Option<(Arc<ColorLookupTable>, f32)> {
+        let color_lut = applied_color_lut_of(&clip.effects)?;
+        let table = self.color_tables.table_at(&color_lut.file_path).ok()?;
+        Some((table, color_lut.strength_fraction))
     }
 
     /// The source picture a clip shows at `timeline_time`, or `None` if the clip
@@ -246,7 +288,7 @@ fn enabled_color_adjustments(clip: &Clip) -> Vec<ColorAdjustment> {
         .filter(|effect| effect.is_enabled)
         .filter_map(|effect| match &effect.kind {
             EffectKind::ColorAdjustment(adjustment) => Some(*adjustment),
-            EffectKind::TrackedBlur(_) => None,
+            EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => None,
         })
         .collect()
 }
@@ -267,7 +309,7 @@ pub(crate) fn hidden_regions_of(clip: &Clip, source_time: Timestamp) -> Vec<Hidd
                         edge_softness_in_pixels: tracked_blur.edge_softness_in_pixels,
                     })
             }
-            EffectKind::ColorAdjustment(_) => None,
+            EffectKind::ColorAdjustment(_) | EffectKind::ColorLut(_) => None,
         })
         .collect()
 }

@@ -22,6 +22,13 @@ struct LayerUniforms {
     adjustments: array<vec4<f32>, 4>,
     // x: how many adjustments are used.
     adjustment_count: vec4<f32>,
+    // The colour LUT (color_lookup_table.rs): x: 0 none, 1 one curve per channel,
+    // 2 a cube; y: N; z: strength; w: width of a row of a 1D table's texture.
+    lut_settings: vec4<f32>,
+    // xyz: the domain's minimum.
+    lut_domain_minimum: vec4<f32>,
+    // xyz: 1 / (maximum − minimum) of the domain.
+    lut_domain_scale: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> layer: LayerUniforms;
@@ -31,6 +38,11 @@ struct LayerUniforms {
 // The U and V planes of a YUV picture (placeholders for RGBA pictures).
 @group(0) @binding(3) var second_plane: texture_2d<f32>;
 @group(0) @binding(4) var third_plane: texture_2d<f32>;
+// The colour LUT: an N × N × N cube (red along x), or a 1D table wrapped onto
+// rows. RGBA 32-bit floats, read with textureLoad (not filterable without an
+// extra GPU feature), interpolated here exactly like the CPU does. A 1 × 1 × 1
+// placeholder when the layer has no LUT.
+@group(0) @binding(5) var color_lut: texture_3d<f32>;
 
 // Contribution of red, green and blue to brightness (BT.709).
 const BRIGHTNESS_WEIGHTS = vec3<f32>(0.2126, 0.7152, 0.0722);
@@ -52,6 +64,51 @@ fn adjust_color(color: vec3<f32>) -> vec3<f32> {
     return rgb;
 }
 
+fn cube_entry(base: vec3<i32>, offset: vec3<i32>) -> vec3<f32> {
+    return textureLoad(color_lut, base + offset, 0).rgb;
+}
+
+fn curve_entry(index: i32) -> vec3<f32> {
+    let row_width = i32(layer.lut_settings.w);
+    return textureLoad(color_lut, vec3<i32>(index % row_width, index / row_width, 0), 0).rgb;
+}
+
+// Same arithmetic as ColorLookupTable::look_up and LayerColorLut::apply.
+fn look_up_color(color: vec3<f32>) -> vec3<f32> {
+    let kind = layer.lut_settings.x;
+    if (kind == 0.0) {
+        return color;
+    }
+    let size = layer.lut_settings.y;
+    let position = clamp(
+        (color - layer.lut_domain_minimum.xyz) * layer.lut_domain_scale.xyz,
+        vec3<f32>(0.0),
+        vec3<f32>(1.0),
+    ) * (size - 1.0);
+    let lower = min(floor(position), vec3<f32>(size - 2.0));
+    let fraction = position - lower;
+    var looked_up: vec3<f32>;
+    if (kind == 2.0) {
+        let base = vec3<i32>(lower);
+        // Along red, then green, then blue.
+        let red_00 = mix(cube_entry(base, vec3<i32>(0, 0, 0)), cube_entry(base, vec3<i32>(1, 0, 0)), fraction.x);
+        let red_10 = mix(cube_entry(base, vec3<i32>(0, 1, 0)), cube_entry(base, vec3<i32>(1, 1, 0)), fraction.x);
+        let red_01 = mix(cube_entry(base, vec3<i32>(0, 0, 1)), cube_entry(base, vec3<i32>(1, 0, 1)), fraction.x);
+        let red_11 = mix(cube_entry(base, vec3<i32>(0, 1, 1)), cube_entry(base, vec3<i32>(1, 1, 1)), fraction.x);
+        let green_0 = mix(red_00, red_10, fraction.y);
+        let green_1 = mix(red_01, red_11, fraction.y);
+        looked_up = mix(green_0, green_1, fraction.z);
+    } else {
+        let index = vec3<i32>(lower);
+        looked_up = vec3<f32>(
+            mix(curve_entry(index.x).r, curve_entry(index.x + 1).r, fraction.x),
+            mix(curve_entry(index.y).g, curve_entry(index.y + 1).g, fraction.y),
+            mix(curve_entry(index.z).b, curve_entry(index.z + 1).b, fraction.z),
+        );
+    }
+    return clamp(mix(color, looked_up, layer.lut_settings.z), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 struct LayerVertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) texture_coordinates: vec2<f32>,
@@ -70,7 +127,7 @@ fn layer_vertex(@builtin(vertex_index) corner_index: u32) -> LayerVertexOutput {
 @fragment
 fn rgba_layer_fragment(input: LayerVertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(first_plane, picture_sampler, input.texture_coordinates);
-    return vec4<f32>(adjust_color(color.rgb), color.a * layer.opacity.x);
+    return vec4<f32>(look_up_color(adjust_color(color.rgb)), color.a * layer.opacity.x);
 }
 
 @fragment
@@ -85,5 +142,6 @@ fn yuv_layer_fragment(input: LayerVertexOutput) -> @location(0) vec4<f32> {
         dot(layer.yuv_to_green.xyz, yuv) + layer.yuv_to_green.w,
         dot(layer.yuv_to_blue.xyz, yuv) + layer.yuv_to_blue.w,
     );
-    return vec4<f32>(adjust_color(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0))), layer.opacity.x);
+    let adjusted = adjust_color(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)));
+    return vec4<f32>(look_up_color(adjusted), layer.opacity.x);
 }

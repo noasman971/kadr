@@ -12,6 +12,7 @@ use crate::output::{ToolError, ToolOutput};
 use crate::time_input::seconds_in;
 use crate::toolbox::ToolCall;
 use crate::tools::common::{CanvasPreset, SettingsChanges, with_extension};
+use crate::tools::picture_tools::{check_stored_color_lut_file, enabled_color_luts};
 use crate::views::SettingsView;
 
 /// The project tools.
@@ -247,6 +248,7 @@ fn open_project(
         .check_existing_file(&parameters.file_path)?;
     toolbox.host_mut().open_project_file(file_path)?;
     let unreadable_media = media_outside_allowed_folders(toolbox, toolbox.require_project()?);
+    let unreadable_luts = color_luts_outside_allowed_folders(toolbox, toolbox.require_project()?);
     let mut output = get_project_info(toolbox, NoParameters {})?;
     if !unreadable_media.is_empty() {
         output = ToolOutput::text(format!(
@@ -256,7 +258,26 @@ fn open_project(
             unreadable_media.join(", ")
         ));
     }
+    if !unreadable_luts.is_empty() {
+        output = ToolOutput::text(format!(
+            "{}\n\nWarning: the colour LUT files of {} are outside the allowed folders, so Kadr \
+             will refuse to show the timeline's pictures or export. Ask the user to allow their \
+             folder, or remove those LUTs with remove_effect.",
+            output.all_text(),
+            unreadable_luts.join(", ")
+        ));
+    }
     Ok(output)
+}
+
+/// The colour LUTs whose file Kadr would refuse to read, as "effect E of clip C".
+fn color_luts_outside_allowed_folders(toolbox: &ToolCall<'_>, project: &Project) -> Vec<String> {
+    enabled_color_luts(project)
+        .filter(|(_, _, color_lut)| {
+            check_stored_color_lut_file(toolbox, &color_lut.file_path).is_err()
+        })
+        .map(|(clip_id, effect_id, _)| format!("effect {effect_id} of clip {clip_id}"))
+        .collect()
 }
 
 /// The identifiers of the project's media files that lie outside the allowed folders.

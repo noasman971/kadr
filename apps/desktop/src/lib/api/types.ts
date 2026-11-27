@@ -62,6 +62,19 @@ export interface ColorAdjustmentView {
   temperature: number;
 }
 
+/** The first colour LUT of a clip (`project_view.rs`). */
+export interface ColorLutView {
+  effectId: number;
+  isEnabled: boolean;
+  /** The `.cube` file. */
+  filePath: string;
+  fileName: string;
+  /** 0 (no look) to 1 (the full look). */
+  strength: number;
+  /** The file has gone: the clip is drawn without its look. */
+  isMissing: boolean;
+}
+
 export type BlurStyleChoice = "blur" | "pixels" | "mask";
 export type BlurShapeChoice = "ellipse" | "rectangle";
 export type Confidence = "confident" | "uncertain" | "lost";
@@ -163,6 +176,7 @@ export interface ClipView {
   crop: CropView;
   text: TextView | null;
   colorAdjustment: ColorAdjustmentView | null;
+  colorLut: ColorLutView | null;
   trackedBlurs: TrackedBlurView[];
   effectCount: number;
 }
@@ -251,7 +265,11 @@ export type EditRequest =
   | { type: "resetClipPicture"; clipId: number }
   | { type: "setClipSpeed"; clipId: number; speed: number }
   | { type: "setClipColor"; clipId: number; changes: Partial<ColorSettings> }
+  /** Removes the colour adjustment and the colour LUT. */
   | { type: "resetClipColor"; clipId: number }
+  /** Only the strength: a file is chosen with `backend.chooseClipLutFile`, which reads it first. */
+  | { type: "setClipLut"; clipId: number; changes: { strength?: number } }
+  | { type: "removeClipLut"; clipId: number }
   | { type: "setClipText"; clipId: number; changes: Partial<TextSettings> }
   | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle }
   | { type: "setBlurSettings"; clipId: number; effectId: number; changes: Partial<BlurSettings> }
@@ -345,6 +363,7 @@ export type ErrorCode =
   | "projectFileNotSaved"
   | "projectNameTaken"
   | "mediaUnreadable"
+  | "lutUnreadable"
   | "editRefused"
   | "nothingToUndo"
   | "nothingToRedo"

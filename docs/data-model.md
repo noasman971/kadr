@@ -100,7 +100,12 @@ interpolation: linear, ease-in-out, or hold.
 | Effect | What it stores |
 |---|---|
 | `ColorAdjustment` | Exposure (stops), contrast, saturation, temperature |
+| `ColorLut` | The path of a `.cube` file and a strength from 0 to 1. Only the path is stored, never the table; the rules check only that it names a `.cube` file, never that it exists (a moved LUT must not make the project impossible to open). Reading it is the engine's job ([rendering.md](rendering.md#colour-luts), decision record 0052) |
 | `TrackedBlur` | Style (gaussian, pixelate, solid fill), shape (rectangle, ellipse), margin, edge softness, and `RegionSample`s: where the hidden region is, **indexed by source time** so the blur stays on the face after trims and splits, with the tracker's confidence (confident, uncertain, lost) and who placed it (user, tracker, manual correction) |
+
+Whatever the order of a clip's effects list, they apply in a fixed order: tracked
+blurs on the source picture, then the colour adjustments (in list order), then the
+colour LUT.
 
 ## Commands and undo
 
@@ -166,7 +171,7 @@ A `.kadr` file is indented JSON:
 
 ```json
 {
-  "format_version": 2,
+  "format_version": 3,
   "project": {
     "settings": { "canvas_size": { "width_in_pixels": 1080, "height_in_pixels": 1920 }, … },
     "media_assets": [ … ],
@@ -188,10 +193,11 @@ is kept as a snapshot test in
   |---|---|
   | 1 | First format (phase 1) |
   | 2 | `entry_transition` and `exit_transition` on clips, `entry_animation` and `exit_animation` on texts (phase 8) |
+  | 3 | The `color_lut` effect (phase 8c). Nothing to convert: the new number makes an older Kadr say "newer version" instead of "damaged file" |
 
-  The version 1 snapshot is kept as
-  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr`; a test checks it
-  still opens as the same project.
+  The snapshots of versions 1 and 2 are kept as
+  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr` and
+  `…_format_2.kadr`; tests check they still open as the same project.
 - A file from a **newer** Kadr is refused with a message asking to update, rather than
   losing data.
 - Every loaded project is validated: a damaged file never reaches the editor.

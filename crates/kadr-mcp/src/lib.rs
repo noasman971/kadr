@@ -70,6 +70,10 @@ visible → blur_region with the rectangle around it, in the clip's source pixel
 get_blur_status until finished → look at each range to check with get_frame, and correct with \
 blur_region and the blur's effect_id where the face shows.
 
+Colour: add_color_adjustment (exposure, contrast, saturation, temperature), or a look from a \
+.cube LUT file with add_color_lut (find LUTs with find_media_files and kind color_lut). Check \
+colours with get_frame without clip_id: a clip's own pictures are shown before colour.
+
 Videos attached to this conversation are NOT available to Kadr: ask the user for the file name \
 or folder and find it with find_media_files. Times are in seconds. Sizes and positions are in \
 pixels, origin at the top-left corner. Every tool call is one undo step (undo / redo). Kadr only \

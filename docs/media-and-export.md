@@ -70,7 +70,11 @@ flowchart LR
 - The file is written as `<name>.exporting` and renamed only on success: a cancelled
   or failed export never leaves a broken file nor replaces a good one.
 - Progress is reported after each frame; cancellation is checked before each frame.
-- The report lists what is not rendered yet (text clips, effects: phase 3).
+- The report's warnings list what was not rendered as asked:
+  - a tracked blur without any region;
+  - colour adjustments beyond the four a layer takes;
+  - a colour LUT whose file cannot be read (the clip is drawn without its look);
+  - a second LUT on a clip.
 
 ## Encoders
 

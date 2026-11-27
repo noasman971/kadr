@@ -109,6 +109,42 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - `kadr-cli remove-silences video.mp4 -o shorter.mp4 [--threshold -45]`.
 - Decision record 0051.
 
+### Added (phase 8c: colour grading with `.cube` LUTs)
+
+- `kadr-core`: the `color_lut` effect names a `.cube` file and a strength from 0 to 1.
+  It applies after the colour adjustments, whatever the effects list order. Only the
+  path is stored. File format 3, with a migration from 2 that changes nothing.
+- `kadr-render`: `color_lookup_table` reads `.cube` files:
+  - 3D up to 65, 1D up to 65 536;
+  - domains, Resolve's input ranges, comments, Windows line endings and byte-order
+    marks;
+  - messages give line numbers and never quote lines.
+  
+  Tables apply on the CPU and the GPU with the same trilinear arithmetic. On the
+  GPU, a `Rgba32Float` 3D texture read with `textureLoad`, kept while frames use it.
+  The pass-through and the CPU's opaque-row copy now ask
+  `VisualLayer::changes_colors`, so a lone canvas-sized video still gets its LUT.
+- `kadr-engine`: `color_grading::load_color_lookup_table` refuses files over 32 MB
+  and gives a `ColorTableSummary`.
+  - Exports and previews keep the tables they read, and read a file again when it
+    changes.
+  - A LUT that cannot be read is skipped with a warning in the export report (clip,
+    effect, file), never an error. So is a second LUT on a clip.
+- Claude's tool `add_color_lut` (with `effect_id`: change the file or the strength):
+  - the file must be inside the allowed folders and named `.cube`, and is read before
+    the project changes;
+  - one LUT per clip;
+  - `find_media_files` lists `.cube` files with `kind` `color_lut`, and `import_media`
+    points them to `add_color_lut`;
+  - LUT paths stored in a project are checked against the allowed folders, and
+    `open_project` warns about them.
+- Desktop app: the inspector's Colour section chooses a `.cube` file (read in the
+  background first), its strength (0–100 %), another file, or none. It says when the
+  file has gone. *Reset* also removes the LUT.
+- `kadr-cli assemble --lut film.cube [--lut-strength 0.8]` grades every video and
+  image.
+- Decision record 0052.
+
 ### Fixed
 
 - Desktop inspector, *Blur* section: two quick changes (a wider margin, then the

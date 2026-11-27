@@ -12,6 +12,8 @@
 //!   placement at a given moment.
 //! - [`transition_motion`] and [`text_animation_frame`] move layers during
 //!   transitions and text animations.
+//! - [`ColorLookupTable`] reads `.cube` colour LUTs; a layer applies one after its
+//!   colour adjustments ([`LayerColorLut`]).
 //! - A single video that already fills the canvas is passed through untouched.
 //!
 //! ## Rules for this crate
@@ -26,6 +28,7 @@
 //! See `docs/rendering.md`.
 
 pub mod color_adjustment;
+pub mod color_lookup_table;
 pub mod cpu_compositor;
 pub mod gpu;
 pub mod layers;
@@ -35,6 +38,10 @@ pub mod text;
 pub mod transitions;
 
 pub use color_adjustment::{MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER, adjust_color};
+pub use color_lookup_table::{
+    ColorLookupTable, CubeFileError, LayerColorLut, LookupTableShape, MAXIMUM_1D_SIZE,
+    MAXIMUM_3D_SIZE, MAXIMUM_COLOR_LUTS_PER_LAYER,
+};
 pub use cpu_compositor::{CpuRenderer, composite_layers_to_rgba};
 pub use gpu::GpuRenderer;
 pub use layers::{

@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use crate::clip::{AnimatableProperty, Clip, ClipContent, CropInsets, MediaSegment, TextContent};
-use crate::effect::{BlurStyle, ColorAdjustment, Effect, EffectKind, TrackedBlur};
+use crate::effect::{BlurStyle, ColorAdjustment, ColorLut, Effect, EffectKind, TrackedBlur};
 use crate::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use crate::media_asset::{MediaAsset, MediaKind};
 use crate::project::{Project, ProjectSettings};
@@ -621,6 +621,7 @@ fn validate_effect(
     }
     let problem = match &effect.kind {
         EffectKind::ColorAdjustment(adjustment) => find_color_adjustment_problem(adjustment),
+        EffectKind::ColorLut(color_lut) => find_color_lut_problem(color_lut),
         EffectKind::TrackedBlur(tracked_blur) => {
             if !matches!(clip.content, ClipContent::Media(_)) {
                 Some("a tracked blur only applies to a video or an image".to_string())
@@ -651,6 +652,26 @@ fn find_color_adjustment_problem(adjustment: &ColorAdjustment) -> Option<String>
         ("saturation", adjustment.saturation_multiplier, 0.0, 4.0),
         ("temperature", adjustment.temperature_shift, -1.0, 1.0),
     ])
+}
+
+/// Only the path's form: whether the file exists and can be read is checked by
+/// the engine, never here (validation runs after every change and on load, and
+/// a moved LUT must not make the project impossible to open).
+fn find_color_lut_problem(color_lut: &ColorLut) -> Option<String> {
+    if color_lut.file_path.as_os_str().is_empty() {
+        return Some("it names no .cube file".to_string());
+    }
+    let is_cube_file = color_lut
+        .file_path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(ColorLut::FILE_EXTENSION));
+    if !is_cube_file {
+        return Some(format!(
+            "\"{}\" is not a .cube file: colour LUTs are read in the .cube format",
+            color_lut.file_path.display()
+        ));
+    }
+    first_out_of_range(&[("strength", color_lut.strength_fraction, 0.0, 1.0)])
 }
 
 fn find_tracked_blur_problem(tracked_blur: &TrackedBlur) -> Option<String> {
@@ -979,6 +1000,76 @@ mod tests {
                 .to_string()
                 .contains("not in strictly increasing time order")
         );
+    }
+
+    #[test]
+    fn colour_luts_name_a_cube_file_and_have_a_strength_between_0_and_1() {
+        let mut fixture = fixture();
+        let music_clip_id = fixture
+            .session
+            .execute(AddClip::media(
+                fixture.audio_track_id,
+                fixture.music_id,
+                seconds(0),
+                seconds(5),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let video_clip_id = fixture
+            .session
+            .execute(AddClip::media(
+                fixture.video_track_id,
+                fixture.video_id,
+                seconds(0),
+                seconds(5),
+                seconds(0),
+            ))
+            .unwrap()
+            .first_clip_id()
+            .unwrap();
+        let lut = |path: &str, strength_fraction: f32| {
+            EffectKind::ColorLut(ColorLut {
+                file_path: std::path::PathBuf::from(path),
+                strength_fraction,
+            })
+        };
+        let refusal = |fixture: &mut Fixture, clip_id, kind| {
+            refused_rule(fixture.session.execute(AddEffect::new(clip_id, kind))).to_string()
+        };
+
+        assert!(
+            refusal(&mut fixture, music_clip_id, lut("looks/warm.cube", 1.0))
+                .contains("needs a picture")
+        );
+        assert!(refusal(&mut fixture, video_clip_id, lut("", 1.0)).contains("names no .cube file"));
+        assert!(
+            refusal(&mut fixture, video_clip_id, lut("looks/warm.png", 1.0))
+                .contains("is not a .cube file")
+        );
+        assert!(
+            refusal(&mut fixture, video_clip_id, lut("looks/warm.cube", 1.5))
+                .contains("the strength must be between 0 and 1, but is 1.5")
+        );
+        assert!(
+            refusal(
+                &mut fixture,
+                video_clip_id,
+                lut("looks/warm.cube", f32::NAN)
+            )
+            .contains("strength")
+        );
+
+        // The extension is compared without case, and the file's existence is
+        // the engine's business: this path exists nowhere.
+        fixture
+            .session
+            .execute(AddEffect::new(
+                video_clip_id,
+                lut("looks/missing/Warm.CUBE", 0.5),
+            ))
+            .unwrap();
     }
 
     #[test]

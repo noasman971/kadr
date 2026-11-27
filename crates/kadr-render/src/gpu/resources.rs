@@ -47,6 +47,53 @@ pub(crate) fn create_texture(
     TextureWithView { texture, view }
 }
 
+/// A 3D texture of `extent` (width, height, depth) for a colour LUT, filled
+/// with `texels` (RGBA floats, x fastest, then y, then z).
+pub(crate) fn create_color_lut_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    extent: [u32; 3],
+    texels: &[f32],
+) -> TextureWithView {
+    let [width, height, depth] = extent.map(|side| side.max(1));
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Kadr colour LUT"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: depth,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D3,
+        format: super::pipelines::COLOR_LUT_FORMAT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let bytes_per_texel = 4 * std::mem::size_of::<f32>() as u32;
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &floats_as_bytes(texels),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * bytes_per_texel),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: depth,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    TextureWithView { texture, view }
+}
+
 /// Copies tightly packed rows into a texture.
 fn write_texture_rows(
     queue: &wgpu::Queue,

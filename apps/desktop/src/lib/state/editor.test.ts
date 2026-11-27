@@ -4,6 +4,7 @@ import type { EditRequest, EditResponse, ProjectView } from "../api/types";
 
 const backend = vi.hoisted(() => ({
   applyEdit: vi.fn<(request: EditRequest) => Promise<EditResponse>>(),
+  chooseClipLutFile: vi.fn<(clipId: number, filePath: string) => Promise<EditResponse>>(),
   undo: vi.fn<() => Promise<ProjectView>>(),
   redo: vi.fn<() => Promise<ProjectView>>(),
 }));
@@ -91,6 +92,40 @@ describe("editor changes", () => {
     expect(created).toEqual([[], []]);
     expect(backend.applyEdit.mock.calls).toEqual([[NEW_WORDS], [ALIGN_LEFT]]);
     expect(toasts.show).toHaveBeenCalledWith(expect.objectContaining({ tone: "error" }));
+    expect(editor.view?.revision).toBe(2);
+  });
+
+  it("sends a chosen LUT file only once the edit before it is answered", async () => {
+    const strength = pendingAnswer<EditResponse>();
+    const LUT_STRENGTH: EditRequest = { type: "setClipLut", clipId: 7, changes: { strength: 0.4 } };
+    backend.applyEdit.mockReturnValueOnce(strength.promise);
+    backend.chooseClipLutFile.mockResolvedValueOnce(answer(viewAt(3)));
+
+    const changing = editor.edit(LUT_STRENGTH);
+    const choosing = editor.chooseLutFile(7, "C:/Looks/teal.cube");
+    await settle();
+    expect(backend.chooseClipLutFile).not.toHaveBeenCalled();
+
+    strength.resolve(answer(viewAt(2)));
+    await Promise.all([changing, choosing]);
+    expect(backend.chooseClipLutFile).toHaveBeenCalledWith(7, "C:/Looks/teal.cube");
+    expect(editor.view?.revision).toBe(3);
+  });
+
+  it("explains an unreadable LUT file and still sends the next edit", async () => {
+    backend.chooseClipLutFile.mockRejectedValueOnce({
+      code: "lutUnreadable",
+      details: "line 4: expected three numbers",
+      fileName: "broken.cube",
+    });
+    backend.applyEdit.mockResolvedValueOnce(answer(viewAt(2)));
+
+    await Promise.all([editor.chooseLutFile(7, "C:/Looks/broken.cube"), editor.edit(ALIGN_LEFT)]);
+
+    expect(toasts.show).toHaveBeenCalledWith(
+      expect.objectContaining({ tone: "error", message: expect.stringContaining("broken.cube") }),
+    );
+    expect(backend.applyEdit.mock.calls).toEqual([[ALIGN_LEFT]]);
     expect(editor.view?.revision).toBe(2);
   });
 

@@ -57,7 +57,9 @@ paths. Use it to find the files the user talks about: videos attached to the con
 NOT available to Kadr, only files on the user's computer.
 
 Examples: {} lists media in every allowed folder; {\"name_contains\": \"interview\"}; \
-{\"folder\": \"C:\\\\Users\\\\sam\\\\Videos\\\\Holidays\", \"kind\": \"video\"}.";
+{\"folder\": \"C:\\\\Users\\\\sam\\\\Videos\\\\Holidays\", \"kind\": \"video\"}. \
+{\"kind\": \"color_lut\"} lists colour LUT files (.cube) for add_color_lut instead; they are \
+only listed when asked for.";
 
 /// Parameters of `find_media_files`.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -90,6 +92,8 @@ enum FileKindFilter {
     Audio,
     /// Still pictures: png, jpg, jpeg, webp, bmp…
     Image,
+    /// Colour LUTs (.cube), for add_color_lut. Only listed when asked for.
+    ColorLut,
 }
 
 /// File extensions Kadr recognises, by kind.
@@ -98,6 +102,7 @@ const VIDEO_EXTENSIONS: &[&str] = &[
 ];
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma"];
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"];
+const COLOR_LUT_EXTENSIONS: &[&str] = &["cube"];
 
 /// Sub-folders deeper than this are not searched, to keep the answer quick.
 const MAXIMUM_FOLDER_DEPTH: usize = 8;
@@ -157,7 +162,12 @@ impl FileSearch<'_> {
         let Some(kind) = kind_of_file(path) else {
             return;
         };
-        if self.kind_filter.is_some_and(|wanted| wanted != kind) {
+        let is_wanted = match self.kind_filter {
+            Some(wanted) => wanted == kind,
+            // LUTs are not media: listed only when asked for.
+            None => kind != FileKindFilter::ColorLut,
+        };
+        if !is_wanted {
             return;
         }
         if let Some(name_filter) = &self.name_filter {
@@ -179,6 +189,7 @@ impl FileSearch<'_> {
                     FileKindFilter::Video => "video",
                     FileKindFilter::Audio => "audio",
                     FileKindFilter::Image => "image",
+                    FileKindFilter::ColorLut => "color_lut",
                 },
                 size_in_megabytes: (*size_in_bytes as f64 / BYTES_PER_MEGABYTE * 10.0).round()
                     / 10.0,
@@ -200,6 +211,8 @@ fn kind_of_file(path: &Path) -> Option<FileKindFilter> {
         Some(FileKindFilter::Audio)
     } else if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
         Some(FileKindFilter::Image)
+    } else if COLOR_LUT_EXTENSIONS.contains(&extension.as_str()) {
+        Some(FileKindFilter::ColorLut)
     } else {
         None
     }
@@ -244,7 +257,14 @@ fn find_media_files(
         search.search_folder(folder, 0);
     }
     let views = search.views();
-    let mut message = format!("Found {} media file(s).", views.len());
+    let mut message = if search.kind_filter == Some(FileKindFilter::ColorLut) {
+        format!(
+            "Found {} colour LUT file(s). Apply one to a clip with add_color_lut.",
+            views.len()
+        )
+    } else {
+        format!("Found {} media file(s).", views.len())
+    };
     if search.is_truncated {
         message
             .push_str(" More files exist: narrow the search with name_contains, kind or folder.");
@@ -280,6 +300,7 @@ fn probe_media(
     let file_path = toolbox
         .allowed_folders()
         .check_existing_file(&parameters.file_path)?;
+    refuse_color_lut_file(&file_path)?;
     let description = toolbox.backend().probe(&file_path)?;
     Ok(ToolOutput::message_with_details(
         "The file:",
@@ -318,6 +339,7 @@ fn import_media(
         let file_path = toolbox
             .allowed_folders()
             .check_existing_file(requested_path)?;
+        refuse_color_lut_file(&file_path)?;
         if let Some(media_id) = imported_media_with_path(project, &file_path) {
             already_imported.push(media_id);
             continue;
@@ -363,6 +385,18 @@ fn import_media(
         }
     );
     Ok(ToolOutput::message_with_details(message, &views))
+}
+
+/// A `.cube` file is a colour LUT, which is applied to clips, not imported.
+fn refuse_color_lut_file(file_path: &Path) -> Result<(), ToolError> {
+    if kind_of_file(file_path) == Some(FileKindFilter::ColorLut) {
+        return Err(ToolError::new(format!(
+            "\"{}\" is a colour LUT, not a video, sound or picture: apply it to a clip with \
+             add_color_lut",
+            file_path.display()
+        )));
+    }
+    Ok(())
 }
 
 // ----- list_media -----

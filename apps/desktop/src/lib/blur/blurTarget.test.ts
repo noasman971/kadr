@@ -30,6 +30,7 @@ function clip(id: number, kind: ClipView["kind"], startSeconds: number, duration
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     text: null,
     colorAdjustment: null,
+    colorLut: null,
     trackedBlurs: [],
     effectCount: 0,
   };

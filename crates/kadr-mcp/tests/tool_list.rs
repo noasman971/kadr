@@ -38,6 +38,7 @@ const REQUIRED_TOOLS: &[&str] = &[
     "edit_text",
     "add_transition",
     "add_color_adjustment",
+    "add_color_lut",
     "blur_region",
     "get_blur_status",
     "undo",

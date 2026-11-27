@@ -1,8 +1,10 @@
 //! The GPU programs (pipelines) and the layout of what they read.
 
 /// Size of the layer uniforms, 4 floats each: 4 corners, 3 conversion rows,
-/// opacity, 4 colour adjustments and their count.
-pub(crate) const LAYER_UNIFORM_SIZE_IN_BYTES: u64 = 13 * 16;
+/// opacity, 4 colour adjustments and their count, 3 colour LUT rows.
+pub(crate) const LAYER_UNIFORM_SIZE_IN_BYTES: u64 = 16 * 16;
+/// Format of colour LUT textures: RGBA 32-bit floats, read with `textureLoad`.
+pub(crate) const COLOR_LUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
 /// Size of the output conversion uniforms: 3 rows of 4 floats.
 pub(crate) const OUTPUT_UNIFORM_SIZE_IN_BYTES: u64 = 3 * 16;
 
@@ -125,6 +127,16 @@ impl Pipelines {
                     texture_entry(2, true),
                     texture_entry(3, true),
                     texture_entry(4, true),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D3,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
                 ],
             });
         let layer_pipeline_layout =

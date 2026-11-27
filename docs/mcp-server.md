@@ -89,7 +89,7 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 | Units | Times in **seconds** (timeline time unless the name says otherwise, for example `source_start_in_seconds`). Sizes and positions in **pixels**, origin at the **top-left corner**, x to the right, y down. |
 | One call = one undo step | Each changing call is one transaction labelled `Claude: …` in the history; `undo` reverts a whole call. |
 | Clear errors | Failures are tool results with `isError: true` and a sentence saying what to do, listing the valid choices: *clip 999 does not exist; existing clips: 3, 5, 8*. Unknown or misspelt parameters are reported, not ignored. |
-| Allowed folders only | Paths must be absolute and inside a folder given with `--allowed-folder` (checked after resolving links and `..`) — see [decision 0011](decisions/0011-allowed-folders-as-server-arguments.md). Media paths stored in a project are checked too. |
+| Allowed folders only | Paths must be absolute and inside a folder given with `--allowed-folder` (checked after resolving links and `..`) — see [decision 0011](decisions/0011-allowed-folders-as-server-arguments.md). Media and colour LUT paths stored in a project are checked too (a LUT file that has gone is accepted: the clip is drawn without its look). |
 | No silent overwrite | An existing file is only replaced with `"overwrite": true`. A project file changed by another program since Kadr read it is never overwritten: the call is refused and Claude reopens it. |
 | No deletion | No tool deletes a file. Removing clips, tracks or media only changes the project. |
 | Pictures for Claude | JPEG, longest side at most **1024 pixels**, with the original size and the factor to convert measured positions back to original pixels. |
@@ -113,9 +113,9 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 
 | Tool | What it does |
 |---|---|
-| `find_media_files` | Searches the allowed folders (or one `folder`) for videos, sounds and images; `name_contains`, `kind`, `include_subfolders`, `maximum_results`. Says which files are already imported. |
+| `find_media_files` | Searches the allowed folders (or one `folder`) for videos, sounds and images; `name_contains`, `kind`, `include_subfolders`, `maximum_results`. Says which files are already imported. `kind` `color_lut` lists colour LUT files (`.cube`) instead; they are never listed otherwise. |
 | `probe_media` | Kind, duration, picture size, frame rate, sound, without importing. |
-| `import_media` | Imports `file_paths` in one undo step; a file already imported returns its existing `media_id`. |
+| `import_media` | Imports `file_paths` in one undo step; a file already imported returns its existing `media_id`. A `.cube` file is refused with a pointer to `add_color_lut`. |
 | `list_media` | The project's media and the clips using each. |
 
 ### Timeline
@@ -148,7 +148,8 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 | `add_transition` | `fade_in`, `fade_out` or `dip_to_black` (this clip out, the next clip of the track in), as opacity keyframes — and volume keyframes with `include_sound`. A fade out ends one frame early so its last frame is fully faded. Cross-dissolves come with phase 8. |
 | `remove_transitions` | Removes a clip's opacity and volume keyframes. |
 | `add_color_adjustment` | Exposure (stops), contrast, saturation, temperature; with `effect_id`, changes an existing one. |
-| `remove_effect` | Removes one effect. |
+| `add_color_lut` | The look of a `.cube` file (`lut_file_path`), at a `strength` from 0 to 1, applied after the colour adjustments. The file must be inside the allowed folders and named `.cube`; it is read before the project changes, so a wrong file is reported with its line number. One per clip: with `effect_id`, changes the file or the strength. Answers the LUT's title and size. |
+| `remove_effect` | Removes one effect (colour adjustment, colour LUT or blur). |
 
 ### Seeing the video
 
@@ -255,6 +256,13 @@ export. Changing the shape silently would export something Claude never looked a
 > `set_transform` (fill_canvas, centre on the people) → `get_frame` to check →
 > `export` (tiktok_reels_shorts) → `get_export_status` until finished.
 
+> **User:** Give the interview the teal and orange look from my LUTs folder, not too
+> strong.
+>
+> **Claude:** `find_media_files` (kind "color_lut", name_contains "teal") →
+> `get_timeline` → `add_color_lut` (clip_id, lut_file_path, strength 0.7) →
+> `get_frame` **without** clip_id to see the graded picture.
+
 > **User:** Undo that last change.
 >
 > **Claude:** `undo` — the whole previous call is reverted.
@@ -283,6 +291,12 @@ client over an in-memory pipe), as Claude Desktop would:
 - `blur.rs`: a blur on a synthetic scene with an obstacle (known true position):
   the analysis, the range to check, a correction with another style, undo, mistakes
   refused before anything runs, cancellation;
+- `color_luts.rs`: LUT files found only when asked for, applied, seen on the
+  timeline, changed, a second one refused, removed and undone; wrong files refused
+  before the project changes (outside the folders, relative, not `.cube`, a broken
+  line, a strength above 1, another effect's id); a LUT path pointed outside the
+  folders by another program refused by `get_frame` and `export`, and a missing one
+  drawn without its look;
 - `stdio_binary.rs`: the real `kadr-mcp` program as a child process — the test
   fails if anything but the protocol reaches stdout.
 

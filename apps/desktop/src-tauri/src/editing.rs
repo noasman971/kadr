@@ -31,7 +31,9 @@ pub use arrangement::TrimEdge;
 pub use blur_settings::{
     BlurChanges, BlurSettings, BlurShapeChoice, BlurStyleChoice, tracked_blur_of,
 };
-pub use clip_settings::{ClipValue, ColorChanges, CropChanges, TextAlignmentChoice, TextChanges};
+pub use clip_settings::{
+    ClipValue, ColorChanges, CropChanges, LutChanges, TextAlignmentChoice, TextChanges,
+};
 pub use silences::TickRange;
 pub use titles::{TITLE_DURATION, TITLES_TRACK_NAME, TitleStyle};
 
@@ -164,8 +166,22 @@ pub enum EditRequest {
         /// The settings to change.
         changes: ColorChanges,
     },
-    /// Removes a clip's colour adjustment.
+    /// Removes a clip's colour adjustment and its colour LUT.
     ResetClipColor {
+        /// The clip.
+        clip_id: ClipId,
+    },
+    /// Changes a clip's colour LUT: the settings given change, the others keep the
+    /// value they have in the project when the request is applied. The front end
+    /// only sends the strength: a file is chosen with `choose_clip_lut_file`.
+    SetClipLut {
+        /// The clip.
+        clip_id: ClipId,
+        /// The settings to change.
+        changes: LutChanges,
+    },
+    /// Removes a clip's colour LUT.
+    RemoveClipLut {
         /// The clip.
         clip_id: ClipId,
     },
@@ -352,6 +368,10 @@ pub fn apply_edit_request(
         EditRequest::ResetClipColor { clip_id } => {
             clip_settings::reset_clip_color(session, *clip_id)
         }
+        EditRequest::SetClipLut { clip_id, changes } => {
+            clip_settings::set_clip_lut(session, *clip_id, changes)
+        }
+        EditRequest::RemoveClipLut { clip_id } => clip_settings::remove_clip_lut(session, *clip_id),
         EditRequest::SetClipText { clip_id, changes } => {
             clip_settings::set_clip_text(session, *clip_id, changes)
         }
@@ -1316,6 +1336,108 @@ mod tests {
         assert_eq!(session.next_undo_label(), Some("resetColor"));
     }
 
+    fn color_lut_of(session: &EditSession, clip_id: ClipId) -> Option<kadr_core::effect::ColorLut> {
+        clip_of(session, clip_id)
+            .effects
+            .iter()
+            .find_map(|effect| match &effect.kind {
+                kadr_core::effect::EffectKind::ColorLut(color_lut) => Some(color_lut.clone()),
+                _ => None,
+            })
+    }
+
+    fn choose_lut(clip_id: ClipId, file_path: &str) -> EditRequest {
+        EditRequest::SetClipLut {
+            clip_id,
+            changes: LutChanges {
+                file_path: Some(file_path.into()),
+                strength: None,
+            },
+        }
+    }
+
+    fn lut_strength(clip_id: ClipId, strength: f32) -> EditRequest {
+        EditRequest::SetClipLut {
+            clip_id,
+            changes: LutChanges {
+                strength: Some(strength),
+                ..LutChanges::default()
+            },
+        }
+    }
+
+    #[test]
+    fn the_lut_is_chosen_its_strength_changed_then_removed() {
+        let (mut session, clip_ids) = arranged_session();
+        let clip_id = clip_ids[0];
+
+        apply(&mut session, choose_lut(clip_id, "C:/looks/film.cube")).unwrap();
+        assert_eq!(session.next_undo_label(), Some("chooseLut"));
+        let lut = color_lut_of(&session, clip_id).unwrap();
+        assert_eq!(
+            lut.file_path,
+            std::path::PathBuf::from("C:/looks/film.cube")
+        );
+        assert_eq!(lut.strength_fraction, 1.0);
+
+        apply(&mut session, lut_strength(clip_id, 0.5)).unwrap();
+        assert_eq!(session.next_undo_label(), Some("changeLutStrength"));
+        apply(&mut session, choose_lut(clip_id, "C:/looks/teal.cube")).unwrap();
+        let lut = color_lut_of(&session, clip_id).unwrap();
+        assert_eq!(
+            (lut.file_path, lut.strength_fraction),
+            ("C:/looks/teal.cube".into(), 0.5),
+            "another file keeps the strength"
+        );
+        assert_eq!(clip_of(&session, clip_id).effects.len(), 1);
+        assert!(apply(&mut session, lut_strength(clip_id, 1.5)).is_err());
+
+        apply(&mut session, EditRequest::RemoveClipLut { clip_id }).unwrap();
+        assert_eq!(session.next_undo_label(), Some("removeLut"));
+        assert_eq!(color_lut_of(&session, clip_id), None);
+        // A strength for a LUT removed meanwhile (by Claude) changes nothing.
+        apply(&mut session, lut_strength(clip_id, 0.3)).unwrap();
+        assert_eq!(color_lut_of(&session, clip_id), None);
+        assert_eq!(session.next_undo_label(), Some("removeLut"));
+    }
+
+    #[test]
+    fn resetting_the_colour_also_removes_the_lut() {
+        let (mut session, clip_ids) = arranged_session();
+        let clip_id = clip_ids[0];
+        apply(&mut session, choose_lut(clip_id, "C:/looks/film.cube")).unwrap();
+        apply(
+            &mut session,
+            EditRequest::SetClipColor {
+                clip_id,
+                changes: ColorChanges {
+                    saturation: Some(0.5),
+                    ..ColorChanges::default()
+                },
+            },
+        )
+        .unwrap();
+        apply(&mut session, EditRequest::ResetClipColor { clip_id }).unwrap();
+        assert!(clip_of(&session, clip_id).effects.is_empty());
+        session.undo().unwrap();
+        assert_eq!(clip_of(&session, clip_id).effects.len(), 2, "one undo step");
+    }
+
+    #[test]
+    fn quick_lut_changes_each_keep_the_other() {
+        let (mut session, clip_ids) = arranged_session();
+        let clip_id = clip_ids[0];
+        apply(&mut session, choose_lut(clip_id, "C:/looks/film.cube")).unwrap();
+        // A strength, then another file chosen before the first answer arrived.
+        apply(&mut session, lut_strength(clip_id, 0.4)).unwrap();
+        apply(&mut session, choose_lut(clip_id, "C:/looks/teal.cube")).unwrap();
+        let lut = color_lut_of(&session, clip_id).unwrap();
+        assert_eq!(
+            (lut.file_path, lut.strength_fraction),
+            ("C:/looks/teal.cube".into(), 0.4)
+        );
+    }
+
     #[test]
     fn titles_go_on_titles_tracks_and_their_text_can_change() {
         let (mut session, _) = arranged_session();
@@ -1608,6 +1730,8 @@ mod tests {
             r#"{ "type": "setClipColor", "clipId": 2, "changes": { "exposure": 0.3, "contrast": 1, "saturation": 1.2, "temperature": -0.1 } }"#,
             r#"{ "type": "setClipColor", "clipId": 2, "changes": { "saturation": 1.2 } }"#,
             r#"{ "type": "resetClipColor", "clipId": 2 }"#,
+            r#"{ "type": "setClipLut", "clipId": 2, "changes": { "strength": 0.5 } }"#,
+            r#"{ "type": "removeClipLut", "clipId": 2 }"#,
             r##"{ "type": "setClipText", "clipId": 2, "changes": { "text": "Hi", "fontFamily": "Inter", "fontSize": 64, "color": "#ffffffff", "alignment": "center" } }"##,
             r#"{ "type": "setClipText", "clipId": 2, "changes": { "alignment": "right" } }"#,
             r#"{ "type": "addTitle", "startTicks": 0, "text": "Title", "style": "bigWord" }"#,
@@ -1648,6 +1772,9 @@ mod tests {
             r#"{ "type": "setClipText", "clipId": 2, "changes": { "alignement": "left" } }"#,
             r#"{ "type": "setClipColor", "clipId": 2, "changes": { "exposition": 1 } }"#,
             r#"{ "type": "setClipCrop", "clipId": 2, "changes": { "leftFraction": 0.1 } }"#,
+            r#"{ "type": "setClipLut", "clipId": 2, "changes": { "intensity": 0.5 } }"#,
+            // A file is only chosen through choose_clip_lut_file, which reads it first.
+            r#"{ "type": "setClipLut", "clipId": 2, "changes": { "filePath": "C:/x.cube" } }"#,
         ] {
             assert!(
                 serde_json::from_str::<EditRequest>(json).is_err(),

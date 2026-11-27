@@ -8,6 +8,8 @@ use kadr_core::media_asset::PictureSize;
 use kadr_core::time::TimeSpan;
 use kadr_media::VideoFrame;
 
+use crate::color_lookup_table::LayerColorLut;
+
 /// The picture being drawn into.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanvasDescription {
@@ -160,6 +162,17 @@ pub struct VisualLayer<'picture> {
     /// Colour adjustments applied in order (at most
     /// [`MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER`](crate::color_adjustment::MAXIMUM_COLOR_ADJUSTMENTS_PER_LAYER)).
     pub color_adjustments: &'picture [ColorAdjustment],
+    /// A colour LUT applied after the colour adjustments.
+    pub color_lut: Option<LayerColorLut<'picture>>,
+}
+
+impl VisualLayer<'_> {
+    /// Whether drawing the layer changes its colours (colour adjustments, or a
+    /// LUT with some strength). A layer that changes none may be copied as it is:
+    /// every shortcut that copies pictures must ask this.
+    pub fn changes_colors(&self) -> bool {
+        !self.color_adjustments.is_empty() || self.color_lut.is_some_and(|lut| lut.is_visible())
+    }
 }
 
 /// The mapping between canvas pixels and source pixels for one layer.

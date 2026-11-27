@@ -1,9 +1,9 @@
-//! The inspector's changes to one clip: picture, sound, speed, colour and text
-//! (docs/ux.md, "Adjust a clip"). Each function is one undo step.
+//! The inspector's changes to one clip: picture, sound, speed, colour, colour LUT
+//! and text (docs/ux.md, "Adjust a clip"). Each function is one undo step.
 //!
 //! A change names only the settings it changes ([`CropChanges`], [`ColorChanges`],
-//! [`TextChanges`]); the others are read from the project as it is when the change
-//! is applied. The interface's copy of the project can be behind (an earlier change
+//! [`LutChanges`], [`TextChanges`]); the others are read from the project as it is
+//! when the change is applied. The interface's copy of the project can be behind (an earlier change
 //! not answered yet, or a change made by Claude): a request carrying every setting
 //! from that copy would put old values back.
 
@@ -16,10 +16,12 @@ use kadr_core::commands::{
     AddEffect, RemoveEffect, ReplaceEffect, SetClipCrop, SetClipPropertyValue, SetClipSpeed,
     SetClipText,
 };
-use kadr_core::effect::{ColorAdjustment, EffectKind};
+use std::path::PathBuf;
+
+use kadr_core::effect::{ColorAdjustment, ColorLut, EffectKind};
 use kadr_core::error::EditError;
 use kadr_core::history::EditSession;
-use kadr_core::ids::ClipId;
+use kadr_core::ids::{ClipId, EffectId};
 use kadr_core::project::Project;
 use serde::Deserialize;
 
@@ -120,6 +122,21 @@ impl ColorChanges {
             temperature_shift: self.temperature.unwrap_or(adjustment.temperature_shift),
         }
     }
+}
+
+/// The colour LUT settings to change. A setting left out keeps its current value.
+///
+/// The file never comes from the front end: `choose_clip_lut_file` reads it first,
+/// then fills `file_path`. A request naming `filePath` is refused like any unknown
+/// name.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LutChanges {
+    /// The `.cube` file, already read by the back end.
+    #[serde(skip_deserializing)]
+    pub file_path: Option<PathBuf>,
+    /// From 0 (no look) to 1 (the full look).
+    pub strength: Option<f32>,
 }
 
 /// The words and style settings of a title to change. A setting left out keeps
@@ -300,7 +317,8 @@ pub fn set_clip_color(
     })
 }
 
-/// Removes the clip's colour adjustment ("off until first touched").
+/// Removes the clip's colour adjustment and its colour LUT: back to the picture
+/// as it was ("off until first touched").
 ///
 /// # Errors
 ///
@@ -309,8 +327,77 @@ pub fn reset_clip_color(
     session: &mut EditSession,
     clip_id: ClipId,
 ) -> Result<EditOutcome, EditError> {
-    let existing = color_adjustment_of(session.project(), clip_id)?;
+    let adjustment = color_adjustment_of(session.project(), clip_id)?;
+    let lut = color_lut_of(session.project(), clip_id)?;
     session.transaction("resetColor", |transaction| {
+        let effect_ids = adjustment
+            .map(|(effect_id, _)| effect_id)
+            .into_iter()
+            .chain(lut.map(|(effect_id, _)| effect_id));
+        for effect_id in effect_ids {
+            transaction.execute(RemoveEffect::new(clip_id, effect_id))?;
+        }
+        Ok(EditOutcome::default())
+    })
+}
+
+/// Changes the clip's colour LUT: the settings given change, the others stay as
+/// they are. A file given adds a LUT (at full strength unless one is given) to a
+/// clip that has none; a strength alone changes nothing on such a clip.
+///
+/// # Errors
+///
+/// When the clip does not exist, or the change is refused (a strength outside
+/// 0–1, a clip without pictures).
+pub fn set_clip_lut(
+    session: &mut EditSession,
+    clip_id: ClipId,
+    changes: &LutChanges,
+) -> Result<EditOutcome, EditError> {
+    let label = if changes.file_path.is_some() {
+        "chooseLut"
+    } else {
+        "changeLutStrength"
+    };
+    session.transaction(label, |transaction| {
+        let existing = color_lut_of(transaction.project(), clip_id)?;
+        match (existing, &changes.file_path) {
+            (Some((effect_id, current)), _) => {
+                let changed = ColorLut {
+                    file_path: changes.file_path.clone().unwrap_or(current.file_path),
+                    strength_fraction: changes.strength.unwrap_or(current.strength_fraction),
+                };
+                transaction.execute(ReplaceEffect::new(
+                    clip_id,
+                    effect_id,
+                    EffectKind::ColorLut(changed),
+                ))?;
+            }
+            (None, Some(file_path)) => {
+                let added = ColorLut {
+                    file_path: file_path.clone(),
+                    strength_fraction: changes.strength.unwrap_or(1.0),
+                };
+                transaction.execute(AddEffect::new(clip_id, EffectKind::ColorLut(added)))?;
+            }
+            // The LUT was removed meanwhile (by Claude, or an undo): nothing to change.
+            (None, None) => {}
+        }
+        Ok(EditOutcome::default())
+    })
+}
+
+/// Removes the clip's colour LUT.
+///
+/// # Errors
+///
+/// When the clip does not exist.
+pub fn remove_clip_lut(
+    session: &mut EditSession,
+    clip_id: ClipId,
+) -> Result<EditOutcome, EditError> {
+    let existing = color_lut_of(session.project(), clip_id)?;
+    session.transaction("removeLut", |transaction| {
         if let Some((effect_id, _)) = existing {
             transaction.execute(RemoveEffect::new(clip_id, effect_id))?;
         }
@@ -336,11 +423,23 @@ pub fn set_clip_text(
     })
 }
 
+/// The clip's first colour LUT effect and its settings, if it has one.
+fn color_lut_of(
+    project: &Project,
+    clip_id: ClipId,
+) -> Result<Option<(EffectId, ColorLut)>, EditError> {
+    let (_, clip) = find_clip(project, clip_id)?;
+    Ok(clip.effects.iter().find_map(|effect| match &effect.kind {
+        EffectKind::ColorLut(color_lut) => Some((effect.id, color_lut.clone())),
+        EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+    }))
+}
+
 /// The clip's first colour adjustment effect and its settings, if it has one.
 fn color_adjustment_of(
     project: &Project,
     clip_id: ClipId,
-) -> Result<Option<(kadr_core::ids::EffectId, ColorAdjustment)>, EditError> {
+) -> Result<Option<(EffectId, ColorAdjustment)>, EditError> {
     let (_, clip) = find_clip(project, clip_id)?;
     Ok(clip.effects.iter().find_map(|effect| match effect.kind {
         EffectKind::ColorAdjustment(adjustment) => Some((effect.id, adjustment)),

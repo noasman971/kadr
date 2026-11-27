@@ -2,7 +2,7 @@
 
 The Kadr data model: exact time, project, timeline, tracks, clips, effects, keyframes,
 transitions and text animations, the undoable commands that change them, the
-validation rules, and the versioned `.kadr` file format (version 2).
+validation rules, and the versioned `.kadr` file format (version 3).
 
 - **Depends on:** `serde`, `serde_json`, `thiserror`. Nothing inside Kadr.
 - **Used by:** every other crate.

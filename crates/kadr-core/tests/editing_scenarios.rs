@@ -18,7 +18,7 @@ use kadr_core::commands::{
     SetTextAnimation, SplitClip, TrackPosition, TrimClip,
 };
 use kadr_core::effect::{
-    BlurShape, BlurStyle, ColorAdjustment, EffectKind, PixelRegion, RegionSample,
+    BlurShape, BlurStyle, ColorAdjustment, ColorLut, EffectKind, PixelRegion, RegionSample,
     RegionSampleOrigin, TrackedBlur, TrackingConfidence,
 };
 use kadr_core::history::EditSession;
@@ -71,8 +71,26 @@ fn background_music() -> MediaAssetDescription {
 
 /// Builds a short vertical video the way a user (or Claude) would:
 /// two cuts of an interview, a speed-up, a blurred face, a fading title and music,
-/// then (with phase 8) transitions and a text animation.
+/// then (with phase 8) transitions, a text animation and a colour LUT.
 fn edit_a_vertical_interview(session: &mut EditSession) {
+    edit_a_vertical_interview_before_phase_8c(session);
+    // The second part of the interview gets a teal-and-orange look, at 80 %. The
+    // path is written with forward slashes so the snapshot is the same on every
+    // system; the rules do not look at the disk.
+    let last_interview_clip_id = session.project().timeline().tracks()[0].clips()[1].id;
+    session
+        .execute(AddEffect::new(
+            last_interview_clip_id,
+            EffectKind::ColorLut(ColorLut {
+                file_path: PathBuf::from("looks/teal_orange.cube"),
+                strength_fraction: 0.8,
+            }),
+        ))
+        .unwrap();
+}
+
+/// The same edit as it was possible before phase 8c (format 2).
+fn edit_a_vertical_interview_before_phase_8c(session: &mut EditSession) {
     edit_a_vertical_interview_before_phase_8(session);
     let timeline = session.project().timeline();
     let interview_clip_ids: Vec<ClipId> = timeline.tracks()[0]
@@ -327,8 +345,8 @@ fn a_full_edit_can_be_undone_and_redone_step_by_step() {
     assert_eq!(session.project(), &empty_project);
     // 2 imports, 3 tracks, 1 clip, 2 splits, 1 removal, 1 move, 1 speed change,
     // 3 effect changes, 1 grouped title (with its 2 keyframes), 1 music clip, 1 volume,
-    // 3 transitions, 1 text animation.
-    assert_eq!(undone_step_count, 21);
+    // 3 transitions, 1 text animation, 1 colour LUT.
+    assert_eq!(undone_step_count, 22);
 
     while session.can_redo() {
         session.redo().unwrap();
@@ -391,6 +409,21 @@ fn a_format_1_file_is_upgraded_to_the_same_project() {
     assert!(format_1_file.contains("\"format_version\": 1"));
     assert_eq!(
         &load_project_from_json(format_1_file).unwrap(),
+        session.project()
+    );
+}
+
+#[test]
+fn a_format_2_file_is_upgraded_to_the_same_project() {
+    let mut session =
+        EditSession::new(Project::new(ProjectSettings::vertical_1080x1920())).unwrap();
+    edit_a_vertical_interview_before_phase_8c(&mut session);
+
+    // The snapshot of this edit saved before phase 8c changed the format.
+    let format_2_file = include_str!("fixtures/vertical_interview_format_2.kadr");
+    assert!(format_2_file.contains("\"format_version\": 2"));
+    assert_eq!(
+        &load_project_from_json(format_2_file).unwrap(),
         session.project()
     );
 }

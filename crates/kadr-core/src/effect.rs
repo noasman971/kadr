@@ -1,7 +1,14 @@
-//! Effects applied to a clip: colour adjustment and tracked blur.
+//! Effects applied to a clip: colour adjustment, colour LUT and tracked blur.
 //!
 //! Effects only *describe* what to do. Rendering them is the job of
-//! `kadr-render`, and computing the tracked regions is the job of `kadr-vision`.
+//! `kadr-render`, reading LUT files the job of `kadr-engine`, and computing the
+//! tracked regions the job of `kadr-vision`.
+//!
+//! Whatever the order of a clip's effects list, they apply in a fixed order:
+//! tracked blurs hide their areas on the source picture, then the colour
+//! adjustments apply (in list order), then the colour LUT.
+
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +33,8 @@ pub struct Effect {
 pub enum EffectKind {
     /// Exposure, contrast, saturation and temperature.
     ColorAdjustment(ColorAdjustment),
+    /// A look from a colour lookup table file (`.cube`), after the colour adjustments.
+    ColorLut(ColorLut),
     /// Hides a moving region (usually a face) by following it through the clip.
     TrackedBlur(TrackedBlur),
 }
@@ -35,6 +44,7 @@ impl EffectKind {
     pub fn display_name(&self) -> &'static str {
         match self {
             EffectKind::ColorAdjustment(_) => "colour adjustment",
+            EffectKind::ColorLut(_) => "colour LUT",
             EffectKind::TrackedBlur(_) => "tracked blur",
         }
     }
@@ -42,7 +52,9 @@ impl EffectKind {
     /// Whether the effect needs pictures (it cannot apply to sound or text alone).
     pub fn needs_picture(&self) -> bool {
         match self {
-            EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => true,
+            EffectKind::ColorAdjustment(_)
+            | EffectKind::ColorLut(_)
+            | EffectKind::TrackedBlur(_) => true,
         }
     }
 }
@@ -69,6 +81,39 @@ impl ColorAdjustment {
         saturation_multiplier: 1.0,
         temperature_shift: 0.0,
     };
+}
+
+/// A look from a colour lookup table (LUT) in the `.cube` format, the format
+/// DaVinci Resolve, Premiere and most grading tools export.
+///
+/// Only the path is stored, never the table: a 33 × 33 × 33 table holds 35 937
+/// colours, and every change of the project is kept in the undo history and
+/// saved. Reading and checking the file is the engine's job (a moved file must
+/// not make the project impossible to open); the rules only check that the
+/// path names a `.cube` file and that the strength is between 0 and 1.
+///
+/// It applies after the clip's colour adjustments, whatever the order of the
+/// effects list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColorLut {
+    /// Where the `.cube` file is, as a full path.
+    pub file_path: PathBuf,
+    /// How much of the look is applied: 0 keeps the picture as the colour
+    /// adjustments leave it, 1 applies the LUT fully.
+    pub strength_fraction: f32,
+}
+
+impl ColorLut {
+    /// The extension of LUT files, without the dot.
+    pub const FILE_EXTENSION: &'static str = "cube";
+
+    /// The LUT of `file_path`, fully applied.
+    pub fn at_full_strength(file_path: impl Into<PathBuf>) -> Self {
+        Self {
+            file_path: file_path.into(),
+            strength_fraction: 1.0,
+        }
+    }
 }
 
 /// Hides a region that moves, such as a face, by following it frame after frame.

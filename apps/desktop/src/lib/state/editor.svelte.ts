@@ -9,6 +9,7 @@ import { backend } from "../api/backend";
 import type {
   EditNotice,
   EditRequest,
+  EditResponse,
   ImportFailure,
   ProjectFormatChoice,
   ProjectView,
@@ -99,9 +100,22 @@ class EditorState {
 
   /** Applies one edit (one undo step); returns the created clips. */
   async edit(request: EditRequest): Promise<number[]> {
+    return this.applyChange(() => backend.applyEdit(request));
+  }
+
+  /**
+   * Gives a clip the look of a `.cube` file (one undo step). The back end reads
+   * the file first; an unreadable one is explained and changes nothing.
+   */
+  async chooseLutFile(clipId: number, filePath: string): Promise<void> {
+    await this.applyChange(() => backend.chooseClipLutFile(clipId, filePath));
+  }
+
+  /** Sends a change once the ones before it are answered, and shows its result. */
+  private applyChange(send: () => Promise<EditResponse>): Promise<number[]> {
     return this.inOrder(async () => {
       try {
-        const response = await backend.applyEdit(request);
+        const response = await send();
         this.acceptView(response.view);
         this.announceNotices(response.outcome.notices);
         return response.outcome.createdClipIds;
