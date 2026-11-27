@@ -17,7 +17,7 @@ use crate::effect::Effect;
 use crate::error::EditError;
 use crate::ids::{ClipId, EffectId, IdAllocator, MediaAssetId};
 use crate::text_animation::{TextAnimation, TextAnimationStyle};
-use crate::time::{TimeSpan, Timestamp};
+use crate::time::{TimeRange, TimeSpan, Timestamp};
 use crate::transition::{EdgePhase, Transition, TransitionStyle, active_edge_style};
 
 /// Error raised when a playback speed is out of range.
@@ -752,6 +752,86 @@ impl Clip {
         }
         Ok(trimmed_clip)
     }
+
+    /// The parts of the clip left once `removed_parts` (timeline times) are cut
+    /// out, placed end to end from the clip's start.
+    ///
+    /// The parts may come in any order and overlap. The first part kept keeps
+    /// the clip's identifier and its entry transition, the last one its exit
+    /// transition; the others get new identifiers (and new effect identifiers)
+    /// from `id_allocator`. Keyframes stay on the moments of the content they
+    /// were on.
+    ///
+    /// # Errors
+    ///
+    /// Fails when no part is given, a part is not inside the clip, or nothing
+    /// would be left.
+    pub fn without_parts(
+        &self,
+        removed_parts: &[TimeRange],
+        id_allocator: &mut IdAllocator,
+    ) -> Result<Vec<Clip>, EditError> {
+        let kept_ranges = self.ranges_kept_without(removed_parts)?;
+        let mut pieces = Vec::with_capacity(kept_ranges.len());
+        let mut remaining = self.clone();
+        for (index, kept_range) in kept_ranges.iter().enumerate() {
+            if kept_range.start() > remaining.timeline_start {
+                remaining = remaining.with_start_moved_to(kept_range.start())?;
+            }
+            let is_last = index + 1 == kept_ranges.len();
+            if is_last {
+                if kept_range.end() < remaining.timeline_end() {
+                    remaining = remaining.with_end_moved_to(kept_range.end())?;
+                }
+                pieces.push(remaining);
+                break;
+            }
+            let (piece, rest) = remaining.split_at(kept_range.end(), id_allocator)?;
+            pieces.push(piece);
+            remaining = rest;
+        }
+        let mut next_start = self.timeline_start;
+        for piece in &mut pieces {
+            piece.timeline_start = next_start;
+            next_start = next_start + piece.timeline_duration();
+        }
+        Ok(pieces)
+    }
+
+    /// The parts of the clip (timeline times) between `removed_parts`, in order.
+    fn ranges_kept_without(
+        &self,
+        removed_parts: &[TimeRange],
+    ) -> Result<Vec<TimeRange>, EditError> {
+        if removed_parts.is_empty() {
+            return Err(EditError::NoPartToRemove { clip_id: self.id });
+        }
+        let (clip_start, clip_end) = (self.timeline_start, self.timeline_end());
+        if let Some(outside_part) = removed_parts
+            .iter()
+            .find(|part| part.start() < clip_start || part.end() > clip_end)
+        {
+            return Err(EditError::PartOutsideClip {
+                clip_id: self.id,
+                part: *outside_part,
+                clip_start,
+                clip_end,
+            });
+        }
+        let mut sorted_parts = removed_parts.to_vec();
+        sorted_parts.sort_by_key(|part| part.start());
+        let mut kept_ranges = Vec::new();
+        let mut cursor = clip_start;
+        for part in sorted_parts {
+            kept_ranges.extend(TimeRange::new(cursor, part.start()));
+            cursor = cursor.max(part.end());
+        }
+        kept_ranges.extend(TimeRange::new(cursor, clip_end));
+        if kept_ranges.is_empty() {
+            return Err(EditError::RemovalWouldEmptyClip { clip_id: self.id });
+        }
+        Ok(kept_ranges)
+    }
 }
 
 #[cfg(test)]
@@ -1022,6 +1102,152 @@ mod tests {
         );
         assert!(clip.with_end_moved_to(seconds(10)).is_err());
         assert!(clip.with_start_moved_to(seconds(14)).is_err());
+    }
+
+    fn range(start_second: u64, end_second: u64) -> TimeRange {
+        TimeRange::new(seconds(start_second), seconds(end_second)).unwrap()
+    }
+
+    /// (timeline start, timeline end, source start, source end) of each piece, in seconds.
+    fn piece_spans(pieces: &[Clip]) -> Vec<(f64, f64, f64, f64)> {
+        pieces
+            .iter()
+            .map(|piece| {
+                let segment = segment_of(piece);
+                (
+                    piece.timeline_start.as_seconds(),
+                    piece.timeline_end().as_seconds(),
+                    segment.source_start.as_seconds(),
+                    segment.source_end.as_seconds(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn removing_parts_leaves_the_rest_end_to_end() {
+        let mut id_allocator = IdAllocator::default();
+        let clip = media_clip(
+            id_allocator.allocate_raw_id(),
+            MediaAssetId::from_raw(9),
+            0,
+            20,
+            10,
+        );
+
+        let pieces = clip
+            .without_parts(&[range(20, 22), range(13, 15)], &mut id_allocator)
+            .unwrap();
+
+        assert_eq!(
+            piece_spans(&pieces),
+            vec![
+                (10.0, 13.0, 0.0, 3.0),
+                (13.0, 18.0, 5.0, 10.0),
+                (18.0, 26.0, 12.0, 20.0)
+            ]
+        );
+        assert_eq!(pieces[0].id, clip.id);
+        assert!(pieces[1..].iter().all(|piece| piece.id != clip.id));
+        assert_ne!(pieces[1].id, pieces[2].id);
+    }
+
+    #[test]
+    fn removing_parts_at_the_edges_keeps_the_transitions_and_keyframes_in_place() {
+        use crate::transition::{Transition, TransitionStyle};
+        let mut id_allocator = IdAllocator::default();
+        let mut clip = media_clip(
+            id_allocator.allocate_raw_id(),
+            MediaAssetId::from_raw(9),
+            0,
+            20,
+            10,
+        );
+        let fade = Transition {
+            style: TransitionStyle::Fade,
+            duration: TimeSpan::from_whole_seconds(1),
+        };
+        clip.entry_transition = Some(fade);
+        clip.exit_transition = Some(fade);
+        // Opacity rises from 0 at timeline 10 s to 1 at timeline 15 s, which is
+        // 3 s into what is left once 10–12 s is removed.
+        for (offset_in_seconds, value) in [(0, 0.0), (5, 1.0)] {
+            clip.opacity.set_keyframe(Keyframe {
+                time_offset: TimeSpan::from_whole_seconds(offset_in_seconds),
+                value,
+                interpolation_to_next: Interpolation::Linear,
+            });
+        }
+
+        let pieces = clip
+            .without_parts(
+                &[range(10, 12), range(20, 21), range(28, 30)],
+                &mut id_allocator,
+            )
+            .unwrap();
+
+        assert_eq!(
+            piece_spans(&pieces),
+            vec![(10.0, 18.0, 2.0, 10.0), (18.0, 25.0, 11.0, 18.0)]
+        );
+        assert_eq!(
+            (pieces[0].entry_transition, pieces[0].exit_transition),
+            (Some(fade), None)
+        );
+        assert_eq!(
+            (pieces[1].entry_transition, pieces[1].exit_transition),
+            (None, Some(fade))
+        );
+        let opacity_at = |offset_in_seconds| {
+            pieces[0]
+                .opacity
+                .value_at(TimeSpan::from_whole_seconds(offset_in_seconds))
+        };
+        assert!((opacity_at(0) - 0.4).abs() < 1e-6, "{}", opacity_at(0));
+        assert!((opacity_at(3) - 1.0).abs() < 1e-6, "{}", opacity_at(3));
+    }
+
+    #[test]
+    fn overlapping_parts_are_removed_once() {
+        let mut id_allocator = IdAllocator::default();
+        let clip = text_clip(id_allocator.allocate_raw_id(), 10, 0);
+
+        let pieces = clip
+            .without_parts(&[range(4, 7), range(2, 5)], &mut id_allocator)
+            .unwrap();
+
+        let spans: Vec<(f64, f64)> = pieces
+            .iter()
+            .map(|piece| {
+                (
+                    piece.timeline_start.as_seconds(),
+                    piece.timeline_end().as_seconds(),
+                )
+            })
+            .collect();
+        assert_eq!(spans, vec![(0.0, 2.0), (2.0, 5.0)]);
+    }
+
+    #[test]
+    fn parts_to_remove_must_be_given_inside_the_clip_and_leave_something() {
+        let mut id_allocator = IdAllocator::default();
+        let clip = text_clip(1, 10, 5);
+        assert!(matches!(
+            clip.without_parts(&[], &mut id_allocator),
+            Err(EditError::NoPartToRemove { .. })
+        ));
+        assert!(matches!(
+            clip.without_parts(&[range(4, 6)], &mut id_allocator),
+            Err(EditError::PartOutsideClip { .. })
+        ));
+        assert!(matches!(
+            clip.without_parts(&[range(14, 16)], &mut id_allocator),
+            Err(EditError::PartOutsideClip { .. })
+        ));
+        assert!(matches!(
+            clip.without_parts(&[range(5, 9), range(8, 15)], &mut id_allocator),
+            Err(EditError::RemovalWouldEmptyClip { .. })
+        ));
     }
 
     #[test]

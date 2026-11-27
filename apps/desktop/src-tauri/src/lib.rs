@@ -38,6 +38,7 @@ pub mod media_workers;
 pub mod open_project;
 pub mod project_view;
 pub mod recent_projects;
+pub mod silence_search;
 pub mod tracking_job;
 
 use tauri::Manager;
@@ -45,7 +46,7 @@ use tauri::Manager;
 use crate::app_state::AppState;
 use crate::commands::{
     blur_commands, claude_commands, editing_commands, export_commands, picture_and_sound_commands,
-    project_commands,
+    project_commands, silence_commands,
 };
 
 /// Name of the folder, in the user's documents, where new projects are created.
@@ -96,6 +97,8 @@ pub fn run() -> Result<(), tauri::Error> {
             blur_commands::get_clip_overlay,
             blur_commands::start_region_tracking,
             blur_commands::cancel_region_tracking,
+            silence_commands::find_clip_silences,
+            silence_commands::stop_silence_search,
             claude_commands::get_claude_setup,
             claude_commands::add_claude_folder,
             claude_commands::remove_claude_folder,

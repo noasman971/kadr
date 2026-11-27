@@ -107,6 +107,13 @@ impl Track {
         self.insert_clip(new_version);
         Some(previous_version)
     }
+
+    /// Replaces every clip of the track by `new_clips` (sorted here) and returns
+    /// the previous ones, in order.
+    pub(crate) fn replace_all_clips(&mut self, mut new_clips: Vec<Clip>) -> Vec<Clip> {
+        new_clips.sort_by_key(sort_key);
+        std::mem::replace(&mut self.clips, new_clips)
+    }
 }
 
 /// Clips are ordered by start time, then by identifier so the order is stable.

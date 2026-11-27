@@ -22,6 +22,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0030](0030-claude-edits-the-open-app-through-a-local-pipe.md) | Claude edits the project open in the app, through a local pipe; file mode when the app is closed | Accepted |
 | [0031](0031-claude-access-settings-file.md) | The folders Claude may use are kept in Kadr's settings, read by `kadr-mcp` before every call | Accepted |
 | [0050](0050-transitions-at-clip-edges.md) | Transitions at clip edges, using the neighbouring clip's handles | Accepted |
+| [0051](0051-silence-removal.md) | Silences shortened to a pause, cut by one command on the clip's track | Accepted |
 
 ## Template
 

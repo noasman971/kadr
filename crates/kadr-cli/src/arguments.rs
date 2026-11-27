@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use kadr_core::text_animation::TextAnimationStyle;
 use kadr_core::transition::{SlideDirection, TransitionStyle, ZoomDirection};
+use kadr_engine::silence_analysis::{
+    DEFAULT_MINIMUM_SILENCE_IN_SECONDS, DEFAULT_SILENCE_THRESHOLD_IN_DECIBELS,
+};
 
 /// Kadr from the command line: inspect media files, build a project, export it.
 #[derive(Debug, Parser)]
@@ -112,7 +115,42 @@ pub enum Command {
         #[arg(long)]
         cpu: bool,
     },
+    /// Shorten the silences of a video (or a sound file) to short pauses and
+    /// export the result.
+    RemoveSilences {
+        /// The video or sound file.
+        file: PathBuf,
+        /// The MP4 file to create.
+        #[arg(long, short)]
+        output: PathBuf,
+        /// Loudness below which sound is silence, in dBFS (0 is the loudest):
+        /// -50 keeps quieter sounds, -30 also removes background noise.
+        #[arg(long, default_value_t = DEFAULT_SILENCE_THRESHOLD_IN_DECIBELS, allow_hyphen_values = true)]
+        threshold: f32,
+        /// Shortest silence shortened, in seconds.
+        #[arg(long, default_value_t = DEFAULT_MINIMUM_SILENCE_IN_SECONDS)]
+        minimum_silence: f64,
+        /// How long each silence lasts once shortened, in seconds (half on each
+        /// side of the cut).
+        #[arg(long, default_value_t = DEFAULT_KEPT_PAUSE_IN_SECONDS)]
+        kept_pause: f64,
+        /// Also save the project to this `.kadr` file.
+        #[arg(long)]
+        save_project: Option<PathBuf>,
+        /// Never use a hardware encoder.
+        #[arg(long)]
+        software_encoder: bool,
+        /// Encode faster, with larger files (for previews).
+        #[arg(long)]
+        fast: bool,
+        /// Render on the CPU even if a GPU is available.
+        #[arg(long)]
+        cpu: bool,
+    },
 }
+
+/// `kadr_engine::silence_removal::DEFAULT_KEPT_PAUSE`, in seconds.
+pub const DEFAULT_KEPT_PAUSE_IN_SECONDS: f64 = 0.2;
 
 /// A rectangle given on the command line as `left,top,width,height`, in pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -345,6 +383,35 @@ mod tests {
                 .contains("greater than zero")
         );
         assert_eq!(parse_rectangle(" 1, 2, 3, 4 ").unwrap().height, 4.0);
+    }
+
+    #[test]
+    fn remove_silences_takes_a_negative_threshold_and_defaults_to_the_engine_pause() {
+        let parsed = CommandLine::try_parse_from([
+            "kadr-cli",
+            "remove-silences",
+            "talk.mp4",
+            "-o",
+            "short.mp4",
+            "--threshold",
+            "-45",
+        ])
+        .unwrap();
+        let Command::RemoveSilences {
+            threshold,
+            minimum_silence,
+            kept_pause,
+            ..
+        } = parsed.command
+        else {
+            panic!("expected the remove-silences command");
+        };
+        assert_eq!(threshold, -45.0);
+        assert_eq!(minimum_silence, DEFAULT_MINIMUM_SILENCE_IN_SECONDS);
+        assert_eq!(
+            kadr_core::time::TimeSpan::from_seconds(kept_pause).unwrap(),
+            kadr_engine::silence_removal::DEFAULT_KEPT_PAUSE
+        );
     }
 
     #[test]

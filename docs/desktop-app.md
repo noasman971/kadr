@@ -239,6 +239,27 @@ styles sized from the canvas height. The inspector then focuses their words.
 
 ![Titles from the Text tab](screenshots/desktop-titles.jpg)
 
+## Removing silences
+
+*Remove silences…*, in the Sound section of the inspector, opens
+`SilenceRemovalDialog.svelte` (decision record 0051):
+
+- **Three settings**: the threshold (dB), the shortest silence and the pause kept.
+  Each change starts a new search after a quarter of a second.
+- **The search** runs in the back end (`find_clip_silences`, `silence_search.rs`)
+  on a snapshot of the project, off the interface's thread, with its progress
+  through a Tauri channel. A newer search, or closing the dialog
+  (`stop_silence_search`), stops the running one after its current 30 s of sound;
+  its result then comes back as `superseded` and is ignored. The dialog searches
+  again if the clip changes meanwhile (an undo, or Claude).
+- **The strip** shows the clip with what would go hatched, and a summary: how many
+  silences, how many seconds, the clip's length before and after
+  (`src/lib/silences/silencePlan.ts`, tested).
+- **Remove silences** sends the cuts found as one edit (`removeSilences`, one undo
+  step). The clip keeps its identifier for its first piece, so the inspector stays
+  on it; the later clips of its track move up, other tracks do not. A notice
+  offers Undo.
+
 ## Export
 
 The dialog (`components/export/ExportDialog.svelte`) gathers the settings; the export

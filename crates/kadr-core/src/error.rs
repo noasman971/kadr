@@ -8,7 +8,7 @@ use std::fmt;
 
 use crate::clip::AnimatableProperty;
 use crate::ids::{ClipId, EffectId, MediaAssetId, TrackId};
-use crate::time::{TimeSpan, Timestamp};
+use crate::time::{TimeRange, TimeSpan, Timestamp};
 use crate::validation::ValidationError;
 
 /// Writes a list of identifiers as `3, 5, 8`, or `none` when empty.
@@ -131,6 +131,37 @@ pub enum EditError {
         clip_id: ClipId,
         /// The rejected edge position.
         requested_time: Timestamp,
+    },
+
+    /// A part to remove from a clip is not inside the clip.
+    #[error(
+        "the part {part} cannot be removed from clip {clip_id}, which runs from {clip_start} to {clip_end}: parts to remove must lie inside the clip"
+    )]
+    PartOutsideClip {
+        /// The clip.
+        clip_id: ClipId,
+        /// The rejected part, on the timeline.
+        part: TimeRange,
+        /// Where the clip starts.
+        clip_start: Timestamp,
+        /// Where the clip ends.
+        clip_end: Timestamp,
+    },
+
+    /// No part of a clip was given to remove.
+    #[error("no part of clip {clip_id} was given to remove")]
+    NoPartToRemove {
+        /// The clip.
+        clip_id: ClipId,
+    },
+
+    /// Removing parts would leave nothing of the clip.
+    #[error(
+        "removing these parts would leave nothing of clip {clip_id}; to delete it, remove it instead"
+    )]
+    RemovalWouldEmptyClip {
+        /// The clip.
+        clip_id: ClipId,
     },
 
     /// Extending a clip's start would go before the beginning of its source file.

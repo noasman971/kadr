@@ -92,6 +92,23 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
 - `kadr-cli assemble --transition … --title … --title-animation …` to try them.
 - `docs/transitions-and-text-animations.md`, decision record 0050.
 
+### Added (phase 8b: silence removal)
+
+- `kadr-core`: `RemoveClipParts` cuts timeline ranges out of a clip in one undoable
+  command: what is left goes end to end, the later clips of its track move earlier,
+  other tracks do not move (`Clip::without_parts`, `TimeRange`,
+  `FrameRate::frame_start_at_or_before` / `_after`).
+- `kadr-engine`: `silence_removal` finds a clip's silences and shortens each to a
+  pause (0.2 s by default, half on each side), with cuts on frame starts; the
+  analysis reports progress and can be stopped.
+- Claude's tool `remove_silences` shortens every silence of a clip in one step;
+  `detect_silences` and `split_clip` point to it.
+- Desktop app: *Remove silences…* in the inspector's Sound section opens a dialog
+  with three settings, a strip of what will go and a summary; one click, one undo
+  step.
+- `kadr-cli remove-silences video.mp4 -o shorter.mp4 [--threshold -45]`.
+- Decision record 0051.
+
 ### Fixed
 
 - Desktop inspector: two quick changes to the same clip could make the second undo

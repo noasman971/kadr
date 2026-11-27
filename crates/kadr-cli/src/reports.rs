@@ -155,15 +155,31 @@ impl ProgressLine {
         );
     }
 
+    /// Shows how far a task without frames (a sound analysis) has got.
+    pub fn update_fraction(&mut self, action: &str, fraction: f64) {
+        if let Some(percentage) = self.new_percentage(fraction) {
+            eprint!("\r{action} {percentage:>3}%");
+            // The line is redrawn in place; a failed flush only delays the display.
+            let _ = std::io::stderr().flush();
+        }
+    }
+
     fn show(&mut self, action: &str, fraction: f64, done_frame_count: u64, total_frame_count: u64) {
+        if let Some(percentage) = self.new_percentage(fraction) {
+            eprint!("\r{action} {percentage:>3}% ({done_frame_count}/{total_frame_count} frames)");
+            // The line is redrawn in place; a failed flush only delays the display.
+            let _ = std::io::stderr().flush();
+        }
+    }
+
+    /// The percentage of `fraction`, or `None` if it is the one already shown.
+    fn new_percentage(&mut self, fraction: f64) -> Option<u64> {
         let percentage = (fraction * 100.0).floor() as u64;
         if self.last_shown_percentage == Some(percentage) {
-            return;
+            return None;
         }
         self.last_shown_percentage = Some(percentage);
-        eprint!("\r{action} {percentage:>3}% ({done_frame_count}/{total_frame_count} frames)");
-        // The line is redrawn in place; a failed flush only delays the display.
-        let _ = std::io::stderr().flush();
+        Some(percentage)
     }
 
     /// Ends the progress line.

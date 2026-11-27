@@ -10,11 +10,13 @@
   import { t, translations } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
   import { TICKS_PER_SECOND } from "../../time/ticks";
+  import Button from "../../ui/Button.svelte";
   import Icon from "../../ui/Icon.svelte";
   import IconButton from "../../ui/IconButton.svelte";
   import type { IconName } from "../../ui/icons";
   import NumberField from "../../ui/NumberField.svelte";
   import BlurInspector from "./BlurInspector.svelte";
+  import SilenceRemovalDialog from "./SilenceRemovalDialog.svelte";
 
   interface Props {
     clip: ClipView;
@@ -54,6 +56,8 @@
     { value: "right", icon: "alignRight", label: "inspector.alignRight" },
   ];
   const NEUTRAL_COLOR: ColorSettings = { exposure: 0, contrast: 1, saturation: 1, temperature: 0 };
+
+  let isSilenceDialogOpen = $state(false);
 
   const hasPictureSettings = $derived(clip.kind !== "audio");
   const hasSpeed = $derived(clip.kind === "video" || clip.kind === "audio");
@@ -216,7 +220,11 @@
         onchange={(event) => setValue("volume", Number(event.currentTarget.value) / 100)}
       />
     {/if}
+    <Button onclick={() => (isSilenceDialogOpen = true)}><Icon name="scissors" size={14} />{t("inspector.removeSilences")}</Button>
   </section>
+  {#if isSilenceDialogOpen}
+    <SilenceRemovalDialog {clip} onClose={() => (isSilenceDialogOpen = false)} />
+  {/if}
 {/if}
 
 {#if hasSpeed}

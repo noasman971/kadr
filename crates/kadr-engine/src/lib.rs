@@ -17,7 +17,9 @@
 //! - [`picture_scaling`]: shrinking pictures for display;
 //! - [`still_frames`]: single pictures of a file, a clip or the timeline, and
 //!   contact sheets of thumbnails;
-//! - [`silence_analysis`]: the silent parts of a file's sound.
+//! - [`silence_analysis`]: the silent parts of a file's sound;
+//! - [`silence_removal`]: the silences of a clip shortened to short pauses, in
+//!   one undoable change.
 //!
 //! ## Rules for this crate
 //!
@@ -39,6 +41,7 @@ pub mod project_files;
 pub mod quick_assembly;
 pub mod region_tracking;
 pub mod silence_analysis;
+pub mod silence_removal;
 pub mod still_frames;
 pub mod timeline_sound;
 

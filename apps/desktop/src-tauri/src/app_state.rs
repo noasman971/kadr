@@ -12,6 +12,7 @@ use crate::command_error::{CommandError, CommandResult};
 use crate::export_job::ExportJobs;
 use crate::media_workers::{PreviewWorker, ThumbnailWorker};
 use crate::open_project::OpenProject;
+use crate::silence_search::SilenceSearches;
 use crate::tracking_job::TrackingJobs;
 
 /// The app's state, managed by Tauri.
@@ -36,6 +37,8 @@ pub struct AppState {
     pub exports: ExportJobs,
     /// The region being followed for a blur, if any.
     pub tracking: TrackingJobs,
+    /// The silence dialog's searches, so a newer one stops an older one.
+    pub silence_searches: SilenceSearches,
     /// Runs Claude's tool calls on the open project (decision record 0030).
     pub claude: ClaudeToolbox,
 }
@@ -62,6 +65,7 @@ impl AppState {
             projects_folder,
             exports: ExportJobs::default(),
             tracking: TrackingJobs::default(),
+            silence_searches: SilenceSearches::default(),
         })
     }
 

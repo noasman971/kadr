@@ -8,12 +8,14 @@
 //! kadr-cli assemble --output demo.kadr --transition fade --title "Hello" clip1.mp4 clip2.mp4
 //! kadr-cli render edit.kadr edit.mp4
 //! kadr-cli blur interview.mp4 --at 2.5 --rect 420,180,160,200 -o blurred.mp4 --debug
+//! kadr-cli remove-silences interview.mp4 -o shorter.mp4 --threshold -45
 //! ```
 
 mod arguments;
 mod blur;
 mod finishing_touches;
 mod reports;
+mod silences;
 
 use std::error::Error;
 use std::path::Path;
@@ -27,6 +29,8 @@ use kadr_core::time::TimeSpan;
 use kadr_core::transition::Transition;
 use kadr_engine::project_files::{load_project_file, save_project_file};
 use kadr_engine::quick_assembly::assemble_project_from_files;
+use kadr_engine::silence_analysis::SilenceDetectionSettings;
+use kadr_engine::silence_removal::SilenceRemovalSettings;
 use kadr_engine::{ExportCancellation, ExportRequest, RendererPreference, export_project};
 use kadr_media::{EncodingSpeed, FfmpegBackend, MediaBackend, VideoEncoderPreference};
 
@@ -114,6 +118,34 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
                 output,
                 style,
                 write_debug_video: debug,
+                project_output: save_project,
+                software_encoder,
+                fast,
+                cpu,
+            },
+        ),
+        Command::RemoveSilences {
+            file,
+            output,
+            threshold,
+            minimum_silence,
+            kept_pause,
+            save_project,
+            software_encoder,
+            fast,
+            cpu,
+        } => silences::remove_silences(
+            &backend,
+            &silences::SilenceRemovalCommand {
+                file,
+                output,
+                settings: SilenceRemovalSettings {
+                    detection: SilenceDetectionSettings {
+                        threshold_in_decibels: threshold,
+                        minimum_silence_in_seconds: minimum_silence,
+                    },
+                    kept_pause: TimeSpan::from_seconds(kept_pause)?,
+                },
                 project_output: save_project,
                 software_encoder,
                 fast,

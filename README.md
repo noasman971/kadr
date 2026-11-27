@@ -195,6 +195,14 @@ previews, Ctrl+C to cancel cleanly):
 .\target\release\kadr-cli render my-edit.kadr my-edit.mp4
 ```
 
+Shorten the silences of a video to short pauses and export the result (`--threshold
+-50` keeps quieter sounds, `-30` also removes background noise; `--kept-pause 0.3`
+leaves longer pauses):
+
+```powershell
+.\target\release\kadr-cli remove-silences interview.mp4 -o interview-short.mp4
+```
+
 `kadr-cli blur` blurs a face from one rectangle (see
 [docs/tracking-and-blur.md](docs/tracking-and-blur.md)). Current limit: phone videos
 with a rotation flag are not rotated yet.
