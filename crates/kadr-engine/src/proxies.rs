@@ -63,7 +63,7 @@ pub const LARGEST_PROXY_SIZE: PictureSize = PictureSize {
     height_in_pixels: 1080,
 };
 /// One keyframe at least every this many frames: a jump decodes at most this many.
-pub const PROXY_FRAMES_PER_KEYFRAME: u32 = 10;
+pub const PROXY_FRAMES_PER_KEYFRAME: u32 = 5;
 /// Changes whenever proxies are made differently: older ones are then remade.
 pub const PROXY_FORMAT_VERSION: u32 = 1;
 /// How long the preview trusts that a source has not changed before looking again.

@@ -43,7 +43,8 @@ use kadr_core::timeline::TrackKind;
 use kadr_media::{MediaBackend, MediaError, VideoFrame, VideoFrameSource};
 use kadr_render::{
     CanvasDescription, ColorLookupTable, FrameRenderer, HiddenRegion, LayerColorLut,
-    LayerPlacement, RenderError, TextRasterizer, TextReveal, VisualLayer, hide_regions,
+    LayerPlacement, LayerSizing, RenderError, TextRasterizer, TextReveal, VisualLayer,
+    hide_regions,
 };
 
 use super::clip_layers::plan_track_layers;
@@ -124,7 +125,24 @@ impl FrameComposer {
         backend: &dyn MediaBackend,
         timeline_time: Timestamp,
     ) -> Result<VideoFrame, Error> {
+        let canvas_size = project.settings().canvas_size;
+        self.compose_frame_at_size(project, backend, timeline_time, canvas_size)
+    }
+
+    /// The picture of `project`'s timeline at `timeline_time`, composed on a
+    /// canvas of `drawn_size` (the canvas's shape, smaller: the preview's): what
+    /// is measured in canvas pixels (positions, text sizes) is scaled to it,
+    /// while videos fit it as they fit the canvas. At the canvas's own size, the
+    /// export's picture exactly.
+    pub(crate) fn compose_frame_at_size<Error: From<MediaError> + From<RenderError>>(
+        &mut self,
+        project: &Project,
+        backend: &dyn MediaBackend,
+        timeline_time: Timestamp,
+        drawn_size: PictureSize,
+    ) -> Result<VideoFrame, Error> {
         let settings = project.settings();
+        let canvas_scale = CanvasScale::between(settings.canvas_size, drawn_size);
         let mut prepared_layers: Vec<PreparedLayer> = Vec::new();
         let mut clips_shown = HashSet::new();
         let visible_tracks = project
@@ -144,8 +162,10 @@ impl FrameComposer {
                     planned_layer.text_reveal,
                 )?;
                 if let Some(picture) = picture {
-                    let placement = LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
-                        .moved_by(planned_layer.motion);
+                    let placement = canvas_scale.applied_to(
+                        LayerPlacement::of_clip_at(clip, planned_layer.time_in_clip)
+                            .moved_by(planned_layer.motion),
+                    );
                     prepared_layers.push(PreparedLayer {
                         picture,
                         placement,
@@ -176,7 +196,7 @@ impl FrameComposer {
             })
             .collect();
         let canvas = CanvasDescription {
-            size: settings.canvas_size,
+            size: drawn_size,
             background: settings.background_color,
         };
         Ok(self.renderer.render_frame(&canvas, &layers)?)
@@ -262,7 +282,7 @@ impl FrameComposer {
             .and_then(|proxies| proxies.proxy_for(original_path));
         if let Some(proxy) = proxy {
             let from_proxy = self
-                .video_source_of(backend, clip_id, &proxy.proxy_path)
+                .video_source_of(backend, clip_id, &proxy.proxy_path, true)
                 .and_then(|source| source.frame_at(source_time));
             match from_proxy {
                 Ok(picture) => return Ok((picture, true)),
@@ -275,17 +295,19 @@ impl FrameComposer {
             }
         }
         let picture = self
-            .video_source_of(backend, clip_id, original_path)?
+            .video_source_of(backend, clip_id, original_path, false)?
             .frame_at(source_time)?;
         Ok((picture, false))
     }
 
-    /// The decoder of `clip_id`, opened (or opened again) if it does not read `file_path`.
+    /// The decoder of `clip_id`, opened (or opened again) if it does not read
+    /// `file_path`; a proxy (`is_proxy`) is opened for quick jumps.
     fn video_source_of(
         &mut self,
         backend: &dyn MediaBackend,
         clip_id: ClipId,
         file_path: &Path,
+        is_proxy: bool,
     ) -> Result<&mut Box<dyn VideoFrameSource>, MediaError> {
         let has_matching_source = self
             .open_sources
@@ -298,7 +320,11 @@ impl FrameComposer {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::hash_map::Entry::Vacant(entry) => entry.insert(OpenVideoSource {
                 file_path: file_path.to_path_buf(),
-                source: backend.open_video_source(file_path)?,
+                source: if is_proxy {
+                    backend.open_video_proxy(file_path)?
+                } else {
+                    backend.open_video_source(file_path)?
+                },
             }),
         };
         Ok(&mut open_source.source)
@@ -329,6 +355,50 @@ impl FrameComposer {
             (text_content.clone(), text_reveal, Arc::clone(&picture)),
         );
         picture
+    }
+}
+
+/// How much smaller than the project's canvas a picture is composed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CanvasScale {
+    horizontal: f32,
+    vertical: f32,
+}
+
+impl CanvasScale {
+    fn between(canvas_size: PictureSize, drawn_size: PictureSize) -> Self {
+        let ratio = |drawn: u32, canvas: u32| {
+            if drawn == canvas || canvas == 0 {
+                1.0
+            } else {
+                drawn as f32 / canvas as f32
+            }
+        };
+        Self {
+            horizontal: ratio(drawn_size.width_in_pixels, canvas_size.width_in_pixels),
+            vertical: ratio(drawn_size.height_in_pixels, canvas_size.height_in_pixels),
+        }
+    }
+
+    /// `placement`, in the canvas's pixels, in the smaller picture's pixels.
+    /// At the canvas's own size it is returned untouched.
+    fn applied_to(self, placement: LayerPlacement) -> LayerPlacement {
+        if self.horizontal == 1.0 && self.vertical == 1.0 {
+            return placement;
+        }
+        let scale_factor = match placement.sizing {
+            // Fitted pictures follow the canvas by themselves.
+            LayerSizing::FitInsideCanvas => placement.scale_factor,
+            LayerSizing::NativePixels => {
+                placement.scale_factor * self.horizontal.min(self.vertical)
+            }
+        };
+        LayerPlacement {
+            offset_x_in_pixels: placement.offset_x_in_pixels * self.horizontal,
+            offset_y_in_pixels: placement.offset_y_in_pixels * self.vertical,
+            scale_factor,
+            ..placement
+        }
     }
 }
 

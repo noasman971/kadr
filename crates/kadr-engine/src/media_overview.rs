@@ -3,11 +3,14 @@
 //! - [`ThumbnailMaker`] gives the picture of a video or image file at any time,
 //!   shrunk to a thumbnail. It keeps a few decoders open, so a filmstrip (many
 //!   thumbnails of the same file, in time order) does not reopen the file each time.
+//!   Given [`ReadyProxies`], it reads heavy videos from their proxies, which give
+//!   the same pictures, smaller and quicker (decision record 0055).
 //! - [`compute_waveform_peaks`] decodes a file's sound once, at a low sample rate,
 //!   and keeps the loudest value of each short slice: enough to draw a waveform at
 //!   any zoom, for a few kilobytes per minute.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use image::RgbaImage;
 use kadr_core::clip::PlaybackSpeed;
@@ -17,6 +20,7 @@ use kadr_media::audio_buffer::{sample_index_at, span_of_sample_count};
 use kadr_media::{AudioSegmentRequest, MediaBackend, MediaError, VideoFrameSource};
 
 use crate::picture_scaling::shrink_frame_to_rgba;
+use crate::proxies::ReadyProxies;
 
 /// Files whose decoder a [`ThumbnailMaker`] keeps open at once.
 ///
@@ -31,12 +35,19 @@ const MAXIMUM_OPEN_THUMBNAIL_SOURCES: usize = 6;
 pub struct ThumbnailMaker {
     /// Most recently used last.
     open_sources: Vec<(PathBuf, Box<dyn VideoFrameSource>)>,
+    /// Proxies to read instead of their originals.
+    proxies: Option<Arc<ReadyProxies>>,
 }
 
 impl ThumbnailMaker {
     /// A thumbnail maker with no file open yet.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Reads the videos listed in `proxies` from their proxies from now on.
+    pub fn use_proxies(&mut self, proxies: Arc<ReadyProxies>) {
+        self.proxies = Some(proxies);
     }
 
     /// The picture of `file_path` at `source_time` (from the start of the file),
@@ -52,7 +63,23 @@ impl ThumbnailMaker {
         source_time: Timestamp,
         maximum_size: PictureSize,
     ) -> Result<RgbaImage, MediaError> {
-        let source = self.source_for(backend, file_path)?;
+        let proxy = self
+            .proxies
+            .as_ref()
+            .and_then(|proxies| proxies.proxy_for(file_path));
+        if let Some(proxy) = proxy {
+            let from_proxy = self
+                .source_for(backend, &proxy.proxy_path, true)
+                .and_then(|source| source.frame_at(source_time));
+            if let Ok(frame) = from_proxy {
+                return Ok(shrink_frame_to_rgba(&frame, maximum_size));
+            }
+            // A proxy that cannot be read is dropped: the original is read instead.
+            if let Some(proxies) = &self.proxies {
+                proxies.remove(file_path);
+            }
+        }
+        let source = self.source_for(backend, file_path, false)?;
         let frame = source.frame_at(source_time)?;
         Ok(shrink_frame_to_rgba(&frame, maximum_size))
     }
@@ -62,11 +89,13 @@ impl ThumbnailMaker {
         self.open_sources.clear();
     }
 
-    /// The open decoder of `file_path`, opened if needed, marked most recently used.
+    /// The open decoder of `file_path`, opened if needed (a proxy for quick
+    /// jumps), marked most recently used.
     fn source_for(
         &mut self,
         backend: &dyn MediaBackend,
         file_path: &Path,
+        is_proxy: bool,
     ) -> Result<&mut Box<dyn VideoFrameSource>, MediaError> {
         let position = self
             .open_sources
@@ -74,6 +103,10 @@ impl ThumbnailMaker {
             .position(|(open_path, _)| open_path == file_path);
         let entry = match position {
             Some(position) => self.open_sources.remove(position),
+            None if is_proxy => (
+                file_path.to_path_buf(),
+                backend.open_video_proxy(file_path)?,
+            ),
             None => (
                 file_path.to_path_buf(),
                 backend.open_video_source(file_path)?,
