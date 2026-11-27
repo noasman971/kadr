@@ -284,7 +284,7 @@
         <Icon name="undo" size={14} />
       </IconButton>
     </div>
-    {#if clip.colorAdjustment === null}<p class="hint">{t("inspector.colorOff")}</p>{/if}
+    {#if clip.colorAdjustment === null && clip.colorLut === null}<p class="hint">{t("inspector.colorOff")}</p>{/if}
     <NumberField label={t("inspector.exposure")} step={0.1} decimals={1} min={-4} max={4} value={colorSettings.exposure} onCommit={(exposure) => setColor({ exposure })} />
     <NumberField label={t("inspector.contrast")} unit="%" min={0} max={200} value={colorSettings.contrast * 100} onCommit={(value) => setColor({ contrast: value / 100 })} />
     <NumberField label={t("inspector.saturation")} unit="%" min={0} max={200} value={colorSettings.saturation * 100} onCommit={(value) => setColor({ saturation: value / 100 })} />
