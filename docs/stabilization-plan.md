@@ -16,13 +16,13 @@ chained after 8e's, `vertical_interview_format_4.kadr` kept as a fixture). Phase
 8f and 8g may merge before this branch too: check `CURRENT_FORMAT_VERSION` on
 `origin/main` again before merging.
 
-## Where the work stands (2026-11-27, 19:30)
+## Where the work stands (2026-11-27, 19:40)
 
-Steps 1 to 7 are done, step 8 (the benchmark) is written and run, and the first
-half of step 9 (the composer draws stabilised clips) is committed without its
-tests. Steps 9 (rest) to 14 are left.
+Steps 1 to 8 are done, and so is the first half of step 9 (the composer draws
+stabilised clips; all engine tests pass). The rest of step 9 and steps 10 to 14 are
+left. Nothing is usable from the app, Claude or the command line yet.
 
-### Benchmark results, and what they say to do next
+### Benchmark results
 
 `scripts/generate-stabilization-benchmark.ps1`, then the `stabilize_video` example
 in release, then `scripts/compare-stabilization-with-truth.py`, on the laptop:
@@ -30,48 +30,66 @@ in release, then `scripts/compare-stabilization-with-truth.py`, on the laptop:
 | Check | Limit | Measured | |
 |---|---|---|---|
 | 1. Step error, mean | 0.2 px | 0.17 px | ok |
-| 1. Step error, 95th percentile | 0.5 px | 0.70 px | **fails** |
-| 2. Roll error, 95th percentile | 0.02° | 0.035° | **fails** |
-| 3. The cut is seen; other frames not measured | 3 | 2 (frames 628 and 636) | ok |
-| 4. Shake left, RMS | 0.4 px, 5 % | 1.65 px, 13 % | **fails** |
-| 5. Largest jump of the steadied picture | 1.5 px | 11.7 px | **fails** |
-| 6. Enlargement; frames partly corrected | 1.08; 0 | 1.054; 0 | ok |
+| 1. Step error, 95th percentile | 0.5 px | 0.72 px | **over** |
+| 2. Roll error, 95th percentile | 0.02° | 0.035° | **over** |
+| 3. The cut is seen; other frames not measured | 3 | 0 | ok |
+| 4. Shake left, RMS (centre and corners) | 0.4 px, 5 % | 0.79 px, 6.3 % | **over** |
+| 5. Largest jump of the steadied picture | 1.5 px | 8.6 px (a corner, frame 636) | **over** |
+| 6. Enlargement; frames partly corrected | 1.08; 0 | 1.047; 0 | ok |
 | 7. Speed, decoding included | 60 frames/s on the desktop PC | 70 frames/s on the laptop | ok |
 
-Two findings were fixed on the way: FFmpeg's crop filter rounds the window's corner
-to the nearest pixel (the truth first used `floor`), and the motion fit lost the
-camera while a large object crossed a side of the picture (54 frames not measured,
-now 2; see `camera_motion.rs`, steps 3 and 5 of its documentation).
+The camera shakes by 12.4 px RMS in this video. Where the shake that is left is
+(high-passed, RMS):
 
-Where the remaining shake is (centre of the frame, high-passed, RMS):
+| Part | Centre of the frame | A corner |
+|---|---|---|
+| Shot B (no moving object) | 0.44 px, largest jump 0.1 px | 0.47 px |
+| Shot A | 0.51 px, largest jump 2.9 px (frame 636) | 0.75 px |
+| First and last 20 frames of a shot | 0.1 px | |
+| While the large object crosses (frames 590 to 700) | 0.56 px | |
 
-| Part of a shot | Shake left |
-|---|---|
-| Middle of a run, away from its ends | 0.5 px |
-| First and last 20 frames of a run | 4.7 to 6.2 px |
-| While the large object crosses (frames 590 to 700, two breaks) | 2.8 px |
+So the centre of the picture is steady to about half a pixel, and what is left
+there moves slowly (jumps of 0.1 px from one frame to the next). The corners are
+worse in shot A: the roll is measured less well than the shift.
 
-**So the next things to do, in this order:**
+### What was found and fixed with the benchmark
 
-1. **Run ends (the main cause).** The smoothing extends a run by point reflection
-   about its end *sample* (`smoothed_pose_in_run` in `camera_path.rs`), which forces
-   the smoothed path through that one shaky sample: the first and last 0.6 s of
-   every run keep most of their shake. Reflect about a value fitted on the run's
-   end instead (a line through the last `σ` seconds, as region tracking's smoothing
-   does since phase 4), and accept that the correction is no longer the identity at
-   a run's ends. Tests to change with it: `the_correction_is_identity_at_both_ends_of_a_run`
-   and `a_run_break_never_makes_the_correction_jump` (vision),
-   `the_first_and_last_frames_are_only_enlarged` (engine, `correction.rs`), and
-   `Run::around`, whose window must hold the samples the fit needs. Re-measure.
-2. **Frames 628 and 636** are still not measured while the large object enters:
-   find which rule of `measure_motion` refuses them (print it), and make a refused
-   frame inside a scene fall back to a shift rather than break the run.
-3. **Noise:** 0.5 px is left in the middle of a run (limit 0.4) and the roll's 95th
-   percentile is 0.035° (limit 0.02°). Try more points per cell or a 5-point
-   sub-pixel refinement; measure before and after.
-4. Then the rest of step 9: `clip_geometry.rs` (`clip_source_placement`), the export
-   warnings in `export/mod.rs`, and the tests listed under "kadr-engine" below
-   (`stabilized_timeline_frames_barely_move` first).
+- FFmpeg's crop filter rounds the window's corner to the nearest pixel; the truth
+  first used `floor`, which alone gave 0.9 px of "error".
+- The script's own high-pass counted a steady pan as shake at the ends of a shot;
+  it now reflects the positions past the ends.
+- The motion fit lost the camera while a large object crossed a side of the
+  picture: 54 frames were not measured. Two first guesses are now tried (strict and
+  tolerant), a second fit comes before the strict selection, and inside a scene
+  the median shift is kept rather than nothing (`camera_motion.rs`, steps 3, 5
+  and 6 of its documentation). No frame is left unmeasured apart from the cut.
+- The smoothing reflected a run about its end *sample*, so the first and last half
+  second of a run kept their shake. It reflects about a line fitted on the run's
+  end now (`fitted_end_of` in `camera_path.rs`, step 3 of its documentation). The
+  correction is therefore **no longer the identity at the ends of a run**: decision
+  8 and the "Properties" list below are out of date on that point.
+
+### Next things to do, in this order
+
+1. **Roll accuracy** (checks 1, 2, 4 and 5 at the corners). The roll's 95th
+   percentile is 0.035° and corners keep 0.75 px in shot A. Frame 636 is the worst:
+   the median-shift fallback gives no roll there, so the corners jump by the roll
+   of that frame. Ideas, each to measure on the benchmark: when the fallback is
+   used, keep the previous frame's roll and size change rather than none; lower
+   the score threshold that removes background points when a very contrasted
+   object is in the frame (`MINIMUM_SCORE_FRACTION_OF_BEST`, 1 % of the best cell:
+   only 67 to 76 of 144 cells gave a point while the test pattern was in view);
+   more points per cell.
+2. Decide with the owner whether the limits of checks 4 and 5 (0.4 px, 1.5 px,
+   corners included) must be met exactly before the interface work, or whether
+   half a pixel at the centre is good enough to go on: the owner should look at a
+   real phone video first (`kadr-cli stabilize`, step 10).
+3. The rest of step 9: `clip_geometry.rs` (`clip_source_placement`, for the
+   desktop's blur overlay), the export warnings in `export/mod.rs`, and the tests
+   listed under "kadr-engine" below (`stabilized_timeline_frames_barely_move`
+   first). The tracking benchmark's CSV must also be checked byte-identical before
+   and after step 1's refactor (`track_video` example): not done yet.
+4. Steps 10 to 14 as designed below.
 
 ## The design
 
