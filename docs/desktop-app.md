@@ -113,6 +113,8 @@ flowchart LR
 | `commands/` | The Tauri commands, thin calls into the above and `kadr-engine` |
 | `recent_projects.rs` | The home screen's list, in the app's configuration folder |
 | `command_error.rs` | Errors with a stable code the front end translates, plus the engine's details |
+| `claude_link.rs` | Serves `kadr-mcp`'s pipe and runs Claude's calls on the open project (phase 7d) |
+| `claude_setup.rs` | The *Connect to Claude* screen: allowed folders, finding and writing Claude Desktop's configuration (phase 7e) |
 
 ### Front end (`src/`)
 
@@ -360,6 +362,30 @@ the user's view in [ux.md](ux.md#claude-in-the-app-phase-7).
 - Trying it without Claude Desktop: the scratch MCP client used while building it
   spawned `kadr-mcp` with `KADR_APP_LINK_ADDRESS` set to the app's pipe; set the same
   variable for both (from PowerShell: Git Bash rewrites `\\.\pipe\…` values).
+
+### Connect to Claude
+
+Decision record [0031](decisions/0031-claude-access-settings-file.md); the user's
+view in [ux.md](ux.md#connecting-claude-settings--claude).
+
+- The allowed folders live in `claude-access.json`, in the app's configuration
+  folder (`kadr_tools::claude_access`: load, atomic save, add, remove, union with the
+  `--allowed-folder` arguments). `kadr-mcp --kadr-settings <file>` reads it before
+  every call; `claude_link.rs` uses the same union for the calls it runs.
+- `claude_setup.rs`:
+  - finds `kadr-mcp` next to the app's program (`target/debug`, `target/release`,
+    or the installed folder);
+  - finds Claude Desktop's configuration: `%APPDATA%\Claude`, the Store package
+    folders and `%LOCALAPPDATA%\Claude-Data\*` on Windows, the usual places on macOS
+    and Linux;
+  - tells *connected*, *not connected*, *another Kadr* and *unreadable* apart;
+  - writes only the `kadr` entry (the command and `--kadr-settings`), atomically,
+    with a `.kadr-backup` of the previous file, and never touches a file that is not
+    valid JSON.
+- `commands/claude_commands.rs` exposes it to `ClaudeDialog.svelte` (Settings →
+  *Connecter à Claude…*).
+- Not done yet: the installer does not ship `kadr-mcp` next to the app (Tauri
+  `externalBin`).
 
 ## Adding an edit
 

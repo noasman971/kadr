@@ -1,4 +1,4 @@
-<!-- Settings (docs/ux.md): language, theme and interface size. -->
+<!-- Settings (docs/ux.md): language, theme, interface size, and the way to Connect to Claude. -->
 <script lang="ts">
   import { systemLanguage, t, type LanguageChoice } from "../i18n/i18n.svelte";
   import {
@@ -7,13 +7,15 @@
     preferences,
     type ThemeChoice,
   } from "../state/preferences.svelte";
+  import Button from "../ui/Button.svelte";
   import Dialog from "../ui/Dialog.svelte";
 
   interface Props {
     onClose: () => void;
+    onOpenClaude: () => void;
   }
 
-  let { onClose }: Props = $props();
+  let { onClose, onOpenClaude }: Props = $props();
 
   const LANGUAGE_NAMES = { fr: "Français", en: "English" } as const;
   const THEMES: ThemeChoice[] = ["dark", "light", "system"];
@@ -59,6 +61,10 @@
       />
       <span class="tabular">{Math.round(preferences.interfaceScale * 100)} %</span>
     </div>
+  </div>
+  <div class="setting">
+    <span>{t("settings.claude")}</span>
+    <Button onclick={onOpenClaude}>{t("settings.claude.open")}</Button>
   </div>
 </Dialog>
 

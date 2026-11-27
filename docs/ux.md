@@ -301,6 +301,31 @@ see what Claude does, as it does it.
 - The person keeps editing meanwhile: Claude's calls and the person's gestures take
   turns, never mix.
 
+### Connecting Claude (Settings → Claude)
+
+What the person wants: let Claude Desktop use Kadr without editing any file by hand,
+and say which folders Claude may touch.
+
+1. **Settings → Claude → *Connecter à Claude…*** opens a dialog. It says in one
+   sentence what Claude can do and that the videos never leave the computer.
+2. ***Dossiers que Claude peut utiliser***: the list of allowed folders, each with a
+   remove button; a folder that no longer exists is marked *Introuvable*. *Ajouter un
+   dossier…* opens the system's folder picker. With no folder yet, the list says to
+   add the one holding the videos. Changes apply at Claude's next request.
+3. ***Claude Desktop***: the configuration file Kadr found (or *Choisir…* another
+   one), and a status line:
+   - *Connecté*: Claude Desktop starts this Kadr;
+   - *Pas encore connecté*;
+   - *another copy of Kadr, or a configuration made by hand*: Connect replaces it;
+   - *not valid JSON*: Kadr will not change it, and says how to fix it;
+   - *kadr-mcp not found next to the app*: says how to build or reinstall it.
+4. **Connecter Kadr à Claude Desktop** (*Reconnecter* when already connected)
+   writes the entry, then says to quit Claude Desktop completely and reopen it.
+5. ***Claude Code (facultatif)***: the `claude mcp add` command, with *Copier la
+   commande* (and a message to copy it by hand if the clipboard refuses).
+
+![The Connect to Claude dialog](screenshots/desktop-connect-to-claude.jpg)
+
 ## States every screen handles
 
 | State | What the user sees |
