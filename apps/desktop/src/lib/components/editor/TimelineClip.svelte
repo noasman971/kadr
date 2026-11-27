@@ -101,8 +101,8 @@
   const DRAG_THRESHOLD_IN_PIXELS = 3;
   /** A mark is drawn only when it has this much room from the previous one. */
   const MINIMUM_MARK_SPACING_IN_PIXELS = 4;
-  /** Half a mark's width, so a mark on the clip's edge is not cut. */
-  const MARK_HALF_WIDTH_IN_PIXELS = 6;
+  /** How far a mark stays from the clip's edges: clear of the trim handles, not cut. */
+  const MARK_EDGE_MARGIN_IN_PIXELS = 13;
 
   let clipElement: HTMLDivElement | undefined = $state();
   /** The keyframe mark being dragged, and where it would land (from the clip's start). */
@@ -130,7 +130,7 @@
   /** Where a mark is drawn, kept whole inside the clip's edges. */
   function markPosition(offsetTicks: number): number {
     const position = ticksToPixels(Math.min(offsetTicks, clip.durationTicks), pixelsPerSecond);
-    return Math.min(Math.max(position, MARK_HALF_WIDTH_IN_PIXELS), width - MARK_HALF_WIDTH_IN_PIXELS);
+    return Math.min(Math.max(position, MARK_EDGE_MARGIN_IN_PIXELS), width - MARK_EDGE_MARGIN_IN_PIXELS);
   }
 
   /** The moment under a pointer, from the clip's start, on a frame of the timeline. */

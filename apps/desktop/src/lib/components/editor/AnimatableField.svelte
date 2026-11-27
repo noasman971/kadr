@@ -296,7 +296,7 @@
   }
   .curve-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 140px;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
     padding-left: 24px;
@@ -314,8 +314,9 @@
   }
   .curve-editor-row {
     display: flex;
-    gap: var(--space-2);
-    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: center;
     padding-left: 24px;
   }
   .hint {
