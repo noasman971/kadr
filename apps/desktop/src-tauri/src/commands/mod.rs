@@ -9,3 +9,4 @@ pub mod editing_commands;
 pub mod export_commands;
 pub mod picture_and_sound_commands;
 pub mod project_commands;
+pub mod silence_commands;

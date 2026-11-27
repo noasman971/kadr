@@ -145,7 +145,35 @@ export type EditRequest =
   | { type: "setClipColor"; clipId: number; settings: ColorSettings }
   | { type: "resetClipColor"; clipId: number }
   | { type: "setClipText"; clipId: number; settings: TextSettings }
-  | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle };
+  | { type: "addTitle"; startTicks: number; text: string; style: TitleStyle }
+  /** Cuts the parts the silence dialog found and closes the gaps on the clip's track. */
+  | { type: "removeSilences"; clipId: number; cuts: TickRange[] };
+
+/** A stretch of the timeline, in ticks: `startTicks` included, `endTicks` excluded. */
+export interface TickRange {
+  startTicks: number;
+  endTicks: number;
+}
+
+/** What the silence dialog looks for (`silence_search.rs`). */
+export interface SilenceSearchSettings {
+  /** Quieter than this many dBFS is silence (−40 by default). */
+  thresholdInDecibels: number;
+  /** Only silences at least this long are shortened. */
+  minimumSilenceInSeconds: number;
+  /** How long each silence lasts once shortened. */
+  keptPauseInSeconds: number;
+}
+
+/** What removing a clip's silences would cut. */
+export interface SilencePlan {
+  /** On the timeline as the clip is now, in order. */
+  cuts: TickRange[];
+  /** How much shorter the clip gets. */
+  removedTicks: number;
+  /** The clip is silent from start to end: nothing would be left, so nothing is cut. */
+  wholeClipIsSilent: boolean;
+}
 
 export type ClipValueName = "volume" | "opacity" | "positionX" | "positionY" | "scale" | "rotation";
 

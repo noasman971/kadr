@@ -23,6 +23,8 @@ import type {
   ProjectFormatChoice,
   ProjectView,
   RecentProject,
+  SilencePlan,
+  SilenceSearchSettings,
 } from "./types";
 
 export const backend = {
@@ -73,6 +75,22 @@ export const backend = {
     return invoke<ExportStarted>("start_export", { settings, onEvent: channel });
   },
   cancelExport: () => invoke<void>("cancel_export"),
+
+  /**
+   * What removing a clip's silences would cut; changes nothing. `onProgress`
+   * receives the fraction analysed (0 to 1). A newer search, or
+   * `stopSilenceSearch`, ends this one with a `superseded` error.
+   */
+  findClipSilences(
+    clipId: number,
+    settings: SilenceSearchSettings,
+    onProgress: (fraction: number) => void,
+  ): Promise<SilencePlan> {
+    const channel = new Channel<number>();
+    channel.onmessage = onProgress;
+    return invoke<SilencePlan>("find_clip_silences", { clipId, settings, onProgress: channel });
+  },
+  stopSilenceSearch: () => invoke<void>("stop_silence_search"),
   revealExportedFile: (filePath: string) => invoke<void>("reveal_exported_file", { filePath }),
   openExportedFile: (filePath: string) => invoke<void>("open_exported_file", { filePath }),
 

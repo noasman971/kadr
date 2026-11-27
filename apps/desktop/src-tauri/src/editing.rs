@@ -23,10 +23,12 @@ use serde::{Deserialize, Serialize};
 
 mod arrangement;
 mod clip_settings;
+mod silences;
 mod titles;
 
 pub use arrangement::TrimEdge;
 pub use clip_settings::{ClipValue, ColorSettings, TextAlignmentChoice, TextSettings};
+pub use silences::TickRange;
 pub use titles::{TITLE_DURATION, TITLES_TRACK_NAME, TitleStyle};
 
 /// How long a still picture lasts when it is placed on the timeline.
@@ -182,6 +184,14 @@ pub enum EditRequest {
         /// One of the ready-made styles.
         style: TitleStyle,
     },
+    /// Cuts parts out of a clip and closes the gaps (the silences the silence
+    /// dialog found), moving the later clips of its track earlier.
+    RemoveSilences {
+        /// The clip.
+        clip_id: ClipId,
+        /// The parts to cut, on the timeline as the clip is now.
+        cuts: Vec<TickRange>,
+    },
     /// Changes the canvas size (an export preset of another shape, for example).
     /// The format is no longer automatic afterwards.
     SetCanvasSize {
@@ -335,6 +345,9 @@ pub fn apply_edit_request(
             text,
             style,
         } => titles::add_title(session, Timestamp::from_ticks(*start_ticks), text, *style),
+        EditRequest::RemoveSilences { clip_id, cuts } => {
+            silences::remove_silences(session, *clip_id, cuts)
+        }
         EditRequest::SetCanvasSize { width, height } => {
             set_canvas_size(session, adopts_first_video_format, *width, *height)
         }
@@ -967,6 +980,52 @@ mod tests {
             },
         );
         assert!(too_far.is_err());
+    }
+
+    #[test]
+    fn removing_silences_closes_the_clip_up_in_one_step_and_keeps_its_id() {
+        let (mut session, clip_ids) = arranged_session();
+        let request: EditRequest = serde_json::from_value(serde_json::json!({
+            "type": "removeSilences",
+            "clipId": clip_ids[0].raw(),
+            "cuts": [
+                { "startTicks": seconds(1), "endTicks": seconds(2) },
+            ],
+        }))
+        .unwrap();
+
+        let outcome = apply(&mut session, request).unwrap();
+
+        assert!(outcome.created_clip_ids.is_empty(), "the selection stays");
+        assert_eq!(session.next_undo_label(), Some("removeSilences"));
+        assert_eq!(
+            clip_start_and_end(&session, clip_ids[0]),
+            (Timestamp::ZERO, Timestamp::from_whole_seconds(1))
+        );
+        assert_eq!(
+            clip_start_and_end(&session, clip_ids[1]).0,
+            Timestamp::from_whole_seconds(2),
+            "the next video of the track moved 1 s earlier"
+        );
+        assert_eq!(
+            clip_start_and_end(&session, clip_ids[2]).0,
+            Timestamp::ZERO,
+            "the sound on its own track did not move"
+        );
+
+        let empty_cut = EditRequest::RemoveSilences {
+            clip_id: clip_ids[1],
+            cuts: vec![TickRange {
+                start_ticks: seconds(3),
+                end_ticks: seconds(3),
+            }],
+        };
+        assert!(apply(&mut session, empty_cut).is_err());
+        session.undo().unwrap();
+        assert_eq!(
+            clip_start_and_end(&session, clip_ids[1]).0,
+            Timestamp::from_whole_seconds(3)
+        );
     }
 
     #[test]
