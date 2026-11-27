@@ -136,7 +136,7 @@ pub async fn import_media(
         tauri::async_runtime::spawn_blocking(move || probe_files(backend.as_ref(), &file_paths))
             .await
             .map_err(CommandError::internal)?;
-    state.with_open_project(|open_project| {
+    let response = state.with_open_project(|open_project| {
         let media_ids = if descriptions.is_empty() {
             Vec::new()
         } else {
@@ -147,7 +147,10 @@ pub async fn import_media(
             media_ids,
             failures,
         })
-    })
+    })?;
+    // Heavy videos get a proxy in the background (decision record 0055).
+    state.notice_media_of_open_project();
+    Ok(response)
 }
 
 /// Probes every file, keeping the readable ones and explaining the others.

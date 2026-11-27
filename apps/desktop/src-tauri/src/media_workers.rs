@@ -8,6 +8,10 @@
 //! The preview thread only ever renders the **newest** waiting job: while the
 //! user drags the playhead, older positions are answered "superseded" instead of
 //! piling up.
+//!
+//! Both read the proxies of heavy videos when they are ready (decision record
+//! 0055), listed in [`ReadyProxies`]. Both can be asked to close every file
+//! they hold, so the proxy cache can be cleared.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,6 +24,7 @@ use kadr_core::time::Timestamp;
 use kadr_engine::RendererPreference;
 use kadr_engine::media_overview::ThumbnailMaker;
 use kadr_engine::preview::PreviewRenderer;
+use kadr_engine::proxies::ReadyProxies;
 use kadr_media::MediaBackend;
 
 use crate::binary_messages::{encode_rgba_picture, encode_yuv_picture};
@@ -52,23 +57,53 @@ pub struct ThumbnailJob {
     pub reply: Sender<PictureReply>,
 }
 
+/// What a picture thread is asked.
+enum WorkerRequest<Job> {
+    /// A picture.
+    Picture(Job),
+    /// Close every open file, then answer.
+    CloseFiles(Sender<()>),
+}
+
+/// How long [`PreviewWorker::close_files`] and [`ThumbnailWorker::close_files`]
+/// wait for the thread, which may be busy with a picture.
+const CLOSE_FILES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Asks a picture thread to close its files and waits for it.
+fn ask_to_close_files<Job>(jobs: &Sender<WorkerRequest<Job>>) {
+    let (answer, answered) = mpsc::channel();
+    if jobs.send(WorkerRequest::CloseFiles(answer)).is_ok() {
+        let _ = answered.recv_timeout(CLOSE_FILES_TIMEOUT);
+    }
+}
+
 /// Sends jobs to the preview thread.
 pub struct PreviewWorker {
-    jobs: Sender<PreviewJob>,
+    jobs: Sender<WorkerRequest<PreviewJob>>,
 }
 
 impl PreviewWorker {
-    /// Starts the preview thread.
+    /// Starts the preview thread, which shows videos from the proxies listed in
+    /// `proxies` when there are some.
     ///
     /// # Errors
     ///
     /// When the system cannot start a thread.
-    pub fn start(backend: Arc<dyn MediaBackend>) -> std::io::Result<Self> {
+    pub fn start(
+        backend: Arc<dyn MediaBackend>,
+        proxies: Arc<ReadyProxies>,
+    ) -> std::io::Result<Self> {
         let (jobs, received_jobs) = mpsc::channel();
         thread::Builder::new()
             .name("kadr-preview".to_string())
-            .spawn(move || run_preview_thread(backend.as_ref(), &received_jobs))?;
+            .spawn(move || run_preview_thread(backend.as_ref(), proxies, &received_jobs))?;
         Ok(Self { jobs })
+    }
+
+    /// Closes every file the preview holds open (they reopen on the next frame).
+    /// Blocks for a moment: call it off the interface's thread.
+    pub fn close_files(&self) {
+        ask_to_close_files(&self.jobs);
     }
 
     /// Asks for a frame; the answer arrives on the returned channel.
@@ -85,7 +120,9 @@ impl PreviewWorker {
             maximum_size,
             reply,
         };
-        if let Err(mpsc::SendError(job)) = self.jobs.send(job) {
+        if let Err(mpsc::SendError(WorkerRequest::Picture(job))) =
+            self.jobs.send(WorkerRequest::Picture(job))
+        {
             let _ = job.reply.send(Err(worker_stopped("preview")));
         }
         answer
@@ -94,21 +131,31 @@ impl PreviewWorker {
 
 /// Sends jobs to the thumbnail thread.
 pub struct ThumbnailWorker {
-    jobs: Sender<ThumbnailJob>,
+    jobs: Sender<WorkerRequest<ThumbnailJob>>,
 }
 
 impl ThumbnailWorker {
-    /// Starts the thumbnail thread.
+    /// Starts the thumbnail thread, which reads videos from the proxies listed
+    /// in `proxies` when there are some.
     ///
     /// # Errors
     ///
     /// When the system cannot start a thread.
-    pub fn start(backend: Arc<dyn MediaBackend>) -> std::io::Result<Self> {
+    pub fn start(
+        backend: Arc<dyn MediaBackend>,
+        proxies: Arc<ReadyProxies>,
+    ) -> std::io::Result<Self> {
         let (jobs, received_jobs) = mpsc::channel();
         thread::Builder::new()
             .name("kadr-thumbnails".to_string())
-            .spawn(move || run_thumbnail_thread(backend.as_ref(), &received_jobs))?;
+            .spawn(move || run_thumbnail_thread(backend.as_ref(), proxies, &received_jobs))?;
         Ok(Self { jobs })
+    }
+
+    /// Closes every file the thumbnail thread holds open. Blocks for a moment:
+    /// call it off the interface's thread.
+    pub fn close_files(&self) {
+        ask_to_close_files(&self.jobs);
     }
 
     /// Asks for a thumbnail; the answer arrives on the returned channel.
@@ -125,7 +172,9 @@ impl ThumbnailWorker {
             maximum_size,
             reply,
         };
-        if let Err(mpsc::SendError(job)) = self.jobs.send(job) {
+        if let Err(mpsc::SendError(WorkerRequest::Picture(job))) =
+            self.jobs.send(WorkerRequest::Picture(job))
+        {
             let _ = job.reply.send(Err(worker_stopped("thumbnail")));
         }
         answer
@@ -136,7 +185,11 @@ fn worker_stopped(worker_name: &str) -> CommandError {
     CommandError::internal(format!("the {worker_name} thread has stopped"))
 }
 
-fn run_preview_thread(backend: &dyn MediaBackend, jobs: &Receiver<PreviewJob>) {
+fn run_preview_thread(
+    backend: &dyn MediaBackend,
+    proxies: Arc<ReadyProxies>,
+    jobs: &Receiver<WorkerRequest<PreviewJob>>,
+) {
     // `GpuIfAvailable` falls back to the CPU instead of failing.
     let mut renderer = match PreviewRenderer::new(RendererPreference::GpuIfAvailable) {
         Ok(renderer) => renderer,
@@ -145,13 +198,30 @@ fn run_preview_thread(backend: &dyn MediaBackend, jobs: &Receiver<PreviewJob>) {
             return;
         }
     };
-    while let Ok(mut job) = jobs.recv() {
-        while let Ok(newer_job) = jobs.try_recv() {
-            let _ = job.reply.send(Err(CommandError::new(
-                ErrorCode::Superseded,
-                "a newer frame was asked for",
-            )));
-            job = newer_job;
+    renderer.use_proxies(proxies);
+    while let Ok(request) = jobs.recv() {
+        let mut job = match request {
+            WorkerRequest::Picture(job) => job,
+            WorkerRequest::CloseFiles(answer) => {
+                renderer.close_open_files();
+                let _ = answer.send(());
+                continue;
+            }
+        };
+        while let Ok(newer_request) = jobs.try_recv() {
+            match newer_request {
+                WorkerRequest::Picture(newer_job) => {
+                    let _ = job.reply.send(Err(CommandError::new(
+                        ErrorCode::Superseded,
+                        "a newer frame was asked for",
+                    )));
+                    job = newer_job;
+                }
+                WorkerRequest::CloseFiles(answer) => {
+                    renderer.close_open_files();
+                    let _ = answer.send(());
+                }
+            }
         }
         let result = renderer
             .render_frame(&job.project, backend, job.timeline_time, job.maximum_size)
@@ -161,17 +231,37 @@ fn run_preview_thread(backend: &dyn MediaBackend, jobs: &Receiver<PreviewJob>) {
     }
 }
 
-fn answer_every_job_with_error(jobs: &Receiver<PreviewJob>, details: &str) {
-    while let Ok(job) = jobs.recv() {
-        let _ = job
-            .reply
-            .send(Err(CommandError::new(ErrorCode::PreviewFailed, details)));
+fn answer_every_job_with_error(jobs: &Receiver<WorkerRequest<PreviewJob>>, details: &str) {
+    while let Ok(request) = jobs.recv() {
+        match request {
+            WorkerRequest::Picture(job) => {
+                let _ = job
+                    .reply
+                    .send(Err(CommandError::new(ErrorCode::PreviewFailed, details)));
+            }
+            WorkerRequest::CloseFiles(answer) => {
+                let _ = answer.send(());
+            }
+        }
     }
 }
 
-fn run_thumbnail_thread(backend: &dyn MediaBackend, jobs: &Receiver<ThumbnailJob>) {
+fn run_thumbnail_thread(
+    backend: &dyn MediaBackend,
+    proxies: Arc<ReadyProxies>,
+    jobs: &Receiver<WorkerRequest<ThumbnailJob>>,
+) {
     let mut thumbnail_maker = ThumbnailMaker::new();
-    while let Ok(job) = jobs.recv() {
+    thumbnail_maker.use_proxies(proxies);
+    while let Ok(request) = jobs.recv() {
+        let job = match request {
+            WorkerRequest::Picture(job) => job,
+            WorkerRequest::CloseFiles(answer) => {
+                thumbnail_maker.close_open_files();
+                let _ = answer.send(());
+                continue;
+            }
+        };
         let result = thumbnail_maker
             .thumbnail_at(backend, &job.file_path, job.source_time, job.maximum_size)
             .map(|thumbnail| {

@@ -157,6 +157,7 @@ fn make_current(
     );
     let view = open_project.view();
     *state.lock_open_project() = Some(open_project);
+    state.notice_media_of_open_project();
     view
 }
 
