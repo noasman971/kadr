@@ -115,7 +115,8 @@ drawing a frame. The pixel work is in `kadr_engine::still_frames`.
 
 | Tool | What it does |
 |---|---|
-| `detect_silences` | The silent parts of a file (`media_id`, times into the file) or of a clip (`clip_id`, times in the file and on the timeline): quieter than `threshold_in_decibels` (default −40 dBFS) for at least `minimum_silence_in_seconds` (default 0.5). Changes nothing; its description tells Claude how to cut them (split at both ends, remove with `close_gap`, last silence first). |
+| `detect_silences` | The silent parts of a file (`media_id`, times into the file) or of a clip (`clip_id`, times in the file and on the timeline): quieter than `threshold_in_decibels` (default −40 dBFS) for at least `minimum_silence_in_seconds` (default 0.5). Changes nothing; `remove_silences` cuts them. |
+| `remove_silences` | Shortens every silence of a clip (same settings, plus `kept_pause_in_seconds`, default 0.2) to a short pause, in one undoable step (`RemoveClipParts`): the clip becomes pieces end to end (the first keeps the `clip_id`), later clips of its track move earlier, other tracks do not move. Reports the cuts, the pieces and how far later clips moved. Decision record 0051. |
 
 The loudness is the RMS level of 10 ms windows, computed by
 `kadr_vision::silence_detection` on the sound decoded piece by piece at 16 kHz by
@@ -160,8 +161,8 @@ export. Changing the shape silently would export something Claude never looked a
 
 > **User:** Cut the silences of the interview.
 >
-> **Claude:** `detect_silences` (clip_id) → for each silence, from the last to the
-> first: `split_clip`, `split_clip`, `remove_clip` (close_gap) → `get_timeline`.
+> **Claude:** `remove_silences` (clip_id) → `get_contact_sheet` around a few cuts to
+> check that no word was clipped.
 
 > **User:** Undo that last change.
 >
@@ -180,7 +181,8 @@ client over an in-memory pipe), as Claude Desktop would:
   following every change, errors listing valid ids;
 - `pictures.rs`: `get_frame` in its three modes (scaled to 1024 pixels with the
   original size stated) and contact sheets;
-- `silences.rs`: silences of a file and of a clip, then one cut out;
+- `silences.rs`: silences of a file and of a clip, one cut out by hand, then all of
+  them removed with `remove_silences` and undone;
 - `file_safety.rs`: allowed folders, `..`, relative paths, no overwrite without
   `overwrite`, no deletion, a project changed by another program;
 - `export_task.rs`: export in the background, status until finished, scaled

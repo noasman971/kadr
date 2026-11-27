@@ -189,6 +189,10 @@ Details: [docs/architecture.md](docs/architecture.md).
 - Clippy's `allow-unwrap-in-tests` only covers `#[test]` functions: integration test
   files with helper functions carry `#![allow(clippy::unwrap_used, clippy::expect_used)]`
   with a comment explaining why.
+- **Disk:** each session's build folder (`C:/Users/noasman/kadr-build/<session>`)
+  grows to 25–35 GB. Seven of them filled the desktop PC's 1 TB disk on 2026-11-27
+  (link errors, then "no space left"). Delete the build folder of a finished
+  session, with the owner's OK.
 - **Parallel sessions:** each worktree has its own `target/`, so every session
   compiles the whole workspace. Five at once filled 32 GB of memory and made
   everything 10 to 20 times slower. Run two or three sessions at most, with
@@ -253,6 +257,9 @@ Details: [docs/architecture.md](docs/architecture.md).
 - Editable number text must read back as the same number: `Intl` grouping turns 1200
   into "1,200" in English, which parses as 1.2. Use `formatEditableNumber` /
   `parseEditableNumber` (`src/lib/ui/numberText.ts`) for anything typed back.
+- Cutting ranges out of a clip (silences, and later filler words or bad takes):
+  `RemoveClipParts`, one command and one undo step, never a loop of `SplitClip` /
+  `RemoveClip` / `MoveClip` (decision 0051). It only closes up the clip's own track.
 - Transitions (phase 8a, decision 0050) live on clip **edges** (`entry_transition`,
   `exit_transition`), never as separate objects: no command has to update them when
   clips move. The clip touching the edge is drawn underneath by

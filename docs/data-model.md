@@ -116,7 +116,7 @@ a small struct implementing `EditCommand`:
 | Project | `ChangeProjectSettings` |
 | Media | `ImportMedia`, `RemoveMedia` (refused while clips use it) |
 | Tracks | `AddTrack`, `RemoveTrack`, `SetTrackMuted`, `SetTrackHidden` |
-| Clips | `AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `SetClipSpeed`, `SetClipPropertyValue`, `SetClipCrop`, `SetClipText` |
+| Clips | `AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `RemoveClipParts` (cut ranges out and close the gaps on the clip's track: silence removal), `SetClipSpeed`, `SetClipPropertyValue`, `SetClipCrop`, `SetClipText` |
 | Keyframes | `SetKeyframe`, `RemoveKeyframe` |
 | Effects | `AddEffect`, `RemoveEffect`, `ReplaceEffect`, `SetEffectEnabled` |
 | Transitions | `SetClipTransition`, `SetTextAnimation` |
