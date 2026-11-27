@@ -15,7 +15,7 @@ use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
 use crate::audio_buffer::{AudioBuffer, sample_index_at, span_of_sample_count};
 use crate::backend::{EncodingSpeed, ExportSinkSettings, MediaBackend, VideoEncoderPreference};
 use crate::error::MediaError;
-use crate::video_frame::VideoFrame;
+use crate::video_frame::{VideoFrame, YuvColorSpace, YuvPicture, YuvRange};
 
 /// Number of bars of the barcode: frame numbers up to 1023.
 pub const BARCODE_BIT_COUNT: u32 = 10;
@@ -46,24 +46,82 @@ pub fn frame_index_barcode(
     ))
 }
 
+/// The same barcode as [`frame_index_barcode`], built directly as BT.709
+/// limited-range YUV planes: much quicker for large (4K) test videos.
+pub fn frame_index_barcode_yuv(
+    width_in_pixels: u32,
+    height_in_pixels: u32,
+    frame_index: u32,
+) -> VideoFrame {
+    const BLACK_LUMA: u8 = 16;
+    const WHITE_LUMA: u8 = 235;
+    const NEUTRAL_CHROMA: u8 = 128;
+    let bar_width = (width_in_pixels / BARCODE_BIT_COUNT).max(1);
+    let row: Vec<u8> = (0..width_in_pixels)
+        .map(|x| {
+            let bit = (x / bar_width).min(BARCODE_BIT_COUNT - 1);
+            if (frame_index >> bit) & 1 == 1 {
+                WHITE_LUMA
+            } else {
+                BLACK_LUMA
+            }
+        })
+        .collect();
+    let y_plane = row.repeat(height_in_pixels as usize);
+    let chroma_length = YuvPicture::chroma_width(width_in_pixels) as usize
+        * YuvPicture::chroma_height(height_in_pixels) as usize;
+    let picture = YuvPicture::from_planes(
+        width_in_pixels,
+        height_in_pixels,
+        y_plane,
+        vec![NEUTRAL_CHROMA; chroma_length],
+        vec![NEUTRAL_CHROMA; chroma_length],
+        YuvColorSpace::BT709_LIMITED,
+    );
+    match picture {
+        Ok(picture) => VideoFrame::Yuv420(picture),
+        // The planes are built at the right sizes; fall back to the RGBA barcode.
+        Err(_) => frame_index_barcode(width_in_pixels, height_in_pixels, frame_index),
+    }
+}
+
 /// Reads back the frame number drawn by [`frame_index_barcode`], by averaging
 /// the middle of each bar.
 pub fn read_frame_index_barcode(frame: &VideoFrame) -> u32 {
-    let frame = frame.to_rgba();
-    let bar_width = (frame.width() / BARCODE_BIT_COUNT).max(1);
-    let (first_row, last_row) = (frame.height() / 4, frame.height() * 3 / 4);
+    let (width, height) = (frame.width(), frame.height());
+    let bar_width = (width / BARCODE_BIT_COUNT).max(1);
+    let (first_row, last_row) = (height / 4, height * 3 / 4);
+    let grey_at = grey_level_reader(frame);
     (0..BARCODE_BIT_COUNT)
         .filter(|&bit| {
-            let middle_column = (bit * bar_width + bar_width / 2).min(frame.width() - 1);
-            let mut grey_total = 0.0;
-            for row in first_row..last_row {
-                let pixel = frame.get_pixel(middle_column, row);
-                grey_total +=
-                    (f32::from(pixel[0]) + f32::from(pixel[1]) + f32::from(pixel[2])) / 3.0;
-            }
+            let middle_column = (bit * bar_width + bar_width / 2).min(width - 1);
+            let grey_total: f32 = (first_row..last_row)
+                .map(|row| grey_at(middle_column, row))
+                .sum();
             grey_total / (last_row - first_row).max(1) as f32 > BARCODE_WHITE_THRESHOLD
         })
         .fold(0, |frame_index, bit| frame_index | (1 << bit))
+}
+
+/// Reads the grey level (0 to 255) of single pixels, without converting the
+/// whole picture: YUV pictures are read from their brightness plane.
+fn grey_level_reader(frame: &VideoFrame) -> Box<dyn Fn(u32, u32) -> f32 + '_> {
+    match frame {
+        VideoFrame::Rgba(image) => Box::new(move |x, y| {
+            let pixel = image.get_pixel(x, y);
+            (f32::from(pixel[0]) + f32::from(pixel[1]) + f32::from(pixel[2])) / 3.0
+        }),
+        VideoFrame::Yuv420(picture) => {
+            let (black, scale) = match picture.color_space().range {
+                YuvRange::Limited => (16.0, 255.0 / 219.0),
+                YuvRange::Full => (0.0, 1.0),
+            };
+            Box::new(move |x, y| {
+                let luma = picture.y_plane()[(y * picture.width() + x) as usize];
+                (f32::from(luma) - black) * scale
+            })
+        }
+    }
 }
 
 /// A sine tone of `frequency_in_hertz`, present only during each beep.
@@ -246,7 +304,7 @@ pub fn write_test_video(
         .frame_count_covering(description.duration);
     for frame_index in 0..frame_count {
         let frame_number = u32::try_from(frame_index).unwrap_or(u32::MAX);
-        sink.write_video_frame(&frame_index_barcode(
+        sink.write_video_frame(&frame_index_barcode_yuv(
             description.width_in_pixels,
             description.height_in_pixels,
             frame_number,
@@ -269,6 +327,8 @@ mod tests {
         for frame_index in [0, 1, 2, 341, 512, 1023] {
             let barcode = frame_index_barcode(320, 240, frame_index);
             assert_eq!(read_frame_index_barcode(&barcode), frame_index);
+            let yuv_barcode = frame_index_barcode_yuv(320, 240, frame_index);
+            assert_eq!(read_frame_index_barcode(&yuv_barcode), frame_index);
         }
     }
 

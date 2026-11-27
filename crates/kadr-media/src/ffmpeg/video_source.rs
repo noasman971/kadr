@@ -18,7 +18,9 @@ use kadr_core::time::{TimeSpan, Timestamp};
 
 use super::picture_conversion::PictureConverter;
 use super::time_conversion::{microseconds_from_timestamp, timestamp_from_stream_units};
-use super::{decoding_failure, find_picture_stream, is_still_image_format, open_input_file};
+use super::{
+    PictureDecoder, decoding_failure, is_still_image_format, open_input_file, open_picture_decoder,
+};
 use crate::backend::VideoFrameSource;
 use crate::error::MediaError;
 use crate::video_frame::VideoFrame;
@@ -55,26 +57,12 @@ impl FfmpegVideoFrameSource {
     pub(crate) fn open(file_path: &Path) -> Result<Self, MediaError> {
         let input = open_input_file(file_path)?;
         let is_still_image = is_still_image_format(&input);
-        let stream = find_picture_stream(&input).ok_or_else(|| MediaError::NoVideoStream {
-            file_path: file_path.to_path_buf(),
-        })?;
-        let stream_index = stream.index();
-        let stream_time_base = stream.time_base();
-        let stream_start_in_stream_units = stream.start_time().max(0);
-
-        let mut codec_context = ffmpeg::codec::context::Context::from_parameters(
-            stream.parameters(),
-        )
-        .map_err(|error| decoding_failure(file_path, "reading the video parameters", error))?;
-        // Let FFmpeg decode several frames in parallel (0 = one thread per core).
-        codec_context.set_threading(ffmpeg::codec::threading::Config::kind(
-            ffmpeg::codec::threading::Type::Frame,
-        ));
-        let mut decoder = codec_context
-            .decoder()
-            .video()
-            .map_err(|error| decoding_failure(file_path, "opening the video decoder", error))?;
-        decoder.set_packet_time_base(stream_time_base);
+        let PictureDecoder {
+            stream_index,
+            stream_time_base,
+            stream_start_in_stream_units,
+            decoder,
+        } = open_picture_decoder(&input, file_path)?;
 
         Ok(Self {
             file_path: file_path.to_path_buf(),

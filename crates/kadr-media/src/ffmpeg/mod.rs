@@ -8,17 +8,21 @@ mod mp4_sink;
 mod picture_conversion;
 mod probe;
 mod time_conversion;
+mod video_proxy;
 mod video_source;
 
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::OnceLock;
 
 use ffmpeg_next as ffmpeg;
 use kadr_core::media_asset::MediaAssetDescription;
+use kadr_core::time::Timestamp;
 
 use crate::audio_buffer::AudioBuffer;
 use crate::backend::{
     AudioSegmentRequest, ExportSink, ExportSinkSettings, MediaBackend, VideoFrameSource,
+    VideoProxyOutcome, VideoProxySettings, VideoStreamDetails,
 };
 use crate::error::MediaError;
 
@@ -80,6 +84,18 @@ impl MediaBackend for FfmpegBackend {
     ) -> Result<Box<dyn ExportSink>, MediaError> {
         Ok(Box::new(mp4_sink::Mp4ExportSink::create(settings)?))
     }
+
+    fn describe_video_stream(&self, file_path: &Path) -> Result<VideoStreamDetails, MediaError> {
+        video_proxy::describe_video_stream(file_path)
+    }
+
+    fn make_video_proxy(
+        &self,
+        settings: &VideoProxySettings,
+        on_progress: &mut dyn FnMut(Timestamp) -> ControlFlow<()>,
+    ) -> Result<VideoProxyOutcome, MediaError> {
+        video_proxy::make_video_proxy(settings, on_progress)
+    }
 }
 
 /// Opens a file for reading, with a clear error.
@@ -110,6 +126,45 @@ fn find_picture_stream(
                 .disposition()
                 .contains(ffmpeg::format::stream::Disposition::ATTACHED_PIC)
         })
+}
+
+/// The decoder of a file's pictures, with what is needed to read its frame times.
+struct PictureDecoder {
+    stream_index: usize,
+    stream_time_base: ffmpeg::Rational,
+    /// Frame times are measured from here (negative starts count as zero).
+    stream_start_in_stream_units: i64,
+    decoder: ffmpeg::decoder::Video,
+}
+
+/// Opens the decoder of the best picture stream of `input`, decoding several
+/// frames in parallel.
+fn open_picture_decoder(
+    input: &ffmpeg::format::context::Input,
+    file_path: &Path,
+) -> Result<PictureDecoder, MediaError> {
+    let stream = find_picture_stream(input).ok_or_else(|| MediaError::NoVideoStream {
+        file_path: file_path.to_path_buf(),
+    })?;
+    let stream_time_base = stream.time_base();
+    let mut codec_context =
+        ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+            .map_err(|error| decoding_failure(file_path, "reading the video parameters", error))?;
+    // Let FFmpeg decode several frames in parallel (0 = one thread per core).
+    codec_context.set_threading(ffmpeg::codec::threading::Config::kind(
+        ffmpeg::codec::threading::Type::Frame,
+    ));
+    let mut decoder = codec_context
+        .decoder()
+        .video()
+        .map_err(|error| decoding_failure(file_path, "opening the video decoder", error))?;
+    decoder.set_packet_time_base(stream_time_base);
+    Ok(PictureDecoder {
+        stream_index: stream.index(),
+        stream_time_base,
+        stream_start_in_stream_units: stream.start_time().max(0),
+        decoder,
+    })
 }
 
 /// Whether FFmpeg opened the file as a still picture (PNG, JPEG, WebP…).
