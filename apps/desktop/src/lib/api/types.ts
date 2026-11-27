@@ -33,9 +33,31 @@ export interface MediaView {
   isMissing: boolean;
 }
 
+/** A value that may be animated (`project_view.rs`). */
 export interface PropertyView {
+  /** The value when it is not animated. */
   value: number;
-  keyframeCount: number;
+  /** Sorted by time; empty when the value is constant. */
+  keyframes: KeyframeView[];
+}
+
+/** How a value travels from a keyframe to the next (`editing/keyframes.rs`). */
+export type KeyframeCurve =
+  | { type: "linear" }
+  | { type: "easeIn" }
+  | { type: "easeOut" }
+  | { type: "easeInOut" }
+  | { type: "hold" }
+  /** CSS-like `cubic-bezier(x1, y1, x2, y2)`; every number from 0 to 1. */
+  | { type: "bezier"; x1: number; y1: number; x2: number; y2: number };
+
+export interface KeyframeView {
+  /** From the clip's start. */
+  offsetTicks: number;
+  /** In the value's own unit (multiplier, pixels from the centre, degrees). */
+  value: number;
+  /** To the next keyframe. */
+  curve: KeyframeCurve;
 }
 
 export interface CropView {
@@ -253,8 +275,19 @@ export type EditRequest =
   | { type: "removeTrack"; trackId: number }
   /** An export preset of another shape changes the project first (one undo step). */
   | { type: "setCanvasSize"; width: number; height: number }
-  /** Units: volume and scale are multipliers, opacity 0–1, positions pixels from the centre, rotation degrees. */
-  | { type: "setClipValue"; clipId: number; value: ClipValueName; amount: number }
+  /**
+   * Units: volume and scale are multipliers, opacity 0–1, positions pixels from
+   * the centre, rotation degrees. An animated value (as the back end has it)
+   * gets a keyframe at `timeTicks`, the playhead, instead.
+   */
+  | { type: "setClipValue"; clipId: number; value: ClipValueName; amount: number; timeTicks?: number }
+  /** A keyframe at the playhead holding the value there; the first one starts the animation. */
+  | { type: "addKeyframe"; clipId: number; value: ClipValueName; timeTicks: number }
+  /** Offsets are from the clip's start. An empty `values` moves every keyframe at that moment. */
+  | { type: "moveKeyframe"; clipId: number; values: ClipValueName[]; fromOffsetTicks: number; toOffsetTicks: number }
+  | { type: "setKeyframeCurve"; clipId: number; value: ClipValueName; offsetTicks: number; curve: KeyframeCurve }
+  /** An empty `values` removes every keyframe at that moment; a last keyframe's value is kept. */
+  | { type: "removeKeyframe"; clipId: number; values: ClipValueName[]; offsetTicks: number }
   /**
    * Crop, colour and text requests name only the settings they change: the back
    * end keeps the others as the project has them when it applies the request.

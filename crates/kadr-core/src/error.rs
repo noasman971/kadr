@@ -95,6 +95,19 @@ pub enum EditError {
         time_offset: TimeSpan,
     },
 
+    /// A keyframe would be placed outside its clip.
+    #[error(
+        "a keyframe at {time_offset} from the start of clip {clip_id} would be outside the clip, which lasts {clip_duration}"
+    )]
+    KeyframeOutsideClip {
+        /// The clip.
+        clip_id: ClipId,
+        /// The moment asked for, from the clip start.
+        time_offset: TimeSpan,
+        /// How long the clip lasts.
+        clip_duration: TimeSpan,
+    },
+
     /// A keyframe cannot move onto a moment that already has one.
     #[error(
         "the {property} of clip {clip_id} already has a keyframe at {time_offset} from the clip start; remove it first, or move this one elsewhere"
