@@ -274,3 +274,18 @@ Details: [docs/architecture.md](docs/architecture.md).
   `vertical_interview_format_1.kadr`) with a test that it still opens. A new enum
   variant (effect kind…) needs a version bump too, even with a no-op migration: an
   older Kadr must say "newer version" rather than "damaged file".
+- Desktop edit requests must never carry settings the user did not change: the view
+  the front end draws can be behind the back end (an earlier change not answered
+  yet, or Claude's change). Crop, colour and text requests take `changes` with
+  optional fields, applied to the project as it is then. `editor.edit`, `undo` and
+  `redo` go one at a time, in order (`inOrder`): Tauri runs commands on a thread
+  pool, so two requests sent together can be applied in either order. To reproduce
+  such races, wrap `window.fetch` in the page and hold back `apply_edit` requests or
+  answers (DevTools port).
+- Running the app while another session runs its own: port 1420 is then taken, and
+  a `tauri dev` whose Vite fails still starts its window on the **other** session's
+  front end. Use other ports and a separate WebView2 folder: a `--config` file
+  setting `build.devUrl` to `http://localhost:1430` and `build.beforeDevCommand` to
+  `npx vite --port 1430 --strictPort`, with `WEBVIEW2_USER_DATA_FOLDER` set and
+  another `--remote-debugging-port`. A running `kadr.exe` cannot be deleted but can
+  be renamed, which unblocks a rebuild.

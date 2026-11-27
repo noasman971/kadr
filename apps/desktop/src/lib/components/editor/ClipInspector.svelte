@@ -6,7 +6,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
 
-  import type { ClipValueName, ClipView, ColorSettings, EditRequest, TextAlignment } from "../../api/types";
+  import type { ClipValueName, ClipView, ColorSettings, CropView, EditRequest, TextAlignment, TextSettings } from "../../api/types";
   import { t, translations } from "../../i18n/i18n.svelte";
   import { editor } from "../../state/editor.svelte";
   import { TICKS_PER_SECOND } from "../../time/ticks";
@@ -64,8 +64,19 @@
   let draftText = $state("");
   let customSpeed = $state(false);
 
+  /** The title's words as the project has them. */
+  const savedWords = $derived(clip.text?.text ?? "");
+  /** The words when the field got the focus; `null` while it does not have it. */
+  let wordsAtFocus: string | null = null;
+
+  // The field follows the project's words, but not while the user types in it:
+  // the answer to an earlier change (the font size, say) can arrive meanwhile,
+  // and must not replace what is being typed.
   $effect(() => {
-    draftText = clip.text?.text ?? "";
+    const words = savedWords;
+    if (wordsAtFocus === null) {
+      draftText = words;
+    }
   });
 
   // A title just added asks for its words: focus the text field and select its
@@ -89,45 +100,44 @@
     edit({ type: "setClipValue", clipId, value, amount });
   }
 
-  function setCrop(side: "left" | "top" | "right" | "bottom", percent: number): void {
-    const current = currentClip();
-    if (current) {
-      edit({ type: "setClipCrop", clipId, ...current.crop, [side]: percent / 100 });
+  // Crop, colour and text changes name only what changed. The project here can
+  // be behind the back end's (an earlier change not answered yet): sending the
+  // other settings from it would put their old values back.
+
+  function setCrop(side: keyof CropView, percent: number): void {
+    if (currentClip()) {
+      const changes: Partial<CropView> = {};
+      changes[side] = percent / 100;
+      edit({ type: "setClipCrop", clipId, changes });
     }
   }
 
-  function setColor(change: Partial<ColorSettings>): void {
-    const current = currentClip();
-    if (current) {
-      edit({ type: "setClipColor", clipId, settings: { ...colorSettingsOf(current), ...change } });
+  function setColor(changes: Partial<ColorSettings>): void {
+    if (currentClip()) {
+      edit({ type: "setClipColor", clipId, changes });
     }
   }
 
-  function setText(change: Partial<{ text: string; fontFamily: string; fontSize: number; color: string; alignment: TextAlignment }>): void {
-    const current = currentClip()?.text;
-    if (!current) {
-      return;
+  function setText(changes: Partial<TextSettings>): void {
+    if (currentClip()?.text) {
+      edit({ type: "setClipText", clipId, changes });
     }
-    edit({
-      type: "setClipText",
-      clipId,
-      settings: {
-        text: current.text,
-        fontFamily: current.fontFamily,
-        fontSize: current.fontSize,
-        color: current.color,
-        alignment: current.alignment,
-        ...change,
-      },
-    });
   }
 
+  function startTypingWords(): void {
+    wordsAtFocus = draftText;
+  }
+
+  /** Sends the words typed, if the user changed them. */
   function commitDraftText(): void {
+    const typedOver = wordsAtFocus;
+    wordsAtFocus = null;
     const current = currentClip()?.text;
     if (!current) {
       return;
     }
-    if (draftText.trim() !== "" && draftText !== current.text) {
+    const isChanged = draftText !== typedOver && draftText !== current.text;
+    if (draftText.trim() !== "" && isChanged) {
       setText({ text: draftText });
     } else {
       draftText = current.text;
@@ -140,7 +150,7 @@
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       textArea?.blur();
     } else if (event.key === "Escape") {
-      draftText = clip.text?.text ?? "";
+      draftText = savedWords;
       textArea?.blur();
     }
   }
@@ -263,6 +273,7 @@
       bind:value={draftText}
       rows="3"
       aria-label={t("inspector.words")}
+      onfocus={startTypingWords}
       onblur={commitDraftText}
       onkeydown={handleTextKeydown}
     ></textarea>

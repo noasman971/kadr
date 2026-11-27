@@ -224,6 +224,17 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   speed, colour, font size, length): the field sends its value while it is being
   removed, when the inspector no longer has its clip. The change now goes to the
   clip the inspector was showing.
+- Desktop inspector: two quick changes to the same clip could make the second undo
+  the first. New words typed in a title, then a click on an alignment button before
+  the first answer arrived, brought the old words back; the same could happen to
+  the font, size and colour of a title, to the colour settings and to the crop.
+  Crop, colour and text requests now name only what changes, and the back end
+  keeps the rest as the project has it.
+- Desktop app: edits, undo and redo are sent one at a time, in order. Two requests
+  sent together could be applied in either order (left then right alignment could
+  end up left), and an undo pressed right after a change could be ignored.
+- Desktop inspector: words being typed in a title were replaced by the saved words
+  when the answer to an earlier change (a font size, say) arrived.
 - Number fields: after ↑ or ↓, leaving the field put the old value back.
 - Number fields in English: a value of 1000 or more was shown as "1,200", read back
   as 1.2, so just entering and leaving the field changed it (Position X 1200 px
