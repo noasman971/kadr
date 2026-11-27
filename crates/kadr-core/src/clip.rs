@@ -386,7 +386,8 @@ pub struct Clip {
     pub opacity: AnimatedValue,
     /// Position, scale, rotation and crop.
     pub transform: ClipTransform,
-    /// Effects, applied in order.
+    /// Effects. Tracked blurs apply to the source picture first, then the colour
+    /// adjustments in list order, then the colour LUT (see [`crate::effect`]).
     pub effects: Vec<Effect>,
     /// How the picture enters, over the clip's first moments (videos and images).
     pub entry_transition: Option<Transition>,

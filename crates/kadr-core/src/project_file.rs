@@ -30,7 +30,8 @@ use crate::validation::{ValidationError, validate_project};
 /// |---|---|
 /// | 1 | First format (phase 1) |
 /// | 2 | Transitions on clips, animations on texts (phase 8) |
-pub const CURRENT_FORMAT_VERSION: u32 = 2;
+/// | 3 | Colour LUT effects on clips (phase 8c) |
+pub const CURRENT_FORMAT_VERSION: u32 = 3;
 
 /// The recommended file extension, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "kadr";
@@ -93,10 +94,16 @@ pub struct Migration {
 }
 
 /// Every migration, in increasing `from_version` order.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    from_version: 1,
-    upgrade_document: add_transitions_and_text_animations,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        from_version: 1,
+        upgrade_document: add_transitions_and_text_animations,
+    },
+    Migration {
+        from_version: 2,
+        upgrade_document: allow_color_luts,
+    },
+];
 
 /// Version 1 → 2: every clip gets `entry_transition` and `exit_transition`, and
 /// every text gets `entry_animation` and `exit_animation`, all empty (`null`).
@@ -124,6 +131,13 @@ fn add_transitions_and_text_animations(document: &mut Value) -> Result<(), Strin
             }
         }
     }
+    Ok(())
+}
+
+/// Version 2 → 3: a new effect, the colour LUT. A version 2 file has none, so
+/// nothing changes; the version goes up so that an older Kadr opening a file
+/// with a LUT says "please update Kadr" instead of "the file is damaged".
+fn allow_color_luts(_document: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
@@ -217,7 +231,7 @@ mod tests {
     fn an_empty_project_round_trips() {
         let project = Project::new(ProjectSettings::vertical_1080x1920());
         let json_text = save_project_to_json(&project).unwrap();
-        assert!(json_text.contains("\"format_version\": 2"));
+        assert!(json_text.contains("\"format_version\": 3"));
         assert_eq!(load_project_from_json(&json_text).unwrap(), project);
     }
 
@@ -251,8 +265,26 @@ mod tests {
         assert_eq!(texts.len(), 1);
         assert_eq!(texts[0].entry_animation, None);
         assert_eq!(texts[0].exit_animation, None);
-        // Saved again, it is a version 2 file that reads back identically.
+        // Saved again, it is a current-version file that reads back identically.
         let saved_again = save_project_to_json(&project).unwrap();
+        assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
+    }
+
+    /// A version 2 file (phase 8a and 8b), kept from the editing scenario's
+    /// snapshot before colour LUTs changed the format.
+    const VERSION_2_FILE: &str = include_str!("../tests/fixtures/vertical_interview_format_2.kadr");
+
+    #[test]
+    fn version_2_files_are_upgraded_unchanged() {
+        let project = load_project_from_json(VERSION_2_FILE).unwrap();
+        let has_a_lut = project.timeline().all_clips().any(|(_, clip)| {
+            clip.effects
+                .iter()
+                .any(|effect| matches!(effect.kind, crate::effect::EffectKind::ColorLut(_)))
+        });
+        assert!(!has_a_lut);
+        let saved_again = save_project_to_json(&project).unwrap();
+        assert!(saved_again.contains("\"format_version\": 3"));
         assert_eq!(load_project_from_json(&saved_again).unwrap(), project);
     }
 
@@ -290,7 +322,8 @@ mod tests {
         assert!(error.to_string().contains("newer version of Kadr"));
     }
 
-    /// Simulates a future format 3, where version 1 files must be upgraded twice.
+    /// Simulates a format where version 1 files must be upgraded twice, with
+    /// migrations other than the real ones.
     #[test]
     fn migrations_run_in_order_up_to_the_target_version() {
         fn rename_field(document: &mut Value) -> Result<(), String> {

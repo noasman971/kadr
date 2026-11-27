@@ -1,0 +1,379 @@
+{
+  "format_version": 2,
+  "project": {
+    "settings": {
+      "canvas_size": {
+        "width_in_pixels": 1080,
+        "height_in_pixels": 1920
+      },
+      "frame_rate": {
+        "numerator": 30,
+        "denominator": 1
+      },
+      "audio_sample_rate_in_hertz": 48000,
+      "background_color": "#000000FF"
+    },
+    "media_assets": [
+      {
+        "id": 1,
+        "file_path": "footage/interview.mp4",
+        "display_name": "interview.mp4",
+        "kind": "video",
+        "duration": 21168000000,
+        "picture_size": {
+          "width_in_pixels": 1920,
+          "height_in_pixels": 1080
+        },
+        "frame_rate": {
+          "numerator": 30,
+          "denominator": 1
+        },
+        "audio_format": {
+          "sample_rate_in_hertz": 48000,
+          "channel_count": 2
+        }
+      },
+      {
+        "id": 2,
+        "file_path": "music/calm.mp3",
+        "display_name": "calm.mp3",
+        "kind": "audio",
+        "duration": 84672000000,
+        "picture_size": null,
+        "frame_rate": null,
+        "audio_format": {
+          "sample_rate_in_hertz": 44100,
+          "channel_count": 2
+        }
+      }
+    ],
+    "timeline": {
+      "tracks": [
+        {
+          "id": 3,
+          "kind": "video",
+          "name": "Video 1",
+          "is_muted": false,
+          "is_hidden": false,
+          "clips": [
+            {
+              "id": 6,
+              "content": {
+                "type": "media",
+                "media_asset_id": 1,
+                "source_start": 1411200000,
+                "source_end": 5644800000,
+                "speed": {
+                  "numerator": 1,
+                  "denominator": 1
+                }
+              },
+              "timeline_start": 0,
+              "volume_multiplier": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "opacity": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "transform": {
+                "position_x_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "position_y_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "scale_factor": {
+                  "constant_value": 1.0,
+                  "keyframes": []
+                },
+                "rotation_in_degrees": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "crop": {
+                  "left_fraction": 0.0,
+                  "top_fraction": 0.0,
+                  "right_fraction": 0.0,
+                  "bottom_fraction": 0.0
+                }
+              },
+              "effects": [
+                {
+                  "id": 9,
+                  "is_enabled": true,
+                  "kind": {
+                    "type": "tracked_blur",
+                    "style": {
+                      "type": "pixelate",
+                      "block_size_in_pixels": 24
+                    },
+                    "shape": "ellipse",
+                    "margin_in_percent": 25.0,
+                    "edge_softness_in_pixels": 6.0,
+                    "region_samples": [
+                      {
+                        "source_time": 1411200000,
+                        "region": {
+                          "left_in_pixels": 800.0,
+                          "top_in_pixels": 200.0,
+                          "width_in_pixels": 180.0,
+                          "height_in_pixels": 220.0
+                        },
+                        "confidence": "confident",
+                        "origin": "user_selection"
+                      },
+                      {
+                        "source_time": 2116800000,
+                        "region": {
+                          "left_in_pixels": 812.5,
+                          "top_in_pixels": 200.0,
+                          "width_in_pixels": 180.0,
+                          "height_in_pixels": 220.0
+                        },
+                        "confidence": "confident",
+                        "origin": "tracker"
+                      },
+                      {
+                        "source_time": 2822400000,
+                        "region": {
+                          "left_in_pixels": 830.0,
+                          "top_in_pixels": 200.0,
+                          "width_in_pixels": 180.0,
+                          "height_in_pixels": 220.0
+                        },
+                        "confidence": "uncertain",
+                        "origin": "tracker"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "entry_transition": {
+                "style": {
+                  "type": "fade"
+                },
+                "duration": 352800000
+              },
+              "exit_transition": null
+            },
+            {
+              "id": 8,
+              "content": {
+                "type": "media",
+                "media_asset_id": 1,
+                "source_start": 7761600000,
+                "source_end": 14112000000,
+                "speed": {
+                  "numerator": 3,
+                  "denominator": 2
+                }
+              },
+              "timeline_start": 4233600000,
+              "volume_multiplier": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "opacity": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "transform": {
+                "position_x_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "position_y_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "scale_factor": {
+                  "constant_value": 1.0,
+                  "keyframes": []
+                },
+                "rotation_in_degrees": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "crop": {
+                  "left_fraction": 0.0,
+                  "top_fraction": 0.0,
+                  "right_fraction": 0.0,
+                  "bottom_fraction": 0.0
+                }
+              },
+              "effects": [
+                {
+                  "id": 10,
+                  "is_enabled": true,
+                  "kind": {
+                    "type": "color_adjustment",
+                    "exposure_in_stops": 0.0,
+                    "contrast_multiplier": 1.0,
+                    "saturation_multiplier": 1.2,
+                    "temperature_shift": 0.0
+                  }
+                }
+              ],
+              "entry_transition": {
+                "style": {
+                  "type": "slide",
+                  "direction": "left"
+                },
+                "duration": 282240000
+              },
+              "exit_transition": {
+                "style": {
+                  "type": "zoom",
+                  "direction": "out"
+                },
+                "duration": 705600000
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "kind": "video",
+          "name": "Video 2",
+          "is_muted": false,
+          "is_hidden": false,
+          "clips": [
+            {
+              "id": 11,
+              "content": {
+                "type": "text",
+                "text": "Meet Alex",
+                "duration": 2116800000,
+                "style": {
+                  "font_family": "Inter",
+                  "font_size_in_pixels": 64.0,
+                  "color": "#FFFFFFFF",
+                  "alignment": "center"
+                },
+                "entry_animation": null,
+                "exit_animation": {
+                  "style": {
+                    "type": "type_on"
+                  },
+                  "duration": 564480000
+                }
+              },
+              "timeline_start": 0,
+              "volume_multiplier": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "opacity": {
+                "constant_value": 1.0,
+                "keyframes": [
+                  {
+                    "time_offset": 0,
+                    "value": 0.0,
+                    "interpolation_to_next": "ease_in_out"
+                  },
+                  {
+                    "time_offset": 705600000,
+                    "value": 1.0,
+                    "interpolation_to_next": "ease_in_out"
+                  }
+                ]
+              },
+              "transform": {
+                "position_x_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "position_y_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "scale_factor": {
+                  "constant_value": 1.0,
+                  "keyframes": []
+                },
+                "rotation_in_degrees": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "crop": {
+                  "left_fraction": 0.0,
+                  "top_fraction": 0.0,
+                  "right_fraction": 0.0,
+                  "bottom_fraction": 0.0
+                }
+              },
+              "effects": [],
+              "entry_transition": null,
+              "exit_transition": null
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "kind": "audio",
+          "name": "Audio 1",
+          "is_muted": false,
+          "is_hidden": false,
+          "clips": [
+            {
+              "id": 12,
+              "content": {
+                "type": "media",
+                "media_asset_id": 2,
+                "source_start": 0,
+                "source_end": 8467200000,
+                "speed": {
+                  "numerator": 1,
+                  "denominator": 1
+                }
+              },
+              "timeline_start": 0,
+              "volume_multiplier": {
+                "constant_value": 0.3,
+                "keyframes": []
+              },
+              "opacity": {
+                "constant_value": 1.0,
+                "keyframes": []
+              },
+              "transform": {
+                "position_x_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "position_y_in_pixels": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "scale_factor": {
+                  "constant_value": 1.0,
+                  "keyframes": []
+                },
+                "rotation_in_degrees": {
+                  "constant_value": 0.0,
+                  "keyframes": []
+                },
+                "crop": {
+                  "left_fraction": 0.0,
+                  "top_fraction": 0.0,
+                  "right_fraction": 0.0,
+                  "bottom_fraction": 0.0
+                }
+              },
+              "effects": [],
+              "entry_transition": null,
+              "exit_transition": null
+            }
+          ]
+        }
+      ]
+    },
+    "id_allocator": {
+      "next_raw_id": 13
+    }
+  }
+}
