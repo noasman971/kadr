@@ -37,7 +37,7 @@ describe("proxy badges", () => {
 
   it("lets a waiting proxy be skipped", () => {
     const badge = proxyBadgeOf({ state: "queued", reason: null }, video);
-    expect(badge).toMatchObject({ label: "Proxy: waiting", fraction: null, action: "stop" });
+    expect(badge).toMatchObject({ label: "Proxy…", fraction: null, action: "stop" });
     expect(badge?.hint).toContain("Asked for");
   });
 

@@ -56,7 +56,7 @@ export const frenchMessages: Messages = {
   "library.missing": "Introuvable : {name}",
   "library.dropOverlay": "Déposez pour importer",
   "library.noResults": "Aucun média ne correspond à « {query} ».",
-  "library.proxy.queued": "Proxy : en attente",
+  "library.proxy.queued": "Proxy…",
   "library.proxy.making": "Proxy {percent} %",
   "library.proxy.ready": "Proxy",
   "library.proxy.stopped": "Sans proxy",

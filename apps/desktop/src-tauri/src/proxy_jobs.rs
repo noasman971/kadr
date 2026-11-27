@@ -36,8 +36,8 @@ use serde::{Deserialize, Serialize};
 use crate::command_error::{CommandError, CommandResult};
 
 /// The cache is trimmed to this size after each new proxy, least recently used
-/// first (proxies of the open project are kept). 1080p proxies take about
-/// 70 MB per minute: this is about two and a half hours of video.
+/// first (proxies of the session are kept). 1080p proxies take about 80 MB
+/// per minute: this is about two hours of video.
 pub const PROXY_CACHE_LIMIT_IN_BYTES: u64 = 10_000_000_000;
 /// Progress is sent at most this often.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);

@@ -56,7 +56,7 @@ export const englishMessages = {
   "library.missing": "Missing: {name}",
   "library.dropOverlay": "Drop to import",
   "library.noResults": "No media match “{query}”.",
-  "library.proxy.queued": "Proxy: waiting",
+  "library.proxy.queued": "Proxy…",
   "library.proxy.making": "Proxy {percent} %",
   "library.proxy.ready": "Proxy",
   "library.proxy.stopped": "No proxy",

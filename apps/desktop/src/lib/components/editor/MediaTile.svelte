@@ -158,12 +158,13 @@
     position: absolute;
     top: 4px;
     left: 28px;
-    max-width: calc(100% - 60px);
+    /* Over the + button's corner if need be: that button shows on hover, on top. */
+    max-width: calc(100% - 32px);
     height: 20px;
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    padding: 0 2px 0 6px;
+    padding: 0 2px 0 5px;
     border-radius: var(--radius-sm);
     background: rgba(0, 0, 0, 0.6);
     color: #ffffff;
