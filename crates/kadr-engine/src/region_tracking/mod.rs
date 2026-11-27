@@ -20,7 +20,6 @@
 
 mod correction;
 mod debug_video;
-mod frame_reading;
 mod track_samples;
 
 use std::path::PathBuf;
@@ -43,9 +42,9 @@ use kadr_vision::{
     TrackingState, shrink_factor_for_tracking, smooth_track,
 };
 
+use crate::frame_reading::{FrameReader, FrameReadingError};
 pub use correction::{corrected_tracked_blur, find_tracked_blur};
 pub use debug_video::{DebugVideoRequest, export_tracking_debug_video};
-use frame_reading::FrameReader;
 
 /// Frames decoded at once when tracking backwards (about one second of video,
 /// 30 small grey images in memory).
@@ -334,6 +333,15 @@ pub enum RegionTrackingError {
     Media(#[from] MediaError),
 }
 
+impl From<FrameReadingError> for RegionTrackingError {
+    fn from(error: FrameReadingError) -> Self {
+        match error {
+            FrameReadingError::SizeChanged => Self::VideoSizeChanged,
+            FrameReadingError::Media(error) => Self::Media(error),
+        }
+    }
+}
+
 /// The frames of the request, by index.
 #[derive(Debug, Clone, Copy)]
 struct FrameRange {
@@ -403,7 +411,12 @@ pub fn track_region(
     let shrink_factor = shrink_factor_for_tracking(request.picture_size.width_in_pixels as usize);
     check_selection(request, shrink_factor)?;
     let selection = region_from_pixels(&request.selection).in_shrunk_image(shrink_factor);
-    let mut reader = FrameReader::open(backend, request, shrink_factor)?;
+    let mut reader = FrameReader::open(
+        backend,
+        &request.video_path,
+        request.frame_rate,
+        shrink_factor,
+    )?;
     let mut counter = ProgressCounter {
         progress: TrackingProgress {
             analysed_frame_count: 0,
