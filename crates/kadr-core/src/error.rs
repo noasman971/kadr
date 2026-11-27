@@ -95,6 +95,19 @@ pub enum EditError {
         time_offset: TimeSpan,
     },
 
+    /// A keyframe cannot move onto a moment that already has one.
+    #[error(
+        "the {property} of clip {clip_id} already has a keyframe at {time_offset} from the clip start; remove it first, or move this one elsewhere"
+    )]
+    KeyframeAlreadyThere {
+        /// The clip.
+        clip_id: ClipId,
+        /// The property.
+        property: AnimatableProperty,
+        /// The moment already taken, from the clip start.
+        time_offset: TimeSpan,
+    },
+
     /// A media file cannot be removed while clips still show it.
     #[error(
         "media {media_asset_id} is still used by clips {}; remove those clips first",
