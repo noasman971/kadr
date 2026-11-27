@@ -22,6 +22,12 @@
 //! Transitions and text animations move layers (see [`super::clip_layers`]); a
 //! clip shown under its neighbour's transition reads its source past its cut,
 //! holding the file's first or last frame where the file ends.
+//!
+//! Proxies (decision record 0055): only a composer given [`ReadyProxies`] (the
+//! preview's) reads them, instead of the originals they stand for. Tracked blur
+//! regions, given in the original's pixels, are then scaled to the proxy's.
+//! Crops are fractions and positions are canvas pixels, so the rest of the
+//! placement is the same. The export's composer has no proxies.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -30,7 +36,7 @@ use std::sync::Arc;
 use kadr_core::clip::{Clip, ClipContent, TextContent};
 use kadr_core::effect::{ColorAdjustment, EffectKind};
 use kadr_core::ids::ClipId;
-use kadr_core::media_asset::MediaKind;
+use kadr_core::media_asset::{MediaKind, PictureSize};
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::TrackKind;
@@ -42,6 +48,7 @@ use kadr_render::{
 
 use super::clip_layers::plan_track_layers;
 use crate::color_grading::{ColorTableError, ColorTableLibrary, applied_color_lut_of};
+use crate::proxies::{ReadyProxies, hidden_region_for_picture_size};
 
 /// The decoder of one clip, with the file it reads.
 struct OpenVideoSource {
@@ -70,6 +77,8 @@ pub(crate) struct FrameComposer {
     text_pictures: HashMap<ClipId, (TextContent, TextReveal, Arc<VideoFrame>)>,
     /// The LUT files read so far.
     color_tables: ColorTableLibrary,
+    /// Proxies to read instead of their originals: the preview's only.
+    proxies: Option<Arc<ReadyProxies>>,
 }
 
 impl FrameComposer {
@@ -80,7 +89,19 @@ impl FrameComposer {
             text_rasterizer: None,
             text_pictures: HashMap::new(),
             color_tables: ColorTableLibrary::default(),
+            proxies: None,
         }
+    }
+
+    /// Reads the proxies listed in `proxies` instead of their originals.
+    pub(crate) fn use_proxies(&mut self, proxies: Arc<ReadyProxies>) {
+        self.proxies = Some(proxies);
+    }
+
+    /// Closes every decoder (they reopen when needed), so their files can be
+    /// deleted.
+    pub(crate) fn close_open_sources(&mut self) {
+        self.open_sources.clear();
     }
 
     /// The table of a LUT file, read if it was not yet or if it changed.
@@ -206,14 +227,57 @@ impl FrameComposer {
                 None => return Ok(None),
             }
         };
-        let picture = self
-            .video_source_of(backend, clip.id, &media_asset.description.file_path)?
-            .frame_at(source_time)?;
-        let hidden_regions = hidden_regions_of(clip, source_time);
+        let original_path = media_asset.description.file_path.as_path();
+        let (picture, is_from_proxy) =
+            self.picture_preferably_from_proxy(backend, clip.id, original_path, source_time)?;
+        let mut hidden_regions = hidden_regions_of(clip, source_time);
         if hidden_regions.is_empty() {
             return Ok(Some(picture));
         }
+        if is_from_proxy && let Some(original_size) = media_asset.description.picture_size {
+            let shown_size = PictureSize {
+                width_in_pixels: picture.width(),
+                height_in_pixels: picture.height(),
+            };
+            for region in &mut hidden_regions {
+                *region = hidden_region_for_picture_size(region, original_size, shown_size);
+            }
+        }
         Ok(Some(Arc::new(hide_regions(&picture, &hidden_regions))))
+    }
+
+    /// The picture of `original_path` at `source_time`, read from its proxy when
+    /// one is listed (and `true`), or from the file itself. A proxy that cannot
+    /// be read is dropped from the list, and the original is read instead.
+    fn picture_preferably_from_proxy(
+        &mut self,
+        backend: &dyn MediaBackend,
+        clip_id: ClipId,
+        original_path: &Path,
+        source_time: Timestamp,
+    ) -> Result<(Arc<VideoFrame>, bool), MediaError> {
+        let proxy = self
+            .proxies
+            .as_ref()
+            .and_then(|proxies| proxies.proxy_for(original_path));
+        if let Some(proxy) = proxy {
+            let from_proxy = self
+                .video_source_of(backend, clip_id, &proxy.proxy_path)
+                .and_then(|source| source.frame_at(source_time));
+            match from_proxy {
+                Ok(picture) => return Ok((picture, true)),
+                Err(_) => {
+                    if let Some(proxies) = &self.proxies {
+                        proxies.remove(original_path);
+                    }
+                    self.open_sources.remove(&clip_id);
+                }
+            }
+        }
+        let picture = self
+            .video_source_of(backend, clip_id, original_path)?
+            .frame_at(source_time)?;
+        Ok((picture, false))
     }
 
     /// The decoder of `clip_id`, opened (or opened again) if it does not read `file_path`.

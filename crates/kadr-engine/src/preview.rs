@@ -11,6 +11,12 @@
 //!
 //! Like video sources, a preview renderer stays on the thread that created it: an
 //! interface runs it on a dedicated preview thread.
+//!
+//! Given [`ReadyProxies`] ([`PreviewRenderer::use_proxies`]), the preview shows
+//! heavy videos from their proxies, smaller and quicker to decode (decision
+//! record 0055); the export never does.
+
+use std::sync::Arc;
 
 use kadr_core::media_asset::PictureSize;
 use kadr_core::project::Project;
@@ -20,6 +26,7 @@ use kadr_render::{RenderError, RendererPreference, create_renderer};
 
 use crate::export::frame_composer::FrameComposer;
 use crate::picture_scaling::shrink_yuv_picture_to_fit;
+use crate::proxies::ReadyProxies;
 
 /// Why a preview frame could not be drawn.
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +54,17 @@ impl PreviewRenderer {
         Ok(Self {
             composer: FrameComposer::new(create_renderer(preference)?),
         })
+    }
+
+    /// Shows videos listed in `proxies` from their proxies from the next frame on.
+    pub fn use_proxies(&mut self, proxies: Arc<ReadyProxies>) {
+        self.composer.use_proxies(proxies);
+    }
+
+    /// Closes every open decoder; the next frame reopens what it needs. Call it
+    /// before deleting proxy files, which cannot be deleted while open.
+    pub fn close_open_files(&mut self) {
+        self.composer.close_open_sources();
     }
 
     /// What renders the frames, for example `"GPU: Intel(R) Arc(TM) Graphics (Vulkan)"`.

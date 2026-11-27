@@ -57,6 +57,11 @@ impl ThumbnailMaker {
         Ok(shrink_frame_to_rgba(&frame, maximum_size))
     }
 
+    /// Closes every open decoder, so their files can be deleted (proxies).
+    pub fn close_open_files(&mut self) {
+        self.open_sources.clear();
+    }
+
     /// The open decoder of `file_path`, opened if needed, marked most recently used.
     fn source_for(
         &mut self,
