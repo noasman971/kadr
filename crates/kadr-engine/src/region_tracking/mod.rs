@@ -18,6 +18,7 @@
 //!
 //! See `docs/tracking-and-blur.md`.
 
+mod correction;
 mod debug_video;
 mod frame_reading;
 mod track_samples;
@@ -31,7 +32,7 @@ use kadr_core::effect::{
     PixelRegion, RegionSample, RegionSampleOrigin, TrackedBlur, TrackingConfidence, UnsureRange,
 };
 use kadr_core::error::EditError;
-use kadr_core::ids::ClipId;
+use kadr_core::ids::{ClipId, EffectId};
 use kadr_core::media_asset::PictureSize;
 use kadr_core::project::Project;
 use kadr_core::time::{FrameRate, TimeSpan, Timestamp};
@@ -42,6 +43,7 @@ use kadr_vision::{
     TrackingState, shrink_factor_for_tracking, smooth_track,
 };
 
+pub use correction::{corrected_tracked_blur, find_tracked_blur};
 pub use debug_video::{DebugVideoRequest, export_tracking_debug_video};
 use frame_reading::FrameReader;
 
@@ -66,6 +68,8 @@ pub struct RegionTrackingRequest {
     pub selection_time: Timestamp,
     /// The selected region, in the file's pixels (origin at the top-left corner).
     pub selection: PixelRegion,
+    /// Who drew the selection: the first selection of a blur, or a correction.
+    pub selection_origin: RegionSampleOrigin,
 }
 
 impl RegionTrackingRequest {
@@ -118,8 +122,30 @@ impl RegionTrackingRequest {
             source_end: segment.source_end,
             selection_time,
             selection,
+            selection_origin: RegionSampleOrigin::UserSelection,
         })
     }
+
+    /// Checks, without decoding anything, that the selection can be tracked:
+    /// inside the picture and large enough. [`track_region`] checks it again,
+    /// and also that the region has some detail.
+    ///
+    /// # Errors
+    ///
+    /// [`RegionTrackingError::SelectionOutsidePicture`] or
+    /// [`RegionTrackingError::SelectionTooSmall`].
+    pub fn check_selection(&self) -> Result<(), RegionTrackingError> {
+        check_selection(
+            self,
+            shrink_factor_for_tracking(self.picture_size.width_in_pixels as usize),
+        )
+    }
+}
+
+/// The shortest side a selection may have in a video `picture_width` pixels
+/// wide, in the video's pixels (the tracker needs some detail to follow).
+pub fn minimum_selection_side_in_pixels(picture_width: u32) -> f32 {
+    MINIMUM_REGION_SIDE_IN_PIXELS * shrink_factor_for_tracking(picture_width as usize) as f32
 }
 
 /// How far the analysis has gone.
@@ -232,6 +258,14 @@ pub enum RegionTrackingError {
     NotAVideoClip {
         /// The clip asked for.
         clip_id: ClipId,
+    },
+    /// The effect to correct is not a tracked blur.
+    #[error("effect {effect_id} of clip {clip_id} is not a tracked blur")]
+    NotATrackedBlur {
+        /// The clip asked for.
+        clip_id: ClipId,
+        /// The effect asked for.
+        effect_id: EffectId,
     },
     /// The clip is not on screen at the requested time.
     #[error("clip {clip_id} is not on screen at {timeline_time}")]
@@ -417,7 +451,7 @@ pub fn track_region(
                     source_time,
                     region: request.selection,
                     confidence: TrackingConfidence::Confident,
-                    origin: RegionSampleOrigin::UserSelection,
+                    origin: request.selection_origin,
                     peak_to_sidelobe_ratio: None,
                 };
             }
@@ -620,6 +654,7 @@ mod tests {
             source_end: Timestamp::from_whole_seconds(3),
             selection_time: Timestamp::from_milliseconds(2_500),
             selection,
+            selection_origin: RegionSampleOrigin::UserSelection,
         }
     }
 

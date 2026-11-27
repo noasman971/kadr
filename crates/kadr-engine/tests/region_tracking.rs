@@ -11,8 +11,12 @@
 use std::path::{Path, PathBuf};
 
 use image::{Rgba, RgbaImage};
-use kadr_core::effect::{PixelRegion, RegionSampleOrigin, TrackedBlur, TrackingConfidence};
+use kadr_core::commands::{AddEffect, CreatedObjectsExt};
+use kadr_core::effect::{
+    EffectKind, PixelRegion, RegionSampleOrigin, TrackedBlur, TrackingConfidence,
+};
 use kadr_core::error::EditError;
+use kadr_core::history::EditSession;
 use kadr_core::ids::ClipId;
 use kadr_core::media_asset::PictureSize;
 use kadr_core::project::{Project, ProjectSettings};
@@ -237,6 +241,95 @@ fn a_hidden_stretch_is_reported_as_unsure() {
     let last = report.frames.last().unwrap();
     assert_eq!(last.confidence, TrackingConfidence::Confident, "{states}");
     assert!(center_error(&last.region, true_region(FRAME_COUNT - 1)) < 3.0);
+}
+
+#[test]
+fn a_correction_retracks_from_the_redrawn_region_up_to_the_selection() {
+    let directory = tempfile::tempdir().unwrap();
+    let video = write_scene_video(directory.path(), "corrected.mp4", 30..42);
+    let mut project = project_with(&video);
+    let clip_id = project.timeline().clip_ids()[0];
+    let (_, report, _) = track_from(&video, 5);
+    let blur = report.tracked_blur_like(&TrackedBlur::with_default_style());
+    let mut session = EditSession::new(project.clone()).unwrap();
+    let effect_id = session
+        .execute(AddEffect::new(
+            clip_id,
+            EffectKind::TrackedBlur(blur.clone()),
+        ))
+        .unwrap()
+        .first_effect_id()
+        .unwrap();
+    project = session.project().clone();
+
+    // Redrawn on the first frame after the obstacle: analysed from the
+    // selection (frame 5) to the end of the clip.
+    let corrected_frame = 42;
+    let request = RegionTrackingRequest::for_correction(
+        &project,
+        clip_id,
+        effect_id,
+        FRAME_RATE.timestamp_of_frame(corrected_frame),
+        pixels_of(true_region(corrected_frame)),
+    )
+    .unwrap();
+    assert_eq!(request.source_start, FRAME_RATE.timestamp_of_frame(5));
+    assert_eq!(
+        request.selection_origin,
+        RegionSampleOrigin::ManualCorrection
+    );
+    let correction = track_region(
+        &FfmpegBackend::new().unwrap(),
+        &request,
+        &mut |_| {},
+        &TrackingCancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(correction.frames.len() as u64, FRAME_COUNT - 5);
+    let corrected = kadr_engine::corrected_tracked_blur(&blur, &request, &correction);
+
+    // The selection and the correction are both kept as anchors.
+    let anchors: Vec<_> = corrected
+        .region_samples
+        .iter()
+        .filter(|sample| sample.origin != RegionSampleOrigin::Tracker)
+        .map(|sample| (FRAME_RATE.frame_index_at(sample.source_time), sample.origin))
+        .collect();
+    assert_eq!(
+        anchors,
+        vec![
+            (5, RegionSampleOrigin::UserSelection),
+            (corrected_frame, RegionSampleOrigin::ManualCorrection)
+        ]
+    );
+    // Once the object is visible again, the blur is on it and sure.
+    for frame_index in corrected_frame..FRAME_COUNT {
+        let (region, confidence) = corrected
+            .region_at(FRAME_RATE.timestamp_of_frame(frame_index))
+            .unwrap();
+        assert!(
+            center_error(&region, true_region(frame_index)) < 3.0,
+            "frame {frame_index}"
+        );
+        assert_eq!(
+            confidence,
+            TrackingConfidence::Confident,
+            "frame {frame_index}"
+        );
+    }
+    // Before the obstacle, the old sure track is unchanged.
+    for frame_index in 0..28 {
+        let time = FRAME_RATE.timestamp_of_frame(frame_index);
+        assert_eq!(
+            corrected.region_at(time),
+            blur.region_at(time),
+            "frame {frame_index}"
+        );
+    }
+    // What stays unsure is within the hidden frames.
+    for range in corrected.unsure_ranges() {
+        assert!(range.last_source_time < FRAME_RATE.timestamp_of_frame(corrected_frame));
+    }
 }
 
 #[test]

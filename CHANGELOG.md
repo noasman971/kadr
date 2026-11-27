@@ -151,6 +151,36 @@ while every frame stayed "confident" (mean centre error 197 px, size error 24 %)
   another size, shared by Claude's tools and the app, and `refit_clips_to_canvas`,
   which keeps titles in place when the canvas changes shape.
 
+### Added (phase 7a: blur tools for Claude)
+
+- MCP tools `blur_region`, `get_blur_status` and `cancel_blur`: Claude gives the
+  rectangle around a face on one frame, the analysis runs in the background (task
+  `blur-1`), the tracked blur is added to the project as one undo step, and the status
+  lists the ranges to check in timeline seconds. `blur_region` with an `effect_id`
+  corrects a blur: tracking restarts from the redrawn rectangle.
+- `kadr-engine`: `RegionTrackingRequest::for_correction` and `corrected_tracked_blur`
+  re-track from a correction up to the neighbouring anchors (the selection and other
+  corrections) and keep, frame by frame, the surer of the old and new answers;
+  `RegionTrackingRequest::check_selection` checks a selection without decoding;
+  `find_tracked_blur`.
+- `kadr-core`: `Clip::timeline_time_showing`, the timeline moment showing a source
+  moment.
+- `kadr-mcp` adds finished analyses to the project every second, so the file is up to
+  date even if Claude makes no further call.
+
+### Added (phase 7b: blur in the desktop app)
+
+- Blur tool on the preview (**B**, the preview's button, or *Add* in the inspector):
+  draw a box on a face, move and resize it, ellipse or rectangle, *Blur and follow*
+  (Enter). The analysis runs in the background with its progress and *Stop*; the
+  result is one undo step, announced with *Undo*.
+- The inspector's *Blur* section: style (blur, pixels, mask), strength, shape, margin,
+  on / off, delete; how many moments the tracker was unsure about.
+- The preview draws each blur's box at the playhead for the selected clip (dashed
+  with ⚠ where the tracker was unsure); blurred clips get a badge on the timeline.
+- `kadr_engine::clip_geometry` and `kadr_render::SourceToCanvasMapping`: where a
+  clip's source picture is on the canvas, for interfaces drawing on top of it.
+
 ### Added (phase 8a: transitions and text animations)
 
 - `kadr-core`: entry and exit **transitions** on videos and images (`fade`, `slide`

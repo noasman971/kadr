@@ -47,6 +47,13 @@
   --timeline-height: 300px;
   --track-header-width: 168px;
   --panel-header-height: 40px;
+
+  /* Drawn over the video (blur boxes on the preview): the same in both themes. */
+  --color-over-video: #ffffff;
+  --color-over-video-shadow: rgba(0, 0, 0, 0.7);
+  --color-over-video-fill: rgba(255, 255, 255, 0.1);
+  --color-over-video-unsure: #f5b544;
+  --color-over-video-lost: #ff6464;
 }
 
 @media (max-width: 1360px) {

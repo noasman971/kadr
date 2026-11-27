@@ -2669,6 +2669,7 @@ dependencies = [
  "kadr-engine",
  "kadr-media",
  "kadr-tools",
+ "kadr-vision",
  "rmcp",
  "serde_json",
  "tempfile",

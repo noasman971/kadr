@@ -12,7 +12,7 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use kadr_core::effect::{PixelRegion, TrackingConfidence};
+use kadr_core::effect::{PixelRegion, RegionSampleOrigin, TrackingConfidence};
 use kadr_core::time::Timestamp;
 use kadr_engine::{RegionTrackingRequest, TrackingCancellation, track_region};
 use kadr_media::{FfmpegBackend, MediaBackend};
@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             width_in_pixels: width,
             height_in_pixels: height,
         },
+        selection_origin: RegionSampleOrigin::UserSelection,
     };
     let started_at = Instant::now();
     let report = track_region(

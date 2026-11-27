@@ -10,8 +10,7 @@ use std::collections::HashSet;
 
 use support::TestServer;
 
-/// The tools section 5 of the specification asks for (blur_region and
-/// get_blur_status arrive with phase 4b's tracking analysis).
+/// The tools section 5 of the specification asks for.
 const REQUIRED_TOOLS: &[&str] = &[
     "find_media_files",
     "import_media",
@@ -39,6 +38,8 @@ const REQUIRED_TOOLS: &[&str] = &[
     "edit_text",
     "add_transition",
     "add_color_adjustment",
+    "blur_region",
+    "get_blur_status",
     "undo",
     "redo",
     "save_project",

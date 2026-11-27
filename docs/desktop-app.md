@@ -49,6 +49,21 @@ $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
 npm run tauri dev
 ```
 
+A second app running at the same time (another session's) holds port 1420, port
+9222 and the WebView2 data folder: start this one with its own, or WebView2 refuses
+to start (`0x8007139F`):
+
+```powershell
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9237'
+$env:WEBVIEW2_USER_DATA_FOLDER = 'C:\Users\you\kadr-build\webview-2'
+node node_modules/@tauri-apps/cli/tauri.js dev --config other-ports.json
+```
+
+with `other-ports.json` setting `build.devUrl` to `http://localhost:1437` and
+`build.beforeDevCommand` to `npm run dev -- --port 1437` (`npm run tauri dev --
+--config …` loses the option in PowerShell). Vite reloads the page when a
+translation file changes: the app goes back to the home screen.
+
 `http://127.0.0.1:9222/json` lists the page; `Runtime.evaluate`, `Input.dispatchKeyEvent`,
 `Input.dispatchMouseEvent` and `Page.captureScreenshot` do the rest. Things learned
 doing it:
@@ -247,6 +262,60 @@ end:
 ![The export settings](screenshots/desktop-export-settings.jpg)
 
 ![An export finished](screenshots/desktop-export-done.jpg)
+
+## Blurring a face
+
+The flow is in [ux.md](ux.md#blurring-a-face-phase-7); the tracker itself in
+[tracking-and-blur.md](tracking-and-blur.md).
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Front as Preview (BlurOverlay)
+    participant Back as Back end
+    participant Thread as Tracking thread
+    User->>Front: B, then draws a box
+    Front->>Back: get_clip_overlay(clip, playhead)
+    Back-->>Front: source → canvas mapping, boxes of existing blurs
+    User->>Front: Blur and follow (Enter)
+    Front->>Back: start_region_tracking(clip, time, box in source pixels, shape)
+    Back->>Thread: track_region (forwards, then backwards)
+    Thread-->>Front: progress (channel)
+    Thread->>Back: add the tracked blur (one undo step)
+    Thread-->>Front: finished, with the new project view
+```
+
+- **Coordinates.** A blur lives in the **source video's pixels**. `get_clip_overlay`
+  answers with the renderer's own map from source pixels to canvas pixels for the clip
+  at the playhead (`kadr_engine::clip_geometry`, keyframes included) and the visible
+  part of the source. The front end multiplies it by the display scale to draw, and
+  inverts it to turn the pointer into source pixels (`lib/blur/sourceMapping.ts`). A
+  box is an upright rectangle in the source: on a rotated clip it shows rotated.
+- **The tool** (`lib/state/blurTool.svelte.ts`): off → drawing → adjusting →
+  tracking. It works on the selected video clip under the playhead, or the top one
+  there (`lib/blur/blurTarget.ts`). Moving the playhead while adjusting keeps the box
+  in source pixels over the new frame; the analysis starts from the frame under the
+  playhead.
+- **The analysis** (`tracking_job.rs`) runs on its own thread with copies of what it
+  needs, one at a time. When it ends, it locks the open project, checks it is still
+  the same opening (`OpenProject::identity`, kept by renaming), adds the effect as the
+  undo step `blurRegion`, and sends the new view. Editing goes on meanwhile.
+- **Errors** before the analysis (box too small or outside the picture, clip not on
+  screen) come back from `start_region_tracking`, and the box stays to be fixed;
+  errors found while analysing (no detail to follow) come as a `failed` event, with
+  the box kept too. Each has its own error code and sentence.
+- **Settings** are ordinary edit requests (`setBlurSettings`, `setBlurEnabled`,
+  `removeBlur`, `editing/blur_settings.rs`); they never touch the samples.
+- The preview draws the boxes of the selected clip's blurs at the playhead, when not
+  playing (they would lag behind the picture): solid when the tracker was sure,
+  dashed and marked ⚠ when not. Boxes follow clip transforms, not the motion of
+  phase 8's transitions.
+
+| Drawing the box | Following it |
+|---|---|
+| ![The box drawn on the preview, with its handles and the Blur and follow bar](screenshots/desktop-blur-draw.jpg) | ![The analysis' progress with Stop](screenshots/desktop-blur-following.jpg) |
+| **A moment the tracker lost (dashed, ⚠) and the Blur section** | **Light theme** |
+| ![The inspector's Blur section next to a lost box](screenshots/desktop-blur-inspector.jpg) | ![The same in the light theme](screenshots/desktop-blur-light.jpg) |
 
 ## Adding an edit
 

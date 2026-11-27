@@ -13,7 +13,7 @@ use kadr_core::commands::{
 };
 use kadr_core::error::EditError;
 use kadr_core::history::{EditSession, Transaction};
-use kadr_core::ids::{ClipId, MediaAssetId, TrackId};
+use kadr_core::ids::{ClipId, EffectId, MediaAssetId, TrackId};
 use kadr_core::media_asset::{MediaAssetDescription, MediaKind, PictureSize};
 use kadr_core::project::{Project, ProjectSettings};
 use kadr_core::time::{TimeSpan, Timestamp};
@@ -22,10 +22,12 @@ use kadr_engine::export_presets::refit_clips_to_canvas;
 use serde::{Deserialize, Serialize};
 
 mod arrangement;
+mod blur_settings;
 mod clip_settings;
 mod titles;
 
 pub use arrangement::TrimEdge;
+pub use blur_settings::{BlurSettings, BlurShapeChoice, BlurStyleChoice, tracked_blur_of};
 pub use clip_settings::{ClipValue, ColorChanges, CropChanges, TextAlignmentChoice, TextChanges};
 pub use titles::{TITLE_DURATION, TITLES_TRACK_NAME, TitleStyle};
 
@@ -188,6 +190,31 @@ pub enum EditRequest {
         /// New height in pixels (made even, within the engine's limits).
         height: u32,
     },
+    /// Changes a tracked blur's style, strength, shape and margin.
+    SetBlurSettings {
+        /// The clip.
+        clip_id: ClipId,
+        /// The blur.
+        effect_id: EffectId,
+        /// Its new settings.
+        settings: BlurSettings,
+    },
+    /// Turns a tracked blur off (kept, not drawn) or back on.
+    SetBlurEnabled {
+        /// The clip.
+        clip_id: ClipId,
+        /// The blur.
+        effect_id: EffectId,
+        /// `false` to turn it off.
+        is_enabled: bool,
+    },
+    /// Removes a tracked blur.
+    RemoveBlur {
+        /// The clip.
+        clip_id: ClipId,
+        /// The blur.
+        effect_id: EffectId,
+    },
 }
 
 /// Where a media file goes on the timeline.
@@ -322,6 +349,19 @@ pub fn apply_edit_request(
         } => titles::add_title(session, Timestamp::from_ticks(*start_ticks), text, *style),
         EditRequest::SetCanvasSize { width, height } => {
             set_canvas_size(session, adopts_first_video_format, *width, *height)
+        }
+        EditRequest::SetBlurSettings {
+            clip_id,
+            effect_id,
+            settings,
+        } => blur_settings::set_blur_settings(session, *clip_id, *effect_id, settings),
+        EditRequest::SetBlurEnabled {
+            clip_id,
+            effect_id,
+            is_enabled,
+        } => blur_settings::set_blur_enabled(session, *clip_id, *effect_id, *is_enabled),
+        EditRequest::RemoveBlur { clip_id, effect_id } => {
+            blur_settings::remove_blur(session, *clip_id, *effect_id)
         }
     }
 }

@@ -14,6 +14,7 @@
   import { t } from "../../i18n/i18n.svelte";
   import { createFrameRenderer, type FrameRenderer } from "../../preview/yuvFrameRenderer";
   import { editor } from "../../state/editor.svelte";
+  import { blurTool } from "../../state/blurTool.svelte";
   import { describeError, isSupersededError } from "../../state/errors";
   import { playback } from "../../state/playback.svelte";
   import { preferences, type PreviewQuality } from "../../state/preferences.svelte";
@@ -21,6 +22,7 @@
   import Icon from "../../ui/Icon.svelte";
   import IconButton from "../../ui/IconButton.svelte";
   import ToastStack from "../../ui/ToastStack.svelte";
+  import BlurOverlay from "./BlurOverlay.svelte";
 
   interface Props {
     view: ProjectView;
@@ -106,6 +108,22 @@
 
   onDestroy(() => renderer?.dispose());
 
+  const blurUnavailableReason = $derived.by(() => {
+    // Read the state the reason depends on, so the button follows it.
+    void editor.playheadTicks;
+    void editor.selectedClipIds;
+    void view.revision;
+    return blurTool.unavailableReason();
+  });
+
+  function toggleBlurTool(): void {
+    if (blurTool.isActive) {
+      blurTool.cancel();
+    } else {
+      blurTool.start();
+    }
+  }
+
   function changeQuality(event: Event): void {
     preferences.update({ previewQuality: (event.currentTarget as HTMLSelectElement).value as PreviewQuality });
   }
@@ -121,6 +139,9 @@
       style:background={view.settings.backgroundColor.slice(0, 7)}
     >
       <canvas bind:this={canvas} class:visible={hasFrame}></canvas>
+      {#if hasContent}
+        <BlurOverlay {view} displayWidth={displaySize.width} displayHeight={displaySize.height} />
+      {/if}
       {#if failure}
         <div class="failure" title={failure}>
           <Icon name="alert" size={24} />
@@ -179,6 +200,15 @@
       {#if playback.isPlaying && Math.abs(playback.speed) !== 1}
         <span class="speed tabular">{playback.speed > 0 ? "" : "−"}{Math.abs(playback.speed)}×</span>
       {/if}
+      <IconButton
+        label={blurUnavailableReason ?? t("blur.toolName")}
+        shortcut={blurUnavailableReason ? undefined : "B"}
+        pressed={blurTool.isActive}
+        disabled={!hasContent || (blurUnavailableReason !== null && !blurTool.isActive)}
+        onclick={toggleBlurTool}
+      >
+        <Icon name="scanFace" />
+      </IconButton>
       <select aria-label={t("preview.quality")} value={preferences.previewQuality} onchange={changeQuality}>
         <option value="auto">{t("preview.quality.auto")}</option>
         <option value="full">{t("preview.quality.full")}</option>
