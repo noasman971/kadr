@@ -24,6 +24,7 @@ use crate::output::{ToolContent, ToolError, ToolOutput};
 use crate::project_host::{EditableProject, FileProjectHost, ProjectHost};
 use crate::tools::all_tools;
 use crate::tools::blur_tools::{BLUR_STATUS_TOOL_NAME, add_analysed_blurs_to_project};
+use crate::tools::project_tools::OPEN_PROJECT_TOOL_NAME;
 
 /// Every tool, built once.
 static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(all_tools);
@@ -86,6 +87,14 @@ impl KadrToolbox {
             .iter()
             .find(|entry| entry.definition.name == tool_name)
             .map(|entry| entry.definition.effect)
+    }
+
+    /// Whether the tool `tool_name` only reads the open project, so that a host
+    /// may give it a copy: true for the tools that read only, except
+    /// `open_project`, which changes which project is open.
+    pub fn only_reads_the_open_project(tool_name: &str) -> bool {
+        tool_name != OPEN_PROJECT_TOOL_NAME
+            && Self::tool_effect(tool_name) == Some(ToolEffect::ReadsOnly)
     }
 
     /// The folders the tools may use.

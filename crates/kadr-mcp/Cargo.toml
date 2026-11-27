@@ -25,6 +25,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+# A fake app on its own pipe, for the relay test.
+kadr-app-link = { workspace = true, features = ["server"] }
 image = { workspace = true, features = ["jpeg"] }
 kadr-core.workspace = true
 kadr-media = { workspace = true, features = ["ffmpeg"] }

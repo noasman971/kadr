@@ -105,6 +105,10 @@ export const englishMessages = {
   "inspector.color": "Colour",
   "inspector.colorOff": "Off until you touch it.",
 
+  "claude.changed": "Claude changed the project",
+  "claude.changedStep": "Claude changed the project: {step}",
+  "claude.openedProject": "Claude opened {name}",
+
   "blur.toolName": "Blur a region",
   "blur.busy": "A region is already being followed",
   "blur.noVideoHere": "Put the playhead on a video to blur a region in it",
@@ -320,6 +324,7 @@ export const englishMessages = {
   "undo.resetColor": "reset the colour",
   "undo.changeText": "edit the text",
   "undo.addTitle": "add a title",
+  "undo.byClaude": "Claude: {step}",
   "undo.blurRegion": "blur a region",
   "undo.changeBlur": "change a blur",
   "undo.hideBlur": "turn a blur off",

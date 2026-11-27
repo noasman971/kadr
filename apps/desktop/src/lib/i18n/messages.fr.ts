@@ -105,6 +105,10 @@ export const frenchMessages: Messages = {
   "inspector.color": "Couleur",
   "inspector.colorOff": "Désactivée tant que vous ne la touchez pas.",
 
+  "claude.changed": "Claude a modifié le projet",
+  "claude.changedStep": "Claude a modifié le projet : {step}",
+  "claude.openedProject": "Claude a ouvert {name}",
+
   "blur.toolName": "Flouter une zone",
   "blur.busy": "Une zone est déjà en cours de suivi",
   "blur.noVideoHere": "Placez la tête de lecture sur une vidéo pour y flouter une zone",
@@ -320,6 +324,7 @@ export const frenchMessages: Messages = {
   "undo.resetColor": "réinitialiser la couleur",
   "undo.changeText": "modifier le texte",
   "undo.addTitle": "ajouter un titre",
+  "undo.byClaude": "Claude : {step}",
   "undo.blurRegion": "flouter une zone",
   "undo.changeBlur": "modifier un flou",
   "undo.hideBlur": "désactiver un flou",

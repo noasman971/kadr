@@ -25,8 +25,8 @@ use kadr_core::ids::ClipId;
 use kadr_core::project::Project;
 use kadr_engine::project_files::save_project_file;
 use kadr_tools::{
-    AllowedFolders, CLAUDE_UNDO_LABEL_PREFIX, EditableProject, KadrToolbox, ProjectHost,
-    ToolEffect, ToolError, ToolSteps,
+    AllowedFolders, CLAUDE_UNDO_LABEL_PREFIX, EditableProject, KadrToolbox, ProjectHost, ToolError,
+    ToolSteps,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -100,7 +100,7 @@ fn run_call(app: &AppHandle, request: LinkRequest) -> LinkResponse {
     let state = app.state::<AppState>();
     let mut toolbox = lock_shared(&state.claude.toolbox);
     toolbox.set_allowed_folders(AllowedFolders::new(request.allowed_folders.clone()));
-    if KadrToolbox::tool_effect(&request.tool_name) == Some(ToolEffect::ReadsOnly) {
+    if KadrToolbox::only_reads_the_open_project(&request.tool_name) {
         let mut host = SnapshotHost {
             project: state.lock_open_project().as_ref().map(SnapshotProject::of),
         };

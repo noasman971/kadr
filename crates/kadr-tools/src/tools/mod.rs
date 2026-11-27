@@ -8,7 +8,7 @@ mod content_tools;
 mod export_tools;
 mod media_tools;
 mod picture_tools;
-mod project_tools;
+pub(crate) mod project_tools;
 mod sound_tools;
 mod timeline_tools;
 

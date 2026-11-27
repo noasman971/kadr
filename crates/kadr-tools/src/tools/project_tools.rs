@@ -32,7 +32,7 @@ pub(crate) fn project_tools() -> Vec<ToolEntry> {
             create_project,
         ),
         declare_tool(
-            "open_project",
+            OPEN_PROJECT_TOOL_NAME,
             "Open a project",
             OPEN_PROJECT_DESCRIPTION,
             ToolEffect::ReadsOnly,
@@ -220,6 +220,10 @@ fn create_project(
 }
 
 // ----- open_project -----
+
+/// The name of the tool that opens another project: it only reads files, but
+/// changes which project the host has open.
+pub(crate) const OPEN_PROJECT_TOOL_NAME: &str = "open_project";
 
 const OPEN_PROJECT_DESCRIPTION: &str = "\
 Opens an existing Kadr project file (.kadr) so the next tools edit it. Every change is then \

@@ -191,6 +191,17 @@ export interface ProjectView {
   redoLabel: string | null;
 }
 
+/** What Claude did to the project, sent by the back end (`claude_link.rs`). */
+export interface ClaudeChange {
+  view: ProjectView;
+  /** Claude opened or created this project: the window shows it now. */
+  openedProject: boolean;
+  /** The step Claude added to the history, without "Claude: ". */
+  stepLabel: string | null;
+  /** Clips Claude added or changed. */
+  changedClipIds: number[];
+}
+
 export interface RecentProject {
   filePath: string;
   name: string;
