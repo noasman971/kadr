@@ -1,4 +1,6 @@
-//! Content tools: texts, fades, colour adjustments, removing effects.
+//! Content tools: texts, fades, colour adjustments, colour LUTs, removing effects.
+
+use std::path::{Path, PathBuf};
 
 use kadr_core::animation::{Interpolation, Keyframe};
 use kadr_core::clip::{
@@ -8,12 +10,13 @@ use kadr_core::commands::{
     AddClip, AddEffect, CreatedObjectsExt, RemoveEffect, RemoveKeyframe, ReplaceEffect,
     SetClipPropertyValue, SetClipText, SetKeyframe,
 };
-use kadr_core::effect::{ColorAdjustment, EffectKind};
+use kadr_core::effect::{ColorAdjustment, ColorLut, Effect, EffectKind};
 use kadr_core::history::Transaction;
 use kadr_core::ids::{ClipId, EffectId, TrackId};
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
 use kadr_core::timeline::{Track, TrackKind};
+use kadr_engine::color_grading::{ColorTableSummary, load_color_lookup_table};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -63,6 +66,13 @@ pub(crate) fn content_tools() -> Vec<ToolEntry> {
             ADD_COLOR_ADJUSTMENT_DESCRIPTION,
             ToolEffect::ChangesProject,
             add_color_adjustment,
+        ),
+        declare_tool(
+            "add_color_lut",
+            "Apply a colour LUT (.cube)",
+            ADD_COLOR_LUT_DESCRIPTION,
+            ToolEffect::ChangesProject,
+            add_color_lut,
         ),
         declare_tool(
             "remove_effect",
@@ -641,7 +651,8 @@ Adjusts the colours of a video or image clip: exposure in photographic stops (+1
 bright, −1 half), contrast and saturation as multipliers (1 unchanged, 0 flat grey / black and \
 white, 2 strong), temperature from −1 (cooler, bluer) to 1 (warmer, more orange). Omitted \
 values stay neutral. Give effect_id to change an existing colour adjustment instead of adding \
-one (see get_clip). Check with get_frame. \
+one (see get_clip). Check with get_frame without clip_id (a clip's own pictures are shown \
+before colour). \
 Example: {\"clip_id\": 3, \"exposure_in_stops\": 0.3, \"saturation\": 1.2, \"temperature\": 0.1}";
 
 /// Parameters of `add_color_adjustment`.
@@ -709,13 +720,9 @@ fn add_color_adjustment(
     ))
 }
 
-/// The colour adjustment `effect_id` of the clip.
-fn existing_color_adjustment(
-    clip: &Clip,
-    effect_id: EffectId,
-) -> Result<(EffectId, ColorAdjustment), ToolError> {
-    let effect = clip
-        .effects
+/// The effect `effect_id` of the clip.
+fn existing_effect(clip: &Clip, effect_id: EffectId) -> Result<&Effect, ToolError> {
+    clip.effects
         .iter()
         .find(|effect| effect.id == effect_id)
         .ok_or_else(|| {
@@ -724,20 +731,186 @@ fn existing_color_adjustment(
                 effect_id,
                 existing_effect_ids: clip.effects.iter().map(|effect| effect.id).collect(),
             })
-        })?;
-    match effect.kind {
-        EffectKind::ColorAdjustment(adjustment) => Ok((effect_id, adjustment)),
-        EffectKind::TrackedBlur(_) => Err(ToolError::new(format!(
-            "effect {effect_id} of clip {} is a tracked blur, not a colour adjustment",
-            clip.id
-        ))),
+        })
+}
+
+/// The refusal for an effect of the wrong kind.
+fn not_an_effect_of_kind(clip: &Clip, effect: &Effect, wanted_kind: &str) -> ToolError {
+    ToolError::new(format!(
+        "effect {} of clip {} is a {}, not a {wanted_kind}",
+        effect.id,
+        clip.id,
+        effect.kind.display_name()
+    ))
+}
+
+/// The colour adjustment `effect_id` of the clip.
+fn existing_color_adjustment(
+    clip: &Clip,
+    effect_id: EffectId,
+) -> Result<(EffectId, ColorAdjustment), ToolError> {
+    let effect = existing_effect(clip, effect_id)?;
+    match &effect.kind {
+        EffectKind::ColorAdjustment(adjustment) => Ok((effect_id, *adjustment)),
+        EffectKind::ColorLut(_) | EffectKind::TrackedBlur(_) => {
+            Err(not_an_effect_of_kind(clip, effect, "colour adjustment"))
+        }
     }
+}
+
+// ----- add_color_lut -----
+
+const ADD_COLOR_LUT_DESCRIPTION: &str = "\
+Gives a video or image clip the look of a colour LUT file in the .cube format (exported by \
+DaVinci Resolve, Premiere and most grading tools; 3D or 1D). It applies after the clip's colour \
+adjustments (exposure, contrast, saturation, temperature), whatever their order. strength mixes \
+the look with the picture: 0 unchanged, 1 the full look. A clip uses one LUT: give effect_id to \
+change its file or strength instead of adding another (see get_clip). Find .cube files with \
+find_media_files and {\"kind\": \"color_lut\"}; remove a LUT with remove_effect. Check with \
+get_frame without clip_id (a clip's own pictures are shown before colour). \
+Example: {\"clip_id\": 3, \"lut_file_path\": \"C:\\\\Users\\\\sam\\\\LUTs\\\\teal_orange.cube\", \
+\"strength\": 0.7}";
+
+/// Parameters of `add_color_lut`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct AddColorLutParameters {
+    /// The video or image clip, from get_timeline. Example: 3.
+    clip_id: u64,
+    /// Full path of the .cube file, inside a folder the user allowed. Needed to add a LUT;
+    /// with effect_id, omit it to keep the current file.
+    lut_file_path: Option<PathBuf>,
+    /// From 0 (the picture unchanged) to 1 (the full look). Default 1, or the current value
+    /// with effect_id.
+    strength: Option<f32>,
+    /// An existing colour LUT of this clip to change instead of adding one.
+    effect_id: Option<u64>,
+}
+
+fn add_color_lut(
+    toolbox: &mut ToolCall<'_>,
+    parameters: AddColorLutParameters,
+) -> Result<ToolOutput, ToolError> {
+    // The file first: one outside the allowed folders is refused whatever else is wrong.
+    let requested_file = parameters
+        .lut_file_path
+        .as_deref()
+        .map(|file_path| checked_color_lut_file(toolbox, file_path))
+        .transpose()?;
+    let clip_id = ClipId::from_raw(parameters.clip_id);
+    let (_, clip) = toolbox.require_project()?.require_clip(clip_id)?;
+    let replaced = match parameters.effect_id {
+        Some(raw_effect_id) => Some(existing_color_lut(clip, EffectId::from_raw(raw_effect_id))?),
+        None => {
+            refuse_second_color_lut(clip)?;
+            None
+        }
+    };
+    let file_path = match (requested_file, &replaced) {
+        (Some(file_path), _) => file_path,
+        (None, Some((_, color_lut))) => checked_color_lut_file(toolbox, &color_lut.file_path)?,
+        (None, None) => {
+            return Err(ToolError::new(
+                "give lut_file_path: the full path of the .cube file to apply",
+            ));
+        }
+    };
+    // Read before changing anything: a wrong file is reported now, not at export.
+    let summary = ColorTableSummary::of(&*load_color_lookup_table(&file_path)?);
+    let strength_fraction = parameters.strength.unwrap_or_else(|| {
+        replaced
+            .as_ref()
+            .map_or(1.0, |(_, color_lut)| color_lut.strength_fraction)
+    });
+    let file_name = file_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let kind = EffectKind::ColorLut(ColorLut {
+        file_path,
+        strength_fraction,
+    });
+    let effect_id = toolbox.change_project(
+        &format!("Apply the colour LUT \"{file_name}\" to clip {clip_id}"),
+        |transaction| match &replaced {
+            Some((effect_id, _)) => {
+                transaction.execute(ReplaceEffect::new(clip_id, *effect_id, kind))?;
+                Ok(*effect_id)
+            }
+            None => {
+                let created = transaction.execute(AddEffect::new(clip_id, kind))?;
+                Ok(created
+                    .first_effect_id()
+                    .ok_or_else(|| missing_created_object("effect"))?)
+            }
+        },
+    )?;
+    let view = clip_details(toolbox.require_project()?, clip_id)?;
+    let title = summary
+        .title
+        .as_ref()
+        .map(|title| format!("\"{title}\", "))
+        .unwrap_or_default();
+    Ok(ToolOutput::message_with_details(
+        format!(
+            "Colour LUT {effect_id} ({title}{}) applied to clip {clip_id} at strength \
+             {strength_fraction}, after its colour adjustments. Look at the result with \
+             get_frame without clip_id.",
+            summary.size_in_words()
+        ),
+        &view.effect_details,
+    ))
+}
+
+/// The colour LUT `effect_id` of the clip.
+fn existing_color_lut(clip: &Clip, effect_id: EffectId) -> Result<(EffectId, ColorLut), ToolError> {
+    let effect = existing_effect(clip, effect_id)?;
+    match &effect.kind {
+        EffectKind::ColorLut(color_lut) => Ok((effect_id, color_lut.clone())),
+        EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => {
+            Err(not_an_effect_of_kind(clip, effect, "colour LUT"))
+        }
+    }
+}
+
+/// Only one LUT per clip is drawn: a second one would be silently ignored.
+fn refuse_second_color_lut(clip: &Clip) -> Result<(), ToolError> {
+    let existing = clip
+        .effects
+        .iter()
+        .find(|effect| matches!(effect.kind, EffectKind::ColorLut(_)));
+    match existing {
+        Some(effect) => Err(ToolError::new(format!(
+            "clip {} already has colour LUT {}: give \"effect_id\": {} to change its file or              strength, or remove it with remove_effect first",
+            clip.id, effect.id, effect.id
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// `file_path` checked like every file Claude names (full path, inside the allowed
+/// folders), and named `.cube`: other files are never read as LUTs, so the
+/// parser's messages say nothing about them.
+fn checked_color_lut_file(toolbox: &ToolCall<'_>, file_path: &Path) -> Result<PathBuf, ToolError> {
+    let file_path = toolbox.allowed_folders().check_existing_file(file_path)?;
+    let is_cube_file = file_path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(ColorLut::FILE_EXTENSION));
+    if !is_cube_file {
+        return Err(ToolError::new(format!(
+            "\"{}\" is not a .cube file: Kadr reads colour LUTs in the .cube format (export the \
+             LUT as .cube from the grading tool)",
+            file_path.display()
+        )));
+    }
+    Ok(file_path)
 }
 
 // ----- remove_effect -----
 
 const REMOVE_EFFECT_DESCRIPTION: &str = "\
-Removes one effect (colour adjustment or blur) from a clip. Find the effect_id with get_clip. \
+Removes one effect (colour adjustment, colour LUT or blur) from a clip. Find the effect_id with \
+get_clip. \
 Example: {\"clip_id\": 3, \"effect_id\": 12}";
 
 /// Parameters of `remove_effect`.

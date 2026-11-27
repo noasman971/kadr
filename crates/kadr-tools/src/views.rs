@@ -402,6 +402,13 @@ impl EffectView {
                     "temperature": adjustment.temperature_shift,
                 }),
             ),
+            EffectKind::ColorLut(color_lut) => (
+                "color_lut",
+                serde_json::json!({
+                    "lut_file_path": color_lut.file_path.display().to_string(),
+                    "strength": color_lut.strength_fraction,
+                }),
+            ),
             EffectKind::TrackedBlur(tracked_blur) => {
                 let count_with = |confidence: TrackingConfidence| {
                     tracked_blur

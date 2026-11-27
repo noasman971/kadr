@@ -16,6 +16,13 @@ use support::{TestServer, json_details, write_beeping_video};
 async fn files_outside_the_allowed_folders_are_refused() {
     let server = TestServer::start().await;
     let secret_video = write_beeping_video(server.outside_folder.path(), "secret.mp4", 320, 240, 1);
+    let secret_lut = server.outside_folder.path().join("secret.cube");
+    fs::write(
+        &secret_lut,
+        "LUT_3D_SIZE 2
+",
+    )
+    .unwrap();
     server.create_project(json!({})).await;
 
     for (tool, arguments) in [
@@ -34,6 +41,10 @@ async fn files_outside_the_allowed_folders_are_refused() {
         (
             "open_project",
             json!({ "file_path": server.outside_folder.path().join("x.kadr").display().to_string() }),
+        ),
+        (
+            "add_color_lut",
+            json!({ "clip_id": 1, "lut_file_path": secret_lut.display().to_string() }),
         ),
         (
             "create_project",

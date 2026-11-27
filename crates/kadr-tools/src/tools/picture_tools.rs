@@ -1,8 +1,11 @@
 //! Picture tools: let Claude see a frame, or thumbnails across a whole video.
 
+use std::path::Path;
+
 use image::RgbaImage;
 use kadr_core::clip::ClipContent;
-use kadr_core::ids::{ClipId, MediaAssetId};
+use kadr_core::effect::{ColorLut, EffectKind};
+use kadr_core::ids::{ClipId, EffectId, MediaAssetId};
 use kadr_core::media_asset::{MediaAsset, MediaKind};
 use kadr_core::project::Project;
 use kadr_core::time::{TimeSpan, Timestamp};
@@ -207,7 +210,8 @@ fn ensure_media_readable(
         .map_err(|error| error.in_context(format!("media {}", media_asset.id)))
 }
 
-/// [`ensure_media_readable`] for every media file the timeline uses.
+/// [`ensure_media_readable`] for every media file the timeline uses, and
+/// [`check_stored_color_lut_file`] for every colour LUT its clips apply.
 pub(crate) fn ensure_project_media_readable(
     toolbox: &ToolCall<'_>,
     project: &Project,
@@ -217,7 +221,45 @@ pub(crate) fn ensure_project_media_readable(
             ensure_media_readable(toolbox, media_asset)?;
         }
     }
+    for (clip_id, effect_id, color_lut) in enabled_color_luts(project) {
+        check_stored_color_lut_file(toolbox, &color_lut.file_path).map_err(|error| {
+            error.in_context(format!(
+                "the colour LUT (effect {effect_id}) of clip {clip_id}"
+            ))
+        })?;
+    }
     Ok(())
+}
+
+/// Every enabled colour LUT of the timeline's clips, with its clip and effect.
+pub(crate) fn enabled_color_luts(
+    project: &Project,
+) -> impl Iterator<Item = (ClipId, EffectId, &ColorLut)> {
+    project
+        .timeline()
+        .all_clips()
+        .flat_map(|(_, clip)| clip.effects.iter().map(move |effect| (clip.id, effect)))
+        .filter(|(_, effect)| effect.is_enabled)
+        .filter_map(|(clip_id, effect)| match &effect.kind {
+            EffectKind::ColorLut(color_lut) => Some((clip_id, effect.id, color_lut)),
+            EffectKind::ColorAdjustment(_) | EffectKind::TrackedBlur(_) => None,
+        })
+}
+
+/// Refuses a colour LUT file a project names (it can name any path) when it is
+/// relative or outside the allowed folders. A missing file is accepted: the
+/// engine draws the clip without its look and the export report says so.
+pub(crate) fn check_stored_color_lut_file(
+    toolbox: &ToolCall<'_>,
+    file_path: &Path,
+) -> Result<(), ToolError> {
+    if file_path.is_absolute() && !file_path.exists() {
+        return Ok(());
+    }
+    toolbox
+        .allowed_folders()
+        .check_existing_file(file_path)
+        .map(|_| ())
 }
 
 // ----- get_contact_sheet -----

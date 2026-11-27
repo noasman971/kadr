@@ -130,6 +130,7 @@ tool_error_from!(
     kadr_core::clip::PlaybackSpeedError,
     kadr_core::color::ColorParseError,
     kadr_engine::MediaError,
+    kadr_engine::color_grading::ColorTableError,
     kadr_engine::project_files::ProjectFileIoError,
     kadr_engine::still_frames::StillFrameError,
     kadr_engine::silence_removal::SilenceRemovalError,
