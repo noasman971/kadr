@@ -6,6 +6,7 @@ mod clip_property_tools;
 mod common;
 mod content_tools;
 mod export_tools;
+mod keyframe_tools;
 mod media_tools;
 mod picture_tools;
 pub(crate) mod project_tools;
@@ -15,12 +16,13 @@ mod timeline_tools;
 use crate::catalog::ToolEntry;
 
 /// Every tool, in the order they are listed to Claude: project, media, timeline,
-/// clip properties, content, pictures, blur, sound, export.
+/// clip properties, keyframes, content, pictures, blur, sound, export.
 pub(crate) fn all_tools() -> Vec<ToolEntry> {
     let mut tools = project_tools::project_tools();
     tools.extend(media_tools::media_tools());
     tools.extend(timeline_tools::timeline_tools());
     tools.extend(clip_property_tools::clip_property_tools());
+    tools.extend(keyframe_tools::keyframe_tools());
     tools.extend(content_tools::content_tools());
     tools.extend(picture_tools::picture_tools());
     tools.extend(blur_tools::blur_tools());
