@@ -56,7 +56,7 @@ which is more detailed and is the reference for its phase.
 | 4. Tracking and blur | 4a merged (#7). 4b (#8): drift on a real video fixed (mean error 197 → 2 px) | `feature/phase-4b-blur-analysis`, [#8](https://github.com/noasman971/kadr/pull/8) | Owner: validate phase 4, then tag `v0.5.0` |
 | 5. MCP server | Draft (#9): 34 of 35 tools tested | `feature/phase-5-mcp-server`, [#9](https://github.com/noasman971/kadr/pull/9) | Run the tests after the merge of `main`, then merge |
 | 6. Desktop app | 6a (#6), 6b (#10) and 6c (#14) merged. 6d in PR #15, tried by hand | `feature/phase-6d-inspector-export`, [#15](https://github.com/noasman971/kadr/pull/15) | Merge 6d, then the owner's edit-and-export test |
-| 7. Blur and Claude in the app | 7a (#17), 7b (#19) merged; 7c (check and correct, #20); 7d (live link with Claude) in PR | `feature/phase-7d-live-link` | 7e: Connect to Claude screen |
+| 7. Blur and Claude in the app | 7a (blur tools for Claude) merged (#17), 7b (blur in the app, #19); 7c (check and correct) in PR | `feature/phase-7c-blur-correction` | 7d: live link with Claude |
 | 8. Features | Resumed on 2026-11-26. 8a (transitions, text animations) in #11, `main` merged in, every test passing | `feature/phase-8a-transitions-text-animations`, [#11](https://github.com/noasman971/kadr/pull/11) | Merge #11, then the next feature after the owner's go-ahead |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
@@ -134,7 +134,7 @@ Versions are tagged in phase order, each only after the owner validates the phas
      re-tracking from a correction in `kadr-engine`.
   2. **7b, blur in the app** (#19): draw a box on the
      preview, tracking with progress and cancel, a Blur section in the inspector.
-  3. **7c, checking and correcting** (#20): unsure
+  3. **7c, checking and correcting** (`feature/phase-7c-blur-correction`): unsure
      ranges on the timeline, go to the next one, correct the box and re-track.
   4. **7d, live link** (`feature/phase-7d-live-link`): decision record 0030;
      `kadr-mcp` passes Claude's calls to the open app, which runs them on its own
