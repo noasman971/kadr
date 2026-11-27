@@ -164,7 +164,11 @@ pub fn search_silences(
 }
 
 /// The interface's error for a failed search.
-fn command_error_for(project: &Project, clip_id: ClipId, error: SilenceRemovalError) -> CommandError {
+fn command_error_for(
+    project: &Project,
+    clip_id: ClipId,
+    error: SilenceRemovalError,
+) -> CommandError {
     match error {
         SilenceRemovalError::Edit(edit_error) => edit_error.into(),
         SilenceRemovalError::NoSound { .. } => CommandError::new(ErrorCode::EditRefused, error),
