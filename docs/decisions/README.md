@@ -24,6 +24,7 @@ rewritten: if a decision changes, a new record supersedes the old one.
 | [0050](0050-transitions-at-clip-edges.md) | Transitions at clip edges, using the neighbouring clip's handles | Accepted |
 | [0051](0051-silence-removal.md) | Silences shortened to a pause, cut by one command on the clip's track | Accepted |
 | [0052](0052-colour-luts-from-cube-files.md) | Colour LUTs: a path to a `.cube` file, read by the engine, applied after the colour adjustments | Accepted |
+| [0056](0056-subtitle-tracks-following-the-timeline.md) | Subtitles: cues on subtitle tracks, styled by the track, following the timeline | Accepted |
 
 ## Template
 

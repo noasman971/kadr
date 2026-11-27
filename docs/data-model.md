@@ -15,7 +15,8 @@ flowchart TD
     project --> allocator[IdAllocator]
     timeline --> tracks[Tracks, bottom to top]
     tracks --> clips[Clips, sorted, never overlapping]
-    clips --> content[ClipContent<br/>MediaSegment or TextContent]
+    tracks --> subtitle_style[SubtitleStyle<br/>subtitle tracks only]
+    clips --> content[ClipContent<br/>MediaSegment, TextContent or SubtitleCue]
     clips --> properties[Volume, opacity, position, scale, rotation<br/>AnimatedValue with keyframes]
     clips --> crop[Crop]
     clips --> effects[Effects<br/>colour adjustment, tracked blur]
@@ -61,13 +62,16 @@ descriptions in when importing (phase 2).
 - A **video track** holds videos, images and texts. A video clip also plays its sound.
 - An **audio track** holds anything with sound (music, voice-over, or the sound of a
   video).
+- A **subtitle track** holds subtitle cues only, all drawn with the track's
+  `SubtitleStyle` (font, size, colour, outline or box, position). It sits in the same
+  stack as video tracks. See [subtitles.md](subtitles.md).
 - On one track, clips are sorted by start time and **never overlap**.
 
 A `Clip` has:
 
 | Field | Meaning |
 |---|---|
-| `content` | `Media(MediaSegment)`: a range of a source file (`source_start`–`source_end`) played at a `PlaybackSpeed`; or `Text(TextContent)`: words, duration and style |
+| `content` | `Media(MediaSegment)`: a range of a source file (`source_start`–`source_end`) played at a `PlaybackSpeed`; `Text(TextContent)`: words, duration and style; or `Subtitle(SubtitleCue)`: words (with `<i>`, `<b>` and line breaks) and duration, styled by the track |
 | `timeline_start` | Where the clip starts on the timeline |
 | `volume_multiplier`, `opacity` | Animatable values |
 | `transform` | Position (from the canvas centre), scale (1 = fits the canvas), rotation, crop |
@@ -121,7 +125,8 @@ a small struct implementing `EditCommand`:
 | Project | `ChangeProjectSettings` |
 | Media | `ImportMedia`, `RemoveMedia` (refused while clips use it) |
 | Tracks | `AddTrack`, `RemoveTrack`, `SetTrackMuted`, `SetTrackHidden` |
-| Clips | `AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `RemoveClipParts` (cut ranges out and close the gaps on the clip's track: silence removal), `SetClipSpeed`, `SetClipPropertyValue`, `SetClipCrop`, `SetClipText` |
+| Clips | `AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `RemoveClipParts` (cut ranges out and close the gaps on the clip's track and on the subtitle tracks: silence removal), `SetClipSpeed`, `SetClipPropertyValue`, `SetClipCrop`, `SetClipText` |
+| Subtitles | `AddSubtitleCues`, `SetSubtitleStyle`, `SetSubtitleCueText`, `SetSubtitleCueTiming`, `MergeSubtitleCues`, `RemoveTimeFromSubtitleTracks` (cues follow the timeline; `SplitClip` shares a cue's words) |
 | Keyframes | `SetKeyframe`, `RemoveKeyframe` |
 | Effects | `AddEffect`, `RemoveEffect`, `ReplaceEffect`, `SetEffectEnabled` |
 | Transitions | `SetClipTransition`, `SetTextAnimation` |
@@ -156,6 +161,11 @@ command and on every loaded file.
 - Clips: on a track of the right kind, showing an existing media file, inside the
   file's duration, not empty, not overlapping.
 - Texts: not empty, a font name, a size between 1 and 2000 pixels.
+- Subtitles: a subtitle track has a style, other tracks none; cues only on subtitle
+  tracks, which hold nothing else; a cue has words (tags aside) and no placement,
+  opacity, crop, effect or transition of its own; the style's font size (1–2000),
+  margin (0–8192), outline width (0.1–100) and widest line (20–100 % of the canvas)
+  are in range.
 - Properties: inside their ranges (opacity 0–1, volume 0–4, scale 0.01–100…),
   keyframes in strictly increasing time order.
 - Crop: each edge from 0 to below 1, opposite edges not removing the whole picture.
@@ -171,7 +181,7 @@ A `.kadr` file is indented JSON:
 
 ```json
 {
-  "format_version": 3,
+  "format_version": 4,
   "project": {
     "settings": { "canvas_size": { "width_in_pixels": 1080, "height_in_pixels": 1920 }, … },
     "media_assets": [ … ],
@@ -194,10 +204,13 @@ is kept as a snapshot test in
   | 1 | First format (phase 1) |
   | 2 | `entry_transition` and `exit_transition` on clips, `entry_animation` and `exit_animation` on texts (phase 8) |
   | 3 | The `color_lut` effect (phase 8c). Nothing to convert: the new number makes an older Kadr say "newer version" instead of "damaged file" |
+  | 4 | Subtitle tracks (`"kind": "subtitle"`) with their `subtitle_style`, subtitle cues (`"type": "subtitle"`) (phase 8g). Every track gets `"subtitle_style": null` |
 
-  The snapshots of versions 1 and 2 are kept as
-  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr` and
-  `…_format_2.kadr`; tests check they still open as the same project.
+  The snapshots of versions 1, 2 and 3 are kept as
+  `crates/kadr-core/tests/fixtures/vertical_interview_format_1.kadr`, `…_format_2.kadr`
+  and `…_format_3.kadr`; tests check they still open as the same project.
+- `kadr_core::srt` reads and writes `.srt` subtitle files (text to cues and back);
+  reading them from disk is `kadr_engine::subtitle_files`.
 - A file from a **newer** Kadr is refused with a message asking to update, rather than
   losing data.
 - Every loaded project is validated: a damaged file never reaches the editor.

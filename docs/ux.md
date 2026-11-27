@@ -283,6 +283,32 @@ dashed with a ⚠ where it was not. The outline never shows in the export.
 - When nothing is left to check, the *Blur* section says *"Followed with confidence on
   every frame"*.
 
+## Subtitles (phase 8g)
+
+The model and the drawing are in [subtitles.md](subtitles.md).
+
+1. **Import.** *Import subtitles (.srt)…* in the *Text* tab, or drop an `.srt` file
+   on the window (the import dialog takes them too). A new subtitle track appears on
+   top, named after the file; the first cue is selected, and the notice says how many
+   cues came in, with what was fixed to read the file in its details, and offers Undo.
+   A broken file changes nothing: the notice names the line to fix.
+2. **See.** The preview shows the subtitles as the export will: white letters with a
+   black outline, a quarter of the height above the bottom on a vertical project.
+   Cues are amber clips with the captions icon on their track: drag, trim, **S** to
+   split, Delete, as with any clip, only between subtitle tracks.
+3. **Fix a cue** (inspector, *Subtitle*): the words (`<i>` and `<b>` work; Ctrl+Enter
+   validates, Esc cancels), *Start* and *End* to the millisecond, *Split at the
+   playhead*, *Merge with the next*, *Delete*. *Add a subtitle at the playhead* (the
+   *Text* tab and the timeline's toolbar) adds a two-second cue and focuses its words.
+4. **Style** (inspector, *Style of the track*, shared by every cue of the track):
+   font, size, bold, colour, outline / box / nothing and its colour, outline width,
+   bottom or top, margin, widest line.
+5. **Export.** The video export burns them in. *Export as .srt…* writes the corrected
+   file.
+
+Removing silences also removes the same moments from the subtitles, so they stay on
+the voice. A subtitle track can be hidden (eye), not muted.
+
 ## Claude in the app (phase 7)
 
 What the person wants: talk to Claude in Claude Desktop while the edit is open, and

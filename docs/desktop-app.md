@@ -253,6 +253,42 @@ styles sized from the canvas height. The inspector then focuses their words.
 
 ![Titles from the Text tab](screenshots/desktop-titles.jpg)
 
+## Subtitles
+
+Decision record 0056; the model and the drawing are in [subtitles.md](subtitles.md).
+
+- **Import**: *Import subtitles (.srt)…* in the library's Text tab, an `.srt` file
+  dropped on the window or picked in the import dialog. `import_subtitle_file` reads
+  and parses it in `spawn_blocking`, then adds a subtitle track on top named after the
+  file, as the undo step `importSubtitles`. A broken file is answered with the error
+  code `subtitlesUnreadable` and the engine's sentence, which names the line; nothing
+  changes. The notice gives the count, the warnings as its details, and Undo; the
+  first cue is selected.
+- **Timeline**: subtitle tracks are listed with the video tracks, in stack order, with
+  the captions icon. Cues are clips of kind `subtitle`: moved, trimmed, split (S) and
+  deleted like the others, only on subtitle tracks (`trackAcceptsClip`), without a
+  file to run out of when trimmed. Subtitle tracks can be hidden, not muted.
+- **Inspector** (`SubtitleInspector.svelte`, shown instead of `ClipInspector` for a cue):
+  - the words, with the draft and commit rules of titles;
+  - *Start* and *End* in seconds to the millisecond;
+  - *Split at the playhead*, *Merge with the next*, *Delete*;
+  - the track's style;
+  - *Export as .srt…*.
+
+  Requests name only what changes: `setSubtitleCue` (`text`, `startTicks`,
+  `endTicks`; undo label `editSubtitle`, or `moveSubtitle` for times only) and
+  `setSubtitleStyle` (`editing/subtitles.rs`). Colour inputs have no opacity: a new
+  colour keeps the current one's (`withHexAlpha`), so a half-transparent box stays so.
+- **Adding**: *Add a subtitle at the playhead* (the Text tab and the timeline's
+  toolbar) sends `addSubtitleCue`: on the top subtitle track (a new *Subtitles* track
+  if there is none), two seconds, less if the next cue starts sooner; refused when
+  less than 0.2 s is free. The inspector then focuses its words.
+- **Export**: the native save dialog (which asks before replacing a file), then
+  `export_subtitle_file`, which writes the track's cues in `spawn_blocking`; an error
+  is `subtitlesNotSaved`.
+- Changing the project's format refits the subtitle style with the titles
+  (`refit_clips_to_canvas`).
+
 ## Removing silences
 
 *Remove silences…*, in the Sound section of the inspector, opens

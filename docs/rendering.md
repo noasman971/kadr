@@ -90,6 +90,20 @@ before the clip's own scale. Videos and images keep `FitInsideCanvas`.
 - The export rasterises each text clip once and reuses the picture while its words and
   style stay the same.
 
+### Subtitles
+
+Subtitle cues use the same font system (`TextRasterizer::rasterize_subtitle`), with
+their track's style:
+
+- lines wrap at the style's widest line and are centred;
+- `<i>` words are slanted (Inter has no italic face), `<b>` words bold;
+- an outline comes from an exact distance transform of the letters' ink, a box is
+  drawn behind each line;
+- the picture is placed on whole pixels at the style's margin, so both renderers
+  copy it exactly.
+
+Only the cues on screen keep their picture. See [subtitles.md](subtitles.md).
+
 ## Effects
 
 ### Colour adjustment
@@ -186,7 +200,7 @@ underneath, its picture continuing past its cut. Details:
 `crates/kadr-render/tests/gpu_matches_cpu.rs` renders the same scenes on both and
 compares the Y, U and V planes: mean difference under 1.5 and fewer than 2 % of values
 off by more than 10. Scenes include colour adjustments, colour LUTs, dissolves,
-pushes, zooms and animated texts. Remaining differences are expected: the GPU
+pushes, zooms, animated texts and subtitles with an outline or a box. Remaining differences are expected: the GPU
 interpolates colour planes smoothly where the CPU reuses each 2×2 block's colour, and
 the edges of rotated layers round differently.
 

@@ -163,10 +163,29 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
   Resolve on a real video (the tests use small generated tables). Owner's check:
   `kadr-cli assemble -o graded.kadr --lut <a .cube> <a video>`, then
   `kadr-cli render graded.kadr graded.mp4`, or the inspector's Colour section.
+- **8g, subtitles with SRT import and editing** (branch
+  `claude/phase-8g-subtitles-6c3b24`, decision record 0056, [subtitles.md](subtitles.md)):
+  - subtitle tracks whose cues share the track's style (file format 4);
+  - a forgiving `.srt` reader with line-numbered errors, and a writer;
+  - cues burned in identically by the CPU and the GPU;
+  - cues follow the timeline, and silence removal removes the same moments from
+    them;
+  - Claude's `import_subtitles`, `list_subtitles`, `edit_subtitles`,
+    `set_subtitle_style`, `export_subtitles`;
+  - the app: import, cues on the timeline, the inspector's cue and style sections,
+    *Export as .srt…*;
+  - `kadr-cli import-subtitles` / `export-subtitles`.
+
+  Automatic transcription is out of scope (it needs AI): the owner will discuss it.
+  Owner's check:
+  1. In the app, Text tab → *Import subtitles (.srt)…* on a video's `.srt`.
+  2. Fix a few cues in the inspector.
+  3. Export the video, and *Export as .srt…*.
 - **Next step:** the owner chooses the next feature.
 - **Left, proposed in the specification's order:** stabilisation (`kadr-vision`'s
   optical flow and smoothing), editable keyframes in the interface, automatic
-  proxies for heavy 4K videos, SRT subtitles. Also waiting:
+  proxies for heavy 4K videos (8d, 8e and 8f were started in parallel sessions).
+  Also waiting:
   Claude's `add_transition` still makes fades from opacity keyframes, and the
   inspector has no transition controls yet.
 - Decision records 0050–0059.

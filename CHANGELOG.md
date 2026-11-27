@@ -145,6 +145,49 @@ project uses [Semantic Versioning](https://semver.org/). Each validated phase is
   image.
 - Decision record 0052.
 
+### Added (phase 8g: subtitles, SRT import and editing)
+
+- `kadr-core`: subtitle tracks (`TrackKind::Subtitle`) whose cues
+  (`ClipContent::Subtitle`) share the track's `SubtitleStyle`:
+  - font, size, bold, colour, an outline or a box, bottom or top, a margin, the
+    widest line;
+  - sized from the canvas: a vertical canvas keeps them a quarter of the height
+    above the bottom, clear of TikTok's, Reels' and Shorts' buttons.
+  
+  Cue texts keep `<i>`, `<b>` and line breaks. File format 4, with a migration from 3.
+- `kadr-core::srt` reads `.srt` files forgivingly:
+  - a byte-order mark, Windows or old Mac line endings, `,` or `.` milliseconds;
+  - multi-line cues, numbering gaps, cues out of order or overlapping;
+  - `<font>`, `<u>` and `{\an8}` removed with a warning.
+  
+  It also decodes UTF-16 and Windows-1252 files. Errors give line numbers. It writes
+  cues back as `.srt`.
+- Commands: `AddSubtitleCues`, `SetSubtitleStyle`, `SetSubtitleCueText`,
+  `SetSubtitleCueTiming`, `MergeSubtitleCues`, `RemoveTimeFromSubtitleTracks`.
+  `SplitClip` shares a cue's words between its parts. Subtitles follow the timeline,
+  and removing parts of a clip (silence removal) removes the same moments from them.
+- `kadr-render`: `TextRasterizer::rasterize_subtitle` draws a cue:
+  - lines wrapped and centred, italic and bold words;
+  - an outline from an exact distance transform, or a box per line;
+  - placed on whole pixels at the margin, so the GPU and the CPU show the same subtitles.
+- `kadr-engine`: subtitle tracks are burned into exports, previews and Claude's
+  frames; export sizes and format changes refit their style. `subtitle_files` reads
+  (16 MB at most) and writes `.srt` files and imports one as a track in one undo step.
+- Claude's tools `import_subtitles`, `list_subtitles`, `edit_subtitles` (edit, add,
+  remove, split and merge cues in one undo step), `set_subtitle_style` and
+  `export_subtitles`. `get_timeline` summarises subtitle tracks, `add_track` makes
+  one, `remove_clip` with `close_gap` closes them up too.
+- Desktop app:
+  - *Import subtitles (.srt)…* in the Text tab, or drop an `.srt` file;
+  - cues on their own track in the timeline (moved, trimmed, split with S, deleted
+    like clips);
+  - the inspector edits a cue's words, start and end, splits it at the playhead,
+    merges it with the next one, and changes the track's style;
+  - *Add a subtitle at the playhead*, *Export as .srt…*.
+- `kadr-cli import-subtitles edit.kadr film.srt [--offset 2] [--backdrop box]
+  [--position top]` and `kadr-cli export-subtitles edit.kadr corrected.srt`.
+- Decision record 0056.
+
 ### Fixed
 
 - Desktop inspector, *Blur* section: two quick changes (a wider margin, then the

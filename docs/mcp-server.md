@@ -113,9 +113,9 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 
 | Tool | What it does |
 |---|---|
-| `find_media_files` | Searches the allowed folders (or one `folder`) for videos, sounds and images; `name_contains`, `kind`, `include_subfolders`, `maximum_results`. Says which files are already imported. `kind` `color_lut` lists colour LUT files (`.cube`) instead; they are never listed otherwise. |
+| `find_media_files` | Searches the allowed folders (or one `folder`) for videos, sounds and images; `name_contains`, `kind`, `include_subfolders`, `maximum_results`. Says which files are already imported. `kind` `color_lut` lists colour LUT files (`.cube`) instead, `kind` `subtitles` subtitle files (`.srt`); they are never listed otherwise. |
 | `probe_media` | Kind, duration, picture size, frame rate, sound, without importing. |
-| `import_media` | Imports `file_paths` in one undo step; a file already imported returns its existing `media_id`. A `.cube` file is refused with a pointer to `add_color_lut`. |
+| `import_media` | Imports `file_paths` in one undo step; a file already imported returns its existing `media_id`. A `.cube` file is refused with a pointer to `add_color_lut`, an `.srt` file with one to `import_subtitles`. |
 | `list_media` | The project's media and the clips using each. |
 
 ### Timeline
@@ -150,6 +150,27 @@ Windows, a Unix socket only the user can open elsewhere; `kadr-app-link`):
 | `add_color_adjustment` | Exposure (stops), contrast, saturation, temperature; with `effect_id`, changes an existing one. |
 | `add_color_lut` | The look of a `.cube` file (`lut_file_path`), at a `strength` from 0 to 1, applied after the colour adjustments. The file must be inside the allowed folders and named `.cube`; it is read before the project changes, so a wrong file is reported with its line number. One per clip: with `effect_id`, changes the file or the strength. Answers the LUT's title and size. |
 | `remove_effect` | Removes one effect (colour adjustment, colour LUT or blur). |
+
+### Subtitles
+
+Decision record 0056; the model, the `.srt` reader and the drawing are in
+[subtitles.md](subtitles.md).
+
+| Tool | What it does |
+|---|---|
+| `import_subtitles` | Reads an `.srt` file (`file_path`, inside the allowed folders) and adds its cues on a new subtitle track on top, in the canvas's default style (a black outline, centred, a quarter of the height above the bottom on vertical canvases) or with `style` changes. `start_time_in_seconds` moves every cue later; `track_name`. A broken file is reported with its line number and nothing changes. Answers the track, the cue count, the warnings (cues shortened, codes removed…) and the first cues. One undo step. |
+| `list_subtitles` | Cues with `clip_id`, start, end (seconds) and text, and their track's style; `track_id`, a time window (`start_time_in_seconds` / `end_time_in_seconds`), `text_contains`, `maximum_cues` (default 200). |
+| `edit_subtitles` | A list of `changes`, applied in order as **one** undo step, all or nothing: `edit` (text, start, end), `add` (on `track_id`, the only subtitle track, or a new one), `remove`, `split` (at `time_in_seconds`, the words shared or given as `first_text` / `second_text`), `merge` (with `next_clip_id`). Edges within half a frame of a neighbour snap onto it. Answers the new cues' ids. |
+| `set_subtitle_style` | `style` changes for a subtitle track: `font_family`, `font_size_in_pixels`, `bold`, `text_color`, `backdrop` (`outline`, `box`, `none`), `backdrop_color`, `outline_width_in_pixels`, `position` (`bottom`, `top`), `margin_in_pixels`, `maximum_line_width_percent`. |
+| `export_subtitles` | Writes a subtitle track to an `.srt` file (`file_path`, `.srt` added if missing, `overwrite`). |
+
+- `get_timeline` lists a subtitle track's cue count and time span instead of every cue
+  (`subtitles`, with a pointer to `list_subtitles`).
+- `add_track` takes `kind` `subtitle`; `get_clip`, `move_clip`, `trim_clip`,
+  `split_clip` and `remove_clip` work on cues.
+- Cues follow the timeline. `remove_silences` and `remove_clip` with `close_gap` remove
+  the same moments from the subtitle tracks, so subtitles stay on the voice.
+- `get_frame` shows the subtitles burned in, as the export does.
 
 ### Seeing the video
 
@@ -263,6 +284,13 @@ export. Changing the shape silently would export something Claude never looked a
 > `get_timeline` → `add_color_lut` (clip_id, lut_file_path, strength 0.7) →
 > `get_frame` **without** clip_id to see the graded picture.
 
+> **User:** Here are the subtitles of the interview (interview.srt): fix the typos,
+> put them in a box, and give me the corrected file.
+>
+> **Claude:** `import_subtitles` → `list_subtitles` → `edit_subtitles` (every fix in one
+> call) → `set_subtitle_style` (`backdrop` `box`) → `get_frame` at a cue's time →
+> `export_subtitles` → `export` for the video with the subtitles burned in.
+
 > **User:** Undo that last change.
 >
 > **Claude:** `undo` — the whole previous call is reverted.
@@ -291,6 +319,12 @@ client over an in-memory pipe), as Claude Desktop would:
 - `blur.rs`: a blur on a synthetic scene with an obstacle (known true position):
   the analysis, the range to check, a correction with another style, undo, mistakes
   refused before anything runs, cancellation;
+- `subtitles.rs`: an `.srt` file with a byte-order mark, Windows line endings, a dot
+  before the milliseconds and a numbering gap imported, listed, seen on a frame,
+  fixed in one call (a typo, a timing, a split, a new cue) and one undo step, restyled
+  (a box at the top, seen on a frame), exported (no overwrite without `overwrite`),
+  undone; a broken file, a file that is not `.srt` and an overlapping cue refused
+  with nothing changed (an overlap cancels the whole call);
 - `color_luts.rs`: LUT files found only when asked for, applied, seen on the
   timeline, changed, a second one refused, removed and undone; wrong files refused
   before the project changes (outside the folders, relative, not `.cube`, a broken

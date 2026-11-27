@@ -333,3 +333,16 @@ Details: [docs/architecture.md](docs/architecture.md).
   `npx vite --port 1430 --strictPort`, with `WEBVIEW2_USER_DATA_FOLDER` set and
   another `--remote-debugging-port`. A running `kadr.exe` cannot be deleted but can
   be renamed, which unblocks a rebuild.
+- Subtitle tracks (phase 8g, decision 0056) sit in the **same stack** as video
+  tracks: code that picks the tracks to draw or to show with the videos must take
+  `kind != Audio`, not `kind == Video` (the frame composer and the app's
+  `tracks_in_display_order` do). Cues carry no style: read it from their track.
+  Read [docs/subtitles.md](docs/subtitles.md) before changing subtitles.
+- Subtitles follow the timeline, but `RemoveClipParts` (and Claude's `remove_clip`
+  with `close_gap`) removes the same moments from the subtitle tracks. A new command
+  that removes time from the edit must do the same (`RemoveTimeFromSubtitleTracks`).
+- Python patch scripts on Windows: `open(path, "w")` writes `\r\n`, and the
+  repository stores LF (`.gitattributes`). Open files with `newline=""` to keep their
+  line endings, or every touched file shows as rewritten.
+- `serde`'s `flatten` does not work with `deny_unknown_fields`: tool parameters that
+  share a group of settings take them as a nested object (`"style": { … }`).

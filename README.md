@@ -211,6 +211,19 @@ leaves longer pauses):
 .\target\release\kadr-cli remove-silences interview.mp4 -o interview-short.mp4
 ```
 
+Add the subtitles of an `.srt` file to a project (a new subtitle track, burned into
+the export; `--backdrop box` for a box behind the lines, `--position top`, `--offset 2`
+to move them 2 s later; see [docs/subtitles.md](docs/subtitles.md)), and write a
+project's subtitles back to an `.srt` file:
+
+```powershell
+.\target\release\kadr-cli import-subtitles my-edit.kadr interview.srt --backdrop box
+```
+
+```powershell
+.\target\release\kadr-cli export-subtitles my-edit.kadr interview.corrected.srt
+```
+
 `kadr-cli blur` blurs a face from one rectangle (see
 [docs/tracking-and-blur.md](docs/tracking-and-blur.md)). Current limit: phone videos
 with a rotation flag are not rotated yet.
