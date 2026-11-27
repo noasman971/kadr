@@ -60,8 +60,8 @@ which is more detailed and is the reference for its phase.
 | 4. Tracking and blur | Done, tagged `v0.5.0` | `main` (#7, #8) | — (owner's real-video test still to do) |
 | 5. MCP server | Done, tagged `v0.6.0` | `main` (#9) | — (owner's Claude Desktop test still to do) |
 | 6. Desktop app | Done, tagged `v0.7.0` | `main` (#6, #10, #14, #15, #16; fix #18 after the tag) | — (owner's edit-and-export test still to do) |
-| 7. Blur and Claude in the app | 7a, 7b, 7c merged (#17, #19, #20) | see the phase 7 section | 7d: live link between Claude and the open app |
-| 8. Features | 8a merged (#11); 8b (silence removal) in progress | `feature/phase-8b-silence-removal` | Finish 8b, then the next feature after the owner's go-ahead |
+| 7. Blur and Claude in the app | 7a, 7b, 7c merged (#17, #19, #20); 7d ready in #21; 7e draft #24 | `feature/phase-7d-live-link`, [#21](https://github.com/noasman971/kadr/pull/21); `feature/phase-7e-connect-to-claude`, [#24](https://github.com/noasman971/kadr/pull/24) | Merge #21 once green, then finish #24 (docs) |
+| 8. Features | 8a merged (#11); 8b (silence removal) ready in PR #23 | `feature/phase-8b-silence-removal`, [#23](https://github.com/noasman971/kadr/pull/23) | Merge #23 once green, then the next feature after the owner's go-ahead |
 | 9. Android | **Paused** by the owner. 9a done, 9b started (draft #12) | `feature/phase-9a-android-build`, [#12](https://github.com/noasman971/kadr/pull/12) | Owner: resume or not |
 | 10. iOS | Needs a Mac | — | — |
 
@@ -97,11 +97,17 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
      progress and cancel, a Blur section in the inspector.
   3. **7c, checking and correcting** (merged, #20): unsure ranges on the timeline, go
      to the next one, correct the box and re-track.
-  4. **7d, live link** (next): decision record 0030; `kadr-mcp` passes Claude's calls
-     to the open app, which runs them on its own project; *"Claude a modifié le
-     projet"* notice; file mode when the app is closed.
-  5. **7e, Connect to Claude**: a settings screen that writes the Claude Desktop
-     configuration and manages the allowed folders.
+  4. **7d, live link** (ready, #21, `feature/phase-7d-live-link`): decision record
+     0030; `kadr-mcp` passes Claude's calls to the open app, which runs them on its
+     own project; *"Claude a modifié le projet"* notice; file mode when the app is
+     closed. CI was re-running when the work moved to the laptop.
+  5. **7e, Connect to Claude** (draft, #24, `feature/phase-7e-connect-to-claude`):
+     decision record 0031; a settings screen that writes the Claude Desktop
+     configuration and manages the allowed folders. Code and tests are done; its
+     docs are not written yet.
+- **Next step:** merge `origin/main` into #21 and merge it once the six checks are
+  green; then merge `main` into #24 and write its docs (its "Status for resuming"
+  lists the rest), then the owner's end test below.
 - **Known issue:** the blur inspector added in 7b has the same race #18 fixed for the
   other settings (two quick changes, the second undoing the first). To fix in its own
   PR, the same way as #18.
@@ -119,11 +125,15 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
 - **8a, transitions and text animations** (merged, #11): entry and exit transitions
   (fade, slide, zoom) and text animations (fade, slide, pop, type-on, word by word),
   file format 2 with a migration, decision record 0050.
-- **8b, silence removal** (in progress, `feature/phase-8b-silence-removal`): the core
+- **8b, silence removal** (ready, PR #23, `feature/phase-8b-silence-removal`): the core
   command removing parts of a clip and closing the gaps, the engine's plan, the MCP
-  tool `remove_silences` and `kadr-cli remove-silences` are committed; the desktop app
-  part is being written.
-- **Left, in the specification's order:** LUT `.cube` files for colour grading,
+  tool `remove_silences`, `kadr-cli remove-silences` and the desktop app part. Checked
+  locally (fmt, clippy, 411 Rust tests with the GPU required, `cargo doc`, the front
+  end's 45 tests, type check and build) and tried with the CLI and in the app. CI was
+  running when the work moved to the laptop.
+- **Next step:** `gh pr checks 23`; merge #23 once green (merge `origin/main` into it
+  first if it conflicts), then ask the owner which feature comes next.
+- **Left, proposed in the specification's order:** LUT `.cube` files for colour grading,
   stabilisation (`kadr-vision`'s optical flow and smoothing), editable keyframes in
   the interface, automatic proxies for heavy 4K videos, SRT subtitles. Also waiting:
   Claude's `add_transition` still makes fades from opacity keyframes, and the
