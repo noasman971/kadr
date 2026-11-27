@@ -30,6 +30,10 @@ struct ServerArguments {
     /// Kadr cannot use files.
     #[arg(long = "allowed-folder", value_name = "FOLDER")]
     allowed_folders: Vec<PathBuf>,
+    /// Kadr's settings file (`claude-access.json`, written by the app's *Connect to
+    /// Claude* screen): its folders are allowed too, read again before every call.
+    #[arg(long = "kadr-settings", value_name = "FILE")]
+    kadr_settings: Option<PathBuf>,
 }
 
 /// The environment variable choosing how detailed the logs are.
@@ -60,7 +64,10 @@ fn start_logging_to_stderr() {
 }
 
 fn serve_until_disconnected(arguments: ServerArguments) -> Result<(), String> {
-    let allowed_folders = AllowedFolders::new(arguments.allowed_folders);
+    let allowed_folders = AllowedFolders::new(kadr_tools::combined_allowed_folders(
+        &arguments.allowed_folders,
+        arguments.kadr_settings.as_deref(),
+    ));
     for folder in allowed_folders.folders() {
         tracing::info!("allowed folder: {}", folder.display());
     }
@@ -68,14 +75,21 @@ fn serve_until_disconnected(arguments: ServerArguments) -> Result<(), String> {
         tracing::warn!("allowed folder left out: {rejected}");
     }
     if allowed_folders.folders().is_empty() {
-        tracing::warn!("no allowed folder: add --allowed-folder <FOLDER> to the server arguments");
+        tracing::warn!(
+            "no allowed folder: add folders on the Kadr app's Connect to Claude screen, or \
+             --allowed-folder <FOLDER> to the server arguments"
+        );
     }
     let backend =
         FfmpegBackend::new().map_err(|error| format!("FFmpeg could not be started: {error}"))?;
-    let server = KadrMcpServer::with_app_link(
+    let mut server = KadrMcpServer::with_app_link(
         KadrToolbox::new(allowed_folders, Arc::new(backend)),
         kadr_app_link::link_address(),
     );
+    if let Some(settings_file) = arguments.kadr_settings {
+        tracing::info!("Kadr settings file: {}", settings_file.display());
+        server = server.with_settings_file(arguments.allowed_folders, settings_file);
+    }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -30,6 +30,7 @@
 
 mod app_relay;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -38,7 +39,10 @@ use kadr_app_link::LinkAddress;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use kadr_tools::{KadrToolbox, ToolContent, ToolDefinition, ToolEffect, ToolOutput};
+use kadr_tools::{
+    AllowedFolders, KadrToolbox, ToolContent, ToolDefinition, ToolEffect, ToolOutput,
+    combined_allowed_folders,
+};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
@@ -72,6 +76,13 @@ pixels, origin at the top-left corner. Every tool call is one undo step (undo / 
 uses files in the folders the user allowed, never replaces a file unless you pass \"overwrite\": \
 true after asking the user, and never deletes files.";
 
+/// The folders given as arguments, and Kadr's settings file adding others.
+#[derive(Debug)]
+struct FolderSources {
+    argument_folders: Vec<PathBuf>,
+    settings_file: PathBuf,
+}
+
 /// How often finished background work is added to the project between calls.
 pub const BACKGROUND_WORK_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -82,6 +93,9 @@ pub struct KadrMcpServer {
     toolbox: Arc<Mutex<KadrToolbox>>,
     /// Where calls go: the open app, or the project file.
     relay: Arc<Mutex<AppRelay>>,
+    /// Where the allowed folders come from, when Kadr's settings file is used
+    /// (decision record 0031): read again before every call.
+    folder_sources: Option<Arc<FolderSources>>,
     /// The tool list, built once.
     tools: Arc<Vec<Tool>>,
 }
@@ -116,8 +130,24 @@ impl KadrMcpServer {
         Self {
             toolbox: Arc::new(Mutex::new(toolbox)),
             relay: Arc::new(Mutex::new(relay)),
+            folder_sources: None,
             tools: Arc::new(tools),
         }
+    }
+
+    /// The allowed folders are `argument_folders` plus those of Kadr's settings
+    /// file `settings_file`, read again before every call, so a folder added on
+    /// the app's *Connect to Claude* screen applies at once (decision record 0031).
+    pub fn with_settings_file(
+        mut self,
+        argument_folders: Vec<PathBuf>,
+        settings_file: PathBuf,
+    ) -> Self {
+        self.folder_sources = Some(Arc::new(FolderSources {
+            argument_folders,
+            settings_file,
+        }));
+        self
     }
 
     /// Adds the background work that finished (tracking analyses) to the
@@ -150,9 +180,16 @@ impl KadrMcpServer {
     async fn run_tool(&self, tool_name: String, arguments: Value) -> CallToolResult {
         let toolbox = Arc::clone(&self.toolbox);
         let relay = Arc::clone(&self.relay);
+        let folder_sources = self.folder_sources.clone();
         let name_for_log = tool_name.clone();
         let outcome = tokio::task::spawn_blocking(move || {
             let mut toolbox = toolbox.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(sources) = folder_sources {
+                toolbox.set_allowed_folders(AllowedFolders::new(combined_allowed_folders(
+                    &sources.argument_folders,
+                    Some(&sources.settings_file),
+                )));
+            }
             let mut relay = relay.lock().unwrap_or_else(PoisonError::into_inner);
             relay.run(&mut toolbox, &tool_name, arguments)
         })

@@ -220,7 +220,28 @@ subscription is enough.** Kadr never sends anything to Anthropic or anywhere els
 passed to Kadr. Tell Claude the name of the file or the folder it is in; Claude finds
 it with Kadr's search tool, which only looks in the folders you allowed.
 
-### 1. Build the server
+### The easy way: from the Kadr app
+
+1. In the app, open **Settings → Claude → Connecter à Claude…** (*Connect to
+   Claude…*).
+2. Under *Dossiers que Claude peut utiliser*, add the folders holding your videos,
+   your projects and your exports. Claude reads and writes nowhere else. You can add
+   or remove a folder at any time: the change applies to Claude's next request.
+3. Click **Connecter Kadr à Claude Desktop**. Kadr finds Claude Desktop's
+   configuration (or **Choisir…** another file), adds its own entry and keeps
+   everything else, with a backup next to it. A file that is not valid JSON is never
+   changed: the screen says so.
+4. Quit Claude Desktop completely (also from its icon next to the clock) and open it
+   again. Kadr's tools appear in a new conversation.
+
+The same screen shows the command that adds Kadr to Claude Code, ready to copy. The
+app looks for `kadr-mcp` next to its own program: in a copy built from the sources,
+build it once first (step 1 below). The choices behind the screen are in
+[decision 0031](docs/decisions/0031-claude-access-settings-file.md).
+
+### By hand, without the app
+
+#### 1. Build the server
 
 ```powershell
 cargo build --release -p kadr-mcp
@@ -230,13 +251,15 @@ The program is `target\release\kadr-mcp.exe`. It needs the FFmpeg DLLs on your
 `PATH` (the winget installation of [Setting up Windows](#setting-up-windows) does
 it; restart Claude after installing FFmpeg).
 
-### 2. Choose the folders Kadr may use
+#### 2. Choose the folders Kadr may use
 
 Kadr only reads and writes inside the folders you give it with `--allowed-folder`
 (repeat it for several folders): your videos, where projects are saved, where
 exports go. It never replaces a file unless you agree, and never deletes files.
+The folders chosen on the app's screen are added to them when the server is
+started with `--kadr-settings <file>`, as the screen does.
 
-### 3a. Claude Desktop
+#### 3a. Claude Desktop
 
 1. Open Claude Desktop, then **Settings → Developer → Edit Config**. This shows
    `claude_desktop_config.json` wherever your installation keeps it (usually
@@ -267,7 +290,7 @@ exports go. It never replaces a file unless you agree, and never deletes files.
 If Kadr does not appear, Claude Desktop's log `mcp-server-kadr.log`, in the `logs`
 folder next to `claude_desktop_config.json`, says why.
 
-### 3b. Claude Code
+#### 3b. Claude Code
 
 ```powershell
 claude mcp add kadr --scope user -- C:\Users\sam\Projects\kadr\target\release\kadr-mcp.exe --allowed-folder C:\Users\sam\Videos
@@ -275,7 +298,7 @@ claude mcp add kadr --scope user -- C:\Users\sam\Projects\kadr\target\release\ka
 
 Then `claude mcp list` shows `kadr`, and `/mcp` inside Claude Code shows its tools.
 
-### 4. Ask
+### Ask
 
 Five requests to try:
 

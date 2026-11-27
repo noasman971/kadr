@@ -54,6 +54,16 @@ pub enum ErrorCode {
     TrackingFailed,
     /// The project was closed while the region was being followed.
     TrackingProjectClosed,
+    /// A folder chosen for Claude is not a folder.
+    ClaudeFolderUnusable,
+    /// The folders allowed to Claude could not be saved.
+    ClaudeSettingsNotSaved,
+    /// `kadr-mcp` is not next to the app.
+    KadrMcpMissing,
+    /// Claude Desktop's configuration is not valid JSON: Kadr leaves it alone.
+    ClaudeConfigUnreadable,
+    /// Claude Desktop's configuration could not be written.
+    ClaudeConfigNotSaved,
     /// Something that should not happen; the details say what.
     Internal,
 }

@@ -17,6 +17,8 @@
 //! - [`recent_projects`]: the home screen's list;
 //! - [`claude_link`]: Claude's tool calls, passed by `kadr-mcp` through a local
 //!   pipe and run on the open project, live (decision record 0030);
+//! - [`claude_setup`]: the *Connect to Claude* screen: Claude Desktop's
+//!   configuration and the folders Claude may use (decision record 0031);
 //! - [`commands`]: the Tauri commands themselves.
 //!
 //! The engine crates never depend on this one: everything reusable (preview
@@ -27,6 +29,7 @@ pub mod binary_messages;
 pub mod blur_overlay;
 pub mod blur_results;
 pub mod claude_link;
+pub mod claude_setup;
 pub mod command_error;
 pub mod commands;
 pub mod editing;
@@ -42,8 +45,8 @@ use tauri::Manager;
 
 use crate::app_state::AppState;
 use crate::commands::{
-    blur_commands, editing_commands, export_commands, picture_and_sound_commands, project_commands,
-    silence_commands,
+    blur_commands, claude_commands, editing_commands, export_commands, picture_and_sound_commands,
+    project_commands, silence_commands,
 };
 
 /// Name of the folder, in the user's documents, where new projects are created.
@@ -96,6 +99,10 @@ pub fn run() -> Result<(), tauri::Error> {
             blur_commands::cancel_region_tracking,
             silence_commands::find_clip_silences,
             silence_commands::stop_silence_search,
+            claude_commands::get_claude_setup,
+            claude_commands::add_claude_folder,
+            claude_commands::remove_claude_folder,
+            claude_commands::connect_claude_desktop,
         ])
         .run(tauri::generate_context!())
 }

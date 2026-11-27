@@ -38,6 +38,7 @@
 
 mod blur_tasks;
 mod catalog;
+mod claude_access;
 mod export_tasks;
 mod file_access;
 mod output;
@@ -50,6 +51,7 @@ mod tools;
 mod views;
 
 pub use catalog::{ToolDefinition, ToolEffect};
+pub use claude_access::{CLAUDE_ACCESS_FILE_NAME, ClaudeAccessSettings, combined_allowed_folders};
 pub use file_access::AllowedFolders;
 pub use output::{ToolContent, ToolError, ToolOutput};
 pub use pictures_for_claude::MAXIMUM_PICTURE_SIDE_IN_PIXELS;
