@@ -190,7 +190,18 @@ in `v0.7.0`), quick inspector changes undoing each other (#18, after it).
     *Export as .srt…*;
   - `kadr-cli import-subtitles` / `export-subtitles`.
 
-  Automatic transcription is out of scope (it needs AI): the owner will discuss it.
+  **Next subtitle step: automatic subtitles with local Whisper (owner approved,
+  after 8g).** whisper.cpp through a Rust binding, the model downloaded on demand,
+  running fully offline (nothing sent anywhere). The hooks are ready:
+  - a transcription produces `TimedSubtitleCue`s (start, end, text, several lines
+    allowed);
+  - `kadr_engine::subtitle_files::add_subtitle_track_with_cues` turns them into a
+    subtitle track, as the `.srt` import does;
+  - `AddSubtitleCues` inserts a whole batch as one undo step.
+
+  Still to add then: a `ReplaceSubtitleCues` command (one undo step) to transcribe
+  again over an existing track. Per-word timings are not stored.
+
   Owner's check:
   1. In the app, Text tab → *Import subtitles (.srt)…* on a video's `.srt`.
   2. Fix a few cues in the inspector.
