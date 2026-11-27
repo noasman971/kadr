@@ -228,8 +228,8 @@
   }
   .settings {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-4);
+    gap: var(--space-3);
+    max-width: 380px;
     margin: var(--space-5) 0 var(--space-2);
   }
   .result {
