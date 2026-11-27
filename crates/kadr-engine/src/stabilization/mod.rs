@@ -29,6 +29,7 @@ use kadr_vision::{Point, shrink_factor_for_tracking};
 use crate::frame_reading::{FrameReader, FrameReadingError};
 use crate::region_tracking::{TrackingCancellation, TrackingProgress};
 
+pub(crate) use correction::applied_stabilization_of;
 pub use correction::{
     FrameCorrection, StabilizationSummary, stabilization_correction_at, stabilization_summary,
     stabilization_with_smoothing,

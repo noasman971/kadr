@@ -6,7 +6,8 @@
 
 use std::sync::Arc;
 
-use kadr_core::effect::{CameraPathSample, Stabilization};
+use kadr_core::clip::Clip;
+use kadr_core::effect::{CameraPathSample, EffectKind, Stabilization};
 use kadr_core::media_asset::PictureSize;
 use kadr_core::time::Timestamp;
 use kadr_render::SourceCorrection;
@@ -129,6 +130,18 @@ pub fn stabilization_correction_at(
         },
         fraction_applied: fitted.fraction_applied as f32,
     }
+}
+
+/// The stabilisation `clip` applies: its first enabled one (the project's rules
+/// allow one per clip).
+pub(crate) fn applied_stabilization_of(clip: &Clip) -> Option<&Stabilization> {
+    clip.effects
+        .iter()
+        .filter(|effect| effect.is_enabled)
+        .find_map(|effect| match &effect.kind {
+            EffectKind::Stabilization(stabilization) => Some(stabilization),
+            _ => None,
+        })
 }
 
 /// What a stabilisation does to its video, for reports to the user and Claude.
